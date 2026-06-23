@@ -120,3 +120,42 @@ export function signTransactionXdr(
 export function getApiBaseUrl(): string {
   return API_BASE;
 }
+
+export interface PrepareOwnershipResponse {
+  xdr: string;
+  resourceId: string;
+}
+
+export interface TransferOwnershipResponse {
+  success: boolean;
+  txHash?: string;
+}
+
+export async function prepareOwnershipTransfer(
+  resourceId: string
+): Promise<PrepareOwnershipResponse> {
+  const res = await fetch(`${API_BASE}/resources/${resourceId}/ownership/prepare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error("Failed to prepare ownership transfer");
+  }
+  return res.json();
+}
+
+export async function submitOwnershipTransfer(
+  resourceId: string,
+  signedXdr: string,
+  destinationAddress: string
+): Promise<TransferOwnershipResponse> {
+  const res = await fetch(`${API_BASE}/resources/${resourceId}/ownership`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ signedXdr, destinationAddress }),
+  });
+  if (!res.ok) {
+    throw new Error("Failed to submit ownership transfer");
+  }
+  return res.json();
+}
