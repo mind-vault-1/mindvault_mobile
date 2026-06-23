@@ -73,7 +73,6 @@ export async function prepareRegister(resourceId: string): Promise<RegisterPrepa
   if (!res.ok) {
     throw new Error("Failed to prepare registration");
   }
-  return res.json();
 }
 
 export async function submitRegister(
