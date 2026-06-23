@@ -61,12 +61,22 @@ export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardPr
       </Text>
 
       <View style={styles.badges}>
-        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
+        <View
+          style={[shared.badge, { backgroundColor: verification.backgroundColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`Verification status: ${resource.verificationStatus}`}
+        >
           <Text style={[shared.badgeText, { color: verification.color }]}>
             {resource.verificationStatus}
           </Text>
         </View>
-        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
+        <View
+          style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`On-chain status: ${
+            resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus
+          }`}
+        >
           <Text style={[shared.badgeText, { color: onchain.color }]}>
             {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
           </Text>
@@ -75,16 +85,15 @@ export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardPr
 
       <View style={styles.footer}>
         <Text style={typography.price}>{resource.price} USDC</Text>
-        <View style={styles.actions}>
-          {resource.onchainStatus === "none" && onRegister && (
-            <Pressable onPress={() => onRegister(resource)} style={[shared.button, styles.registerBtn]}>
-              <Text style={shared.buttonText}>Register</Text>
-            </Pressable>
-          )}
-          <Pressable onPress={handleCopy} style={shared.button}>
-            <Text style={shared.buttonText}>Copy URL</Text>
-          </Pressable>
-        </View>
+        <Pressable
+          onPress={handleCopy}
+          style={shared.button}
+          accessibilityRole="button"
+          accessibilityLabel={`Copy URL for ${resource.title}`}
+          accessibilityHint="Copies the resource access URL to your clipboard"
+        >
+          <Text style={shared.buttonText}>Copy URL</Text>
+        </Pressable>
       </View>
     </View>
   );
