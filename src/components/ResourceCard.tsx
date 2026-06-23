@@ -9,6 +9,7 @@ import { PaywallModal } from "./PaywallModal";
 interface ResourceCardProps {
   resource: Resource;
   onCopyUrl: (message: string) => void;
+  onRegister?: (resource: Resource) => void;
 }
 
 function shortenAddress(address: string): string {
@@ -40,7 +41,7 @@ function onchainStyle(status: Resource["onchainStatus"]) {
   }
 }
 
-export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
+export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardProps) {
   const verification = verificationStyle(resource.verificationStatus);
   const onchain = onchainStyle(resource.onchainStatus);
   const [paywallOpen, setPaywallOpen] = useState(false);
@@ -63,12 +64,22 @@ export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
       </Text>
 
       <View style={styles.badges}>
-        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
+        <View
+          style={[shared.badge, { backgroundColor: verification.backgroundColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`Verification status: ${resource.verificationStatus}`}
+        >
           <Text style={[shared.badgeText, { color: verification.color }]}>
             {resource.verificationStatus}
           </Text>
         </View>
-        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
+        <View
+          style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`On-chain status: ${
+            resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus
+          }`}
+        >
           <Text style={[shared.badgeText, { color: onchain.color }]}>
             {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
           </Text>
@@ -77,18 +88,15 @@ export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
 
       <View style={styles.footer}>
         <Text style={typography.price}>{resource.price} USDC</Text>
-        <View style={styles.actions}>
-          <Pressable
-            onPress={() => setPaywallOpen(true)}
-            style={[shared.button, shared.primaryButton]}
-            accessibilityLabel={`Access ${resource.title}`}
-          >
-            <Text style={[shared.buttonText, shared.primaryButtonText]}>Access</Text>
-          </Pressable>
-          <Pressable onPress={handleCopy} style={shared.button}>
-            <Text style={shared.buttonText}>Copy URL</Text>
-          </Pressable>
-        </View>
+        <Pressable
+          onPress={handleCopy}
+          style={shared.button}
+          accessibilityRole="button"
+          accessibilityLabel={`Copy URL for ${resource.title}`}
+          accessibilityHint="Copies the resource access URL to your clipboard"
+        >
+          <Text style={shared.buttonText}>Copy URL</Text>
+        </Pressable>
       </View>
 
       <PaywallModal
@@ -117,5 +125,8 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
     gap: 8,
+  },
+  registerBtn: {
+    backgroundColor: colors.primary,
   },
 });
