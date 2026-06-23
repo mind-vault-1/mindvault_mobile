@@ -1,8 +1,10 @@
 import * as Clipboard from "expo-clipboard";
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { Resource } from "../types";
 import { colors, shared, typography } from "../theme";
+import { PaywallModal } from "./PaywallModal";
 
 interface ResourceCardProps {
   resource: Resource;
@@ -41,6 +43,7 @@ function onchainStyle(status: Resource["onchainStatus"]) {
 export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
   const verification = verificationStyle(resource.verificationStatus);
   const onchain = onchainStyle(resource.onchainStatus);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   async function handleCopy() {
     await Clipboard.setStringAsync(resource.accessUrl);
@@ -74,10 +77,27 @@ export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
 
       <View style={styles.footer}>
         <Text style={typography.price}>{resource.price} USDC</Text>
-        <Pressable onPress={handleCopy} style={shared.button}>
-          <Text style={shared.buttonText}>Copy URL</Text>
-        </Pressable>
+        <View style={styles.actions}>
+          <Pressable
+            onPress={() => setPaywallOpen(true)}
+            style={[shared.button, shared.primaryButton]}
+            accessibilityLabel={`Access ${resource.title}`}
+          >
+            <Text style={[shared.buttonText, shared.primaryButtonText]}>Access</Text>
+          </Pressable>
+          <Pressable onPress={handleCopy} style={shared.button}>
+            <Text style={shared.buttonText}>Copy URL</Text>
+          </Pressable>
+        </View>
       </View>
+
+      <PaywallModal
+        visible={paywallOpen}
+        accessUrl={resource.accessUrl}
+        resourceTitle={resource.title}
+        price={resource.price}
+        onClose={() => setPaywallOpen(false)}
+      />
     </View>
   );
 }
@@ -93,5 +113,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 4,
+  },
+  actions: {
+    flexDirection: "row",
+    gap: 8,
   },
 });
