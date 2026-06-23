@@ -1,6 +1,7 @@
 import Constants from "expo-constants";
 
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
+import { logError } from "../utils/errorLogger";
 
 const API_BASE =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? "http://localhost:4021";
@@ -21,20 +22,25 @@ function buildQuery(filters?: CatalogFilters): string {
   return qs ? `?${qs}` : "";
 }
 
-export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]> {
-  const res = await fetch(`${API_BASE}/resources${buildQuery(filters)}`);
-  if (!res.ok) {
-    throw new Error("Failed to fetch catalog");
+async function request<T>(path: string, errorMessage: string): Promise<T> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`);
+    if (!res.ok) {
+      throw new Error(errorMessage);
+    }
+    return (await res.json()) as T;
+  } catch (error) {
+    logError(errorMessage, error);
+    throw error;
   }
-  return res.json();
+}
+
+export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]> {
+  return request<Resource[]>(`/resources${buildQuery(filters)}`, "Failed to fetch catalog");
 }
 
 export async function fetchRegistryStatus(): Promise<RegistryStatus> {
-  const res = await fetch(`${API_BASE}/registry/status`);
-  if (!res.ok) {
-    throw new Error("Failed to fetch registry status");
-  }
-  return res.json();
+  return request<RegistryStatus>("/registry/status", "Failed to fetch registry status");
 }
 
 export function getApiBaseUrl(): string {
