@@ -85,6 +85,11 @@ export const shared = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: colors.neutralBg,
+    // Minimum 44x44 touch target for accessibility (WCAG 2.5.5 / Apple HIG).
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: "center",
+    alignItems: "center",
   },
   buttonText: {
     fontSize: 12,
