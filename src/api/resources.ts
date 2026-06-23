@@ -1,10 +1,12 @@
+import { loadApiBaseUrl, saveApiBaseUrl } from "./apiSettings";
 import Constants from "expo-constants";
 
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
 import { logError } from "../utils/errorLogger";
 
-const API_BASE =
+const DEFAULT_API_BASE_URL =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? "http://localhost:4021";
+let apiBaseUrl = DEFAULT_API_BASE_URL;
 
 function buildQuery(filters?: CatalogFilters): string {
   if (!filters) return "";
@@ -22,16 +24,31 @@ function buildQuery(filters?: CatalogFilters): string {
   return qs ? `?${qs}` : "";
 }
 
-async function request<T>(path: string, errorMessage: string): Promise<T> {
-  try {
-    const res = await fetch(`${API_BASE}${path}`);
-    if (!res.ok) {
-      throw new Error(errorMessage);
-    }
-    return (await res.json()) as T;
-  } catch (error) {
-    logError(errorMessage, error);
-    throw error;
+export async function initializeApiBaseUrl(): Promise<string> {
+  const saved = await loadApiBaseUrl();
+  apiBaseUrl = saved;
+  return apiBaseUrl;
+}
+
+export async function setApiBaseUrl(value: string): Promise<string> {
+  await saveApiBaseUrl(value);
+  const saved = await loadApiBaseUrl();
+  apiBaseUrl = saved;
+  return apiBaseUrl;
+}
+
+export function getApiBaseUrl(): string {
+  return apiBaseUrl;
+}
+
+export function getDefaultApiBaseUrl(): string {
+  return DEFAULT_API_BASE_URL;
+}
+
+export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]> {
+  const res = await fetch(`${apiBaseUrl}/resources${buildQuery(filters)}`);
+  if (!res.ok) {
+    throw new Error("Failed to fetch catalog");
   }
 }
 
@@ -46,48 +63,9 @@ export async function fetchResource(id: string): Promise<Resource> {
 }
 
 export async function fetchRegistryStatus(): Promise<RegistryStatus> {
-  return request<RegistryStatus>("/registry/status", "Failed to fetch registry status");
-}
-
-export function getApiBaseUrl(): string {
-  return API_BASE;
-}
-
-export interface RegisterPrepareResponse {
-  xdr: string;
-  networkPassphrase: string;
-}
-
-export interface RegisterResponse {
-  txHash: string;
-  success: boolean;
-}
-
-export async function prepareRegister(resourceId: string): Promise<RegisterPrepareResponse> {
-  const res = await fetch(`${API_BASE}/resources/${resourceId}/register/prepare`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
+  const res = await fetch(`${apiBaseUrl}/registry/status`);
   if (!res.ok) {
-    throw new Error("Failed to prepare registration");
-  }
-}
-
-export async function submitRegister(
-  resourceId: string,
-  signedXdr: string
-): Promise<RegisterResponse> {
-  const res = await fetch(`${API_BASE}/resources/${resourceId}/register`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ signedXdr }),
-  });
-  if (!res.ok) {
-    throw new Error("Failed to submit registration");
+    throw new Error("Failed to fetch registry status");
   }
   return res.json();
 }

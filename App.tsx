@@ -1,12 +1,119 @@
-import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 
-import { CatalogScreen } from "./src/screens/CatalogScreen";
-import { ResourceDetailScreen } from "./src/screens/ResourceDetailScreen";
-import { ScannerScreen } from "./src/screens/ScannerScreen";
-import type { RootStackParamList } from "./src/navigation";
+import {
+  fetchCatalog,
+  fetchRegistryStatus,
+  initializeApiBaseUrl,
+  setApiBaseUrl,
+} from "./src/api/resources";
+import { ResourceCard } from "./src/components/ResourceCard";
+import type { Resource } from "./src/types";
+import { colors, shared, spacing, typography } from "./src/theme";
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
+export default function App() {
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [registryCount, setRegistryCount] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [apiBaseUrl, setApiBaseUrlState] = useState<string>("");
+  const [apiUrlInput, setApiUrlInput] = useState<string>("");
+
+  const loadData = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
+    try {
+      const [catalog, registry] = await Promise.all([
+        fetchCatalog(),
+        fetchRegistryStatus().catch(() => null),
+      ]);
+      setResources(catalog);
+      setRegistryCount(registry?.resourceCount ?? null);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Something went wrong loading the catalog.";
+      setError(message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  const loadSettings = useCallback(async () => {
+    const loadedUrl = await initializeApiBaseUrl();
+    setApiBaseUrlState(loadedUrl);
+    setApiUrlInput(loadedUrl);
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      await loadSettings();
+      await loadData();
+    })();
+  }, [loadSettings, loadData]);
+
+  const handleSaveApiUrl = useCallback(async () => {
+    try {
+      const savedUrl = await setApiBaseUrl(apiUrlInput);
+      setApiBaseUrlState(savedUrl);
+      setApiUrlInput(savedUrl);
+      setToast("API base URL saved");
+      setSettingsOpen(false);
+      void loadData();
+    } catch {
+      setToast("Unable to save API base URL");
+    }
+  }, [apiUrlInput, loadData]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const filteredResources = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return resources;
+    return resources.filter((resource) => resource.title.toLowerCase().includes(query));
+  }, [resources, search]);
+
+  function renderEmpty() {
+    if (loading) return null;
+
+    return (
+      <View style={styles.emptyState}>
+        <Text style={styles.emptyTitle}>
+          {resources.length > 0 ? "No matches" : "The catalog is empty"}
+        </Text>
+        <Text style={styles.emptyBody}>
+          {resources.length > 0
+            ? "Try a different search term."
+            : "No resources have been published yet. Connect to a running MindVault server to browse the vault."}
+        </Text>
+      </View>
+    );
+  }
 
 export default function App() {
   return (
@@ -21,16 +128,21 @@ export default function App() {
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <View>
-              <Text style={typography.title}>MindVault</Text>
-              <Text style={typography.subtitle}>
-                Payment-protected digital resources on Stellar
-              </Text>
-              {registryCount !== null ? (
-                <Text style={styles.registry}>
-                  {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
+            <View style={styles.headerTop}>
+              <View>
+                <Text style={typography.title}>MindVault</Text>
+                <Text style={typography.subtitle}>
+                  Payment-protected digital resources on Stellar
                 </Text>
-              ) : null}
+                {registryCount !== null ? (
+                  <Text style={styles.registry}>
+                    {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
+                  </Text>
+                ) : null}
+              </View>
+              <Pressable style={[shared.button, styles.settingsButton]} onPress={() => setSettingsOpen(true)}>
+                <Text style={shared.buttonText}>Settings</Text>
+              </Pressable>
             </View>
 
             <TextInput
@@ -44,7 +156,7 @@ export default function App() {
               clearButtonMode="while-editing"
             />
 
-            <Text style={styles.apiHint}>API: {getApiBaseUrl()}</Text>
+            <Text style={styles.apiHint}>API: {apiBaseUrl || "Loading…"}</Text>
 
             {error ? (
               <View style={styles.errorBanner}>
@@ -68,16 +180,49 @@ export default function App() {
             ) : null}
           </View>
         }
-        renderItem={({ item }) => (
-          <ResourceCard 
-            resource={item} 
-            onCopyUrl={setToast}
-            onRegister={handleRegister}
-          />
-        )}
+        renderItem={({ item }) => <ResourceCard resource={item} onCopyUrl={setToast} />}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={renderEmpty}
       />
+
+      <Modal
+        visible={settingsOpen}
+        animationType="slide"
+        onRequestClose={() => setSettingsOpen(false)}
+        transparent
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <Text style={typography.title}>Settings</Text>
+            <Text style={[typography.body, styles.modalNote]}>
+              The app saves an API base URL here. For physical devices, use your machine's LAN IP
+              instead of localhost.
+            </Text>
+            <TextInput
+              value={apiUrlInput}
+              onChangeText={setApiUrlInput}
+              placeholder="http://localhost:4021"
+              placeholderTextColor={colors.textSubtle}
+              style={[styles.searchInput, styles.apiInput]}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+            />
+            <Text style={styles.apiHint}>Current base URL: {apiBaseUrl || "Loading…"}</Text>
+            <View style={styles.modalButtons}>
+              <Pressable style={[shared.button, styles.modalButton]} onPress={() => setSettingsOpen(false)}>
+                <Text style={shared.buttonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[shared.button, shared.primaryButton, styles.modalButton]}
+                onPress={handleSaveApiUrl}
+              >
+                <Text style={[shared.buttonText, shared.primaryButtonText]}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {toast ? (
         <View
@@ -110,6 +255,15 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  },
+  settingsButton: {
+    alignSelf: "flex-start",
+  },
   registry: {
     marginTop: spacing.xs,
     fontSize: 13,
@@ -125,6 +279,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: colors.text,
+  },
+  apiInput: {
+    marginTop: spacing.sm,
   },
   apiHint: {
     fontSize: 11,
@@ -196,5 +353,30 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 14,
     fontWeight: "500",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+  },
+  modalButton: {
+    minWidth: 88,
+    alignItems: "center",
+  },
+  modalNote: {
+    color: colors.textMuted,
+    lineHeight: 20,
   },
 });
