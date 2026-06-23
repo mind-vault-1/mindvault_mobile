@@ -1,12 +1,15 @@
 import * as Clipboard from "expo-clipboard";
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { Resource } from "../types";
 import { colors, shared, typography } from "../theme";
+import { PaywallModal } from "./PaywallModal";
 
 interface ResourceCardProps {
   resource: Resource;
   onCopyUrl: (message: string) => void;
+  onRegister?: (resource: Resource) => void;
 }
 
 function shortenAddress(address: string): string {
@@ -38,9 +41,10 @@ function onchainStyle(status: Resource["onchainStatus"]) {
   }
 }
 
-export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
+export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardProps) {
   const verification = verificationStyle(resource.verificationStatus);
   const onchain = onchainStyle(resource.onchainStatus);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   async function handleCopy() {
     await Clipboard.setStringAsync(resource.accessUrl);
@@ -60,12 +64,22 @@ export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
       </Text>
 
       <View style={styles.badges}>
-        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
+        <View
+          style={[shared.badge, { backgroundColor: verification.backgroundColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`Verification status: ${resource.verificationStatus}`}
+        >
           <Text style={[shared.badgeText, { color: verification.color }]}>
             {resource.verificationStatus}
           </Text>
         </View>
-        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
+        <View
+          style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`On-chain status: ${
+            resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus
+          }`}
+        >
           <Text style={[shared.badgeText, { color: onchain.color }]}>
             {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
           </Text>
@@ -74,10 +88,24 @@ export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
 
       <View style={styles.footer}>
         <Text style={typography.price}>{resource.price} USDC</Text>
-        <Pressable onPress={handleCopy} style={shared.button}>
+        <Pressable
+          onPress={handleCopy}
+          style={shared.button}
+          accessibilityRole="button"
+          accessibilityLabel={`Copy URL for ${resource.title}`}
+          accessibilityHint="Copies the resource access URL to your clipboard"
+        >
           <Text style={shared.buttonText}>Copy URL</Text>
         </Pressable>
       </View>
+
+      <PaywallModal
+        visible={paywallOpen}
+        accessUrl={resource.accessUrl}
+        resourceTitle={resource.title}
+        price={resource.price}
+        onClose={() => setPaywallOpen(false)}
+      />
     </View>
   );
 }
@@ -93,5 +121,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 4,
+  },
+  actions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  registerBtn: {
+    backgroundColor: colors.primary,
   },
 });
