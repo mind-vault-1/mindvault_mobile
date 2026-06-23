@@ -124,7 +124,12 @@ export default function App() {
             {error ? (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{error}</Text>
-                <Pressable onPress={() => void loadData()} style={styles.retryButton}>
+                <Pressable
+                  onPress={() => void loadData()}
+                  style={styles.retryButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry loading the catalog"
+                >
                   <Text style={styles.retryText}>Retry</Text>
                 </Pressable>
               </View>
@@ -146,7 +151,11 @@ export default function App() {
       />
 
       {toast ? (
-        <View style={styles.toast}>
+        <View
+          style={styles.toast}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
           <Text style={styles.toastText}>{toast}</Text>
         </View>
       ) : null}
@@ -202,6 +211,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    minHeight: 44,
+    justifyContent: "center",
   },
   retryText: {
     color: "#ffffff",
