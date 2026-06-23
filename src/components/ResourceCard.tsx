@@ -1,8 +1,10 @@
 import * as Clipboard from "expo-clipboard";
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { Resource } from "../types";
 import { colors, shared, typography } from "../theme";
+import { PaywallModal } from "./PaywallModal";
 
 interface ResourceCardProps {
   resource: Resource;
@@ -42,6 +44,7 @@ function onchainStyle(status: Resource["onchainStatus"]) {
 export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardProps) {
   const verification = verificationStyle(resource.verificationStatus);
   const onchain = onchainStyle(resource.onchainStatus);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   async function handleCopy() {
     await Clipboard.setStringAsync(resource.accessUrl);
@@ -95,6 +98,14 @@ export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardPr
           <Text style={shared.buttonText}>Copy URL</Text>
         </Pressable>
       </View>
+
+      <PaywallModal
+        visible={paywallOpen}
+        accessUrl={resource.accessUrl}
+        resourceTitle={resource.title}
+        price={resource.price}
+        onClose={() => setPaywallOpen(false)}
+      />
     </View>
   );
 }
