@@ -1,6 +1,7 @@
 import Constants from "expo-constants";
 
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
+import { logError } from "../utils/logger";
 
 const API_BASE =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? "http://localhost:4021";
@@ -22,19 +23,29 @@ function buildQuery(filters?: CatalogFilters): string {
 }
 
 export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]> {
-  const res = await fetch(`${API_BASE}/resources${buildQuery(filters)}`);
-  if (!res.ok) {
-    throw new Error("Failed to fetch catalog");
+  try {
+    const res = await fetch(`${API_BASE}/resources${buildQuery(filters)}`);
+    if (!res.ok) {
+      throw new Error("Failed to fetch catalog");
+    }
+    return res.json();
+  } catch (err) {
+    logError("fetchCatalog", err);
+    throw err;
   }
-  return res.json();
 }
 
 export async function fetchRegistryStatus(): Promise<RegistryStatus> {
-  const res = await fetch(`${API_BASE}/registry/status`);
-  if (!res.ok) {
-    throw new Error("Failed to fetch registry status");
+  try {
+    const res = await fetch(`${API_BASE}/registry/status`);
+    if (!res.ok) {
+      throw new Error("Failed to fetch registry status");
+    }
+    return res.json();
+  } catch (err) {
+    logError("fetchRegistryStatus", err);
+    throw err;
   }
-  return res.json();
 }
 
 export function getApiBaseUrl(): string {
