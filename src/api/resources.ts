@@ -2,6 +2,7 @@ import { loadApiBaseUrl, saveApiBaseUrl } from "./apiSettings";
 import Constants from "expo-constants";
 
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
+import { logError } from "../utils/errorLogger";
 
 const DEFAULT_API_BASE_URL =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? "http://localhost:4021";
@@ -49,6 +50,15 @@ export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]
   if (!res.ok) {
     throw new Error("Failed to fetch catalog");
   }
+}
+
+export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]> {
+  return request<Resource[]>(`/resources${buildQuery(filters)}`, "Failed to fetch catalog");
+}
+
+export async function fetchResource(id: string): Promise<Resource> {
+  const res = await fetch(`${API_BASE}/resources/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("Resource not found");
   return res.json();
 }
 
