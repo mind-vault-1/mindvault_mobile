@@ -1,7 +1,16 @@
 import * as Clipboard from "expo-clipboard";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import type { Resource } from "../types";
+import { useEditPrice } from "../hooks/useEditPrice";
 import { colors, shared, typography } from "../theme";
 
 interface ResourceCardProps {
@@ -41,11 +50,37 @@ function onchainStyle(status: Resource["onchainStatus"]) {
 export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
   const verification = verificationStyle(resource.verificationStatus);
   const onchain = onchainStyle(resource.onchainStatus);
+  const { status, error, editPrice, resetError } = useEditPrice();
+  const [editing, setEditing] = useState(false);
+  const [newPrice, setNewPrice] = useState(resource.price);
+  const [secretKey, setSecretKey] = useState("");
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   async function handleCopy() {
     await Clipboard.setStringAsync(resource.accessUrl);
     onCopyUrl("Resource URL copied");
   }
+
+  async function handleSavePrice() {
+    resetError();
+    setSuccessMessage(null);
+    const ok = await editPrice(resource.id, newPrice, secretKey);
+    if (ok) {
+      setSuccessMessage("Price edit submitted.");
+      setEditing(false);
+      setSecretKey("");
+    }
+  }
+
+  const isBusy = status !== "idle";
+  const statusLabel =
+    status === "preparing"
+      ? "Preparing transaction…"
+      : status === "signing"
+      ? "Signing transaction…"
+      : status === "submitting"
+      ? "Submitting transaction…"
+      : null;
 
   return (
     <View style={shared.card}>
@@ -60,13 +95,13 @@ export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
       </Text>
 
       <View style={styles.badges}>
-        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
-          <Text style={[shared.badgeText, { color: verification.color }]}>
+        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}> 
+          <Text style={[shared.badgeText, { color: verification.color }]}> 
             {resource.verificationStatus}
           </Text>
         </View>
-        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
-          <Text style={[shared.badgeText, { color: onchain.color }]}>
+        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}> 
+          <Text style={[shared.badgeText, { color: onchain.color }]}> 
             {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
           </Text>
         </View>
@@ -78,9 +113,63 @@ export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
           <Text style={shared.buttonText}>Copy URL</Text>
         </Pressable>
       </View>
-    </View>
-  );
-}
+
+      {editing ? (
+        <View style={styles.editor}>
+          <TextInput
+            value={newPrice}
+            onChangeText={setNewPrice}
+            placeholder="New price"
+            placeholderTextColor={colors.textSubtle}
+            keyboardType="numeric"
+            style={styles.input}
+            editable={!isBusy}
+          />
+          <TextInput
+            value={secretKey}
+            onChangeText={setSecretKey}
+            placeholder="Stellar secret key"
+            placeholderTextColor={colors.textSubtle}
+            secureTextEntry
+            style={styles.input}
+            editable={!isBusy}
+          />
+          <View style={styles.actionRow}>
+            <Pressable
+              onPress={() => setEditing(false)}
+              style={[shared.button, styles.secondaryButton]}
+              disabled={isBusy}
+            >
+              <Text style={shared.buttonText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={handleSavePrice}
+              style={[
+                shared.button,
+                styles.primaryButton,
+                isBusy ? styles.disabledButton : null,
+              ]}
+              disabled={isBusy || !newPrice || !secretKey}
+            >
+              {isBusy ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={[shared.buttonText, styles.primaryButtonText]}>Save Price</Text>
+              )}
+            </Pressable>
+          </View>
+          {statusLabel ? <Text style={styles.statusText}>{statusLabel}</Text> : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
+        </View>
+      ) : (
+        <Pressable
+          onPress={() => setEditing(true)}
+          style={[shared.button, styles.editButton]}
+        >
+          <Text style={shared.buttonText}>Edit price</Text>
+        </Pressable>
+      )}
 
 const styles = StyleSheet.create({
   badges: {
@@ -93,5 +182,51 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 4,
+  },
+  editor: {
+    marginTop: 16,
+    gap: 10,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 14,
+  },
+  actionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  primaryButton: {
+    backgroundColor: colors.primary,
+  },
+  primaryButtonText: {
+    color: "#ffffff",
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  statusText: {
+    color: colors.primary,
+    fontSize: 13,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 13,
+  },
+  successText: {
+    color: colors.success,
+    fontSize: 13,
+  },
+  editButton: {
+    marginTop: 12,
+  },
+  secondaryButton: {
+    backgroundColor: colors.neutralBg,
   },
 });
