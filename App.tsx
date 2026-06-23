@@ -69,7 +69,11 @@ export default function App() {
           </View>
         }
         renderItem={({ item }) => (
-          <ResourceCard resource={item} onCopyUrl={setToast} />
+          <ResourceCard 
+            resource={item} 
+            onCopyUrl={setToast}
+            onRegister={handleRegister}
+          />
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={renderEmpty}
@@ -84,6 +88,14 @@ export default function App() {
           <Text style={styles.toastText}>{toast}</Text>
         </View>
       ) : null}
+
+      <RegisterModal
+        visible={registerModalVisible}
+        resource={selectedResource}
+        onClose={handleCloseRegisterModal}
+        onSuccess={handleRegisterSuccess}
+        onError={handleRegisterError}
+      />
     </SafeAreaView>
   );
 }
