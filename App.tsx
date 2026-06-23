@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -12,7 +13,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
-import { fetchCatalog, fetchRegistryStatus, getApiBaseUrl } from "./src/api/resources";
+import {
+  fetchCatalog,
+  fetchRegistryStatus,
+  initializeApiBaseUrl,
+  setApiBaseUrl,
+} from "./src/api/resources";
 import { ResourceCard } from "./src/components/ResourceCard";
 import type { Resource } from "./src/types";
 import { colors, shared, spacing, typography } from "./src/theme";
@@ -25,6 +31,9 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [apiBaseUrl, setApiBaseUrlState] = useState<string>("");
+  const [apiUrlInput, setApiUrlInput] = useState<string>("");
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -51,9 +60,31 @@ export default function App() {
     }
   }, []);
 
+  const loadSettings = useCallback(async () => {
+    const loadedUrl = await initializeApiBaseUrl();
+    setApiBaseUrlState(loadedUrl);
+    setApiUrlInput(loadedUrl);
+  }, []);
+
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    void (async () => {
+      await loadSettings();
+      await loadData();
+    })();
+  }, [loadSettings, loadData]);
+
+  const handleSaveApiUrl = useCallback(async () => {
+    try {
+      const savedUrl = await setApiBaseUrl(apiUrlInput);
+      setApiBaseUrlState(savedUrl);
+      setApiUrlInput(savedUrl);
+      setToast("API base URL saved");
+      setSettingsOpen(false);
+      void loadData();
+    } catch {
+      setToast("Unable to save API base URL");
+    }
+  }, [apiUrlInput, loadData]);
 
   useEffect(() => {
     if (!toast) return;
@@ -96,16 +127,21 @@ export default function App() {
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <View>
-              <Text style={typography.title}>MindVault</Text>
-              <Text style={typography.subtitle}>
-                Payment-protected digital resources on Stellar
-              </Text>
-              {registryCount !== null ? (
-                <Text style={styles.registry}>
-                  {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
+            <View style={styles.headerTop}>
+              <View>
+                <Text style={typography.title}>MindVault</Text>
+                <Text style={typography.subtitle}>
+                  Payment-protected digital resources on Stellar
                 </Text>
-              ) : null}
+                {registryCount !== null ? (
+                  <Text style={styles.registry}>
+                    {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
+                  </Text>
+                ) : null}
+              </View>
+              <Pressable style={[shared.button, styles.settingsButton]} onPress={() => setSettingsOpen(true)}>
+                <Text style={shared.buttonText}>Settings</Text>
+              </Pressable>
             </View>
 
             <TextInput
@@ -119,7 +155,7 @@ export default function App() {
               clearButtonMode="while-editing"
             />
 
-            <Text style={styles.apiHint}>API: {getApiBaseUrl()}</Text>
+            <Text style={styles.apiHint}>API: {apiBaseUrl || "Loading…"}</Text>
 
             {error ? (
               <View style={styles.errorBanner}>
@@ -138,12 +174,49 @@ export default function App() {
             ) : null}
           </View>
         }
-        renderItem={({ item }) => (
-          <ResourceCard resource={item} onCopyUrl={setToast} />
-        )}
+        renderItem={({ item }) => <ResourceCard resource={item} onCopyUrl={setToast} />}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={renderEmpty}
       />
+
+      <Modal
+        visible={settingsOpen}
+        animationType="slide"
+        onRequestClose={() => setSettingsOpen(false)}
+        transparent
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <Text style={typography.title}>Settings</Text>
+            <Text style={[typography.body, styles.modalNote]}>
+              The app saves an API base URL here. For physical devices, use your machine's LAN IP
+              instead of localhost.
+            </Text>
+            <TextInput
+              value={apiUrlInput}
+              onChangeText={setApiUrlInput}
+              placeholder="http://localhost:4021"
+              placeholderTextColor={colors.textSubtle}
+              style={[styles.searchInput, styles.apiInput]}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+            />
+            <Text style={styles.apiHint}>Current base URL: {apiBaseUrl || "Loading…"}</Text>
+            <View style={styles.modalButtons}>
+              <Pressable style={[shared.button, styles.modalButton]} onPress={() => setSettingsOpen(false)}>
+                <Text style={shared.buttonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[shared.button, shared.primaryButton, styles.modalButton]}
+                onPress={handleSaveApiUrl}
+              >
+                <Text style={[shared.buttonText, shared.primaryButtonText]}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {toast ? (
         <View style={styles.toast}>
@@ -164,6 +237,15 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  },
+  settingsButton: {
+    alignSelf: "flex-start",
+  },
   registry: {
     marginTop: spacing.xs,
     fontSize: 13,
@@ -179,6 +261,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: colors.text,
+  },
+  apiInput: {
+    marginTop: spacing.sm,
   },
   apiHint: {
     fontSize: 11,
@@ -248,5 +333,30 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 14,
     fontWeight: "500",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+  },
+  modalButton: {
+    minWidth: 88,
+    alignItems: "center",
+  },
+  modalNote: {
+    color: colors.textMuted,
+    lineHeight: 20,
   },
 });
