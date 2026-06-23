@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -15,6 +14,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { fetchCatalog, fetchRegistryStatus, getApiBaseUrl } from "../api/resources";
 import { ResourceCard } from "../components/ResourceCard";
+import { SkeletonCard } from "../components/SkeletonCard";
 import type { RootStackParamList } from "../navigation";
 import type { Resource } from "../types";
 import { colors, shared, spacing, typography } from "../theme";
@@ -94,7 +94,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
       <StatusBar style="dark" />
       <FlatList
-        data={filteredResources}
+        data={loading ? null : filteredResources}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
@@ -137,9 +137,10 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
             ) : null}
 
             {loading ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={typography.body}>Loading catalog…</Text>
+              <View style={styles.skeletons}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <SkeletonCard key={i} />
+                ))}
               </View>
             ) : null}
           </View>
@@ -221,10 +222,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 13,
   },
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
+  skeletons: {
+    gap: 12,
   },
   separator: {
     height: spacing.md,
