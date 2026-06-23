@@ -1,7 +1,16 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "jsx": "react-native",
+    "lib": ["ES2019", "DOM"],
+    "target": "ES2019",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "skipLibCheck": true
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }
