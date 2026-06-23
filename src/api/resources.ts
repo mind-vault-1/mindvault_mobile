@@ -39,6 +39,12 @@ export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]
   return request<Resource[]>(`/resources${buildQuery(filters)}`, "Failed to fetch catalog");
 }
 
+export async function fetchResource(id: string): Promise<Resource> {
+  const res = await fetch(`${API_BASE}/resources/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("Resource not found");
+  return res.json();
+}
+
 export async function fetchRegistryStatus(): Promise<RegistryStatus> {
   return request<RegistryStatus>("/registry/status", "Failed to fetch registry status");
 }
