@@ -14,6 +14,7 @@ import { StatusBar } from "expo-status-bar";
 
 import { fetchCatalog, fetchRegistryStatus, getApiBaseUrl } from "./src/api/resources";
 import { ResourceCard } from "./src/components/ResourceCard";
+import { RegisterModal } from "./src/components/RegisterModal";
 import type { Resource } from "./src/types";
 import { colors, shared, spacing, typography } from "./src/theme";
 
@@ -25,6 +26,8 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [registerModalVisible, setRegisterModalVisible] = useState(false);
+  const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -66,6 +69,27 @@ export default function App() {
     if (!query) return resources;
     return resources.filter((resource) => resource.title.toLowerCase().includes(query));
   }, [resources, search]);
+
+  function handleRegister(resource: Resource) {
+    setSelectedResource(resource);
+    setRegisterModalVisible(true);
+  }
+
+  function handleRegisterSuccess(message: string) {
+    setToast(message);
+    setRegisterModalVisible(false);
+    // Refresh to get updated onchain status
+    void loadData(true);
+  }
+
+  function handleRegisterError(message: string) {
+    setToast(message);
+  }
+
+  function handleCloseRegisterModal() {
+    setRegisterModalVisible(false);
+    setSelectedResource(null);
+  }
 
   function renderEmpty() {
     if (loading) return null;
@@ -139,7 +163,11 @@ export default function App() {
           </View>
         }
         renderItem={({ item }) => (
-          <ResourceCard resource={item} onCopyUrl={setToast} />
+          <ResourceCard 
+            resource={item} 
+            onCopyUrl={setToast}
+            onRegister={handleRegister}
+          />
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={renderEmpty}
@@ -150,6 +178,14 @@ export default function App() {
           <Text style={styles.toastText}>{toast}</Text>
         </View>
       ) : null}
+
+      <RegisterModal
+        visible={registerModalVisible}
+        resource={selectedResource}
+        onClose={handleCloseRegisterModal}
+        onSuccess={handleRegisterSuccess}
+        onError={handleRegisterError}
+      />
     </SafeAreaView>
   );
 }

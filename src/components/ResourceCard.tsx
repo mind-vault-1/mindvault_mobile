@@ -7,6 +7,7 @@ import { colors, shared, typography } from "../theme";
 interface ResourceCardProps {
   resource: Resource;
   onCopyUrl: (message: string) => void;
+  onRegister?: (resource: Resource) => void;
 }
 
 function shortenAddress(address: string): string {
@@ -38,7 +39,7 @@ function onchainStyle(status: Resource["onchainStatus"]) {
   }
 }
 
-export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
+export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardProps) {
   const verification = verificationStyle(resource.verificationStatus);
   const onchain = onchainStyle(resource.onchainStatus);
 
@@ -74,9 +75,16 @@ export function ResourceCard({ resource, onCopyUrl }: ResourceCardProps) {
 
       <View style={styles.footer}>
         <Text style={typography.price}>{resource.price} USDC</Text>
-        <Pressable onPress={handleCopy} style={shared.button}>
-          <Text style={shared.buttonText}>Copy URL</Text>
-        </Pressable>
+        <View style={styles.actions}>
+          {resource.onchainStatus === "none" && onRegister && (
+            <Pressable onPress={() => onRegister(resource)} style={[shared.button, styles.registerBtn]}>
+              <Text style={shared.buttonText}>Register</Text>
+            </Pressable>
+          )}
+          <Pressable onPress={handleCopy} style={shared.button}>
+            <Text style={shared.buttonText}>Copy URL</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -93,5 +101,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 4,
+  },
+  actions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  registerBtn: {
+    backgroundColor: colors.primary,
   },
 });

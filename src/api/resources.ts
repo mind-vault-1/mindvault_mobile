@@ -40,3 +40,43 @@ export async function fetchRegistryStatus(): Promise<RegistryStatus> {
 export function getApiBaseUrl(): string {
   return API_BASE;
 }
+
+export interface RegisterPrepareResponse {
+  xdr: string;
+  networkPassphrase: string;
+}
+
+export interface RegisterResponse {
+  txHash: string;
+  success: boolean;
+}
+
+export async function prepareRegister(resourceId: string): Promise<RegisterPrepareResponse> {
+  const res = await fetch(`${API_BASE}/resources/${resourceId}/register/prepare`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  if (!res.ok) {
+    throw new Error("Failed to prepare registration");
+  }
+  return res.json();
+}
+
+export async function submitRegister(
+  resourceId: string,
+  signedXdr: string
+): Promise<RegisterResponse> {
+  const res = await fetch(`${API_BASE}/resources/${resourceId}/register`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ signedXdr }),
+  });
+  if (!res.ok) {
+    throw new Error("Failed to submit registration");
+  }
+  return res.json();
+}
