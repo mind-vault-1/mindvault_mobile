@@ -10,6 +10,7 @@ import {
 import { colors, shared, spacing, typography } from "../theme";
 import { useTransferOwnership } from "../hooks/useTransferOwnership";
 import type { Resource } from "../types";
+import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 
 interface TransferOwnershipModalProps {
   resource: Resource;
@@ -46,6 +47,14 @@ export function TransferOwnershipModal({
 
   const isProcessing = ["preparing", "signing", "submitting"].includes(step);
   const isDone = step === "done";
+
+  function handleOpenExplorer() {
+    if (!txHash) return;
+    const url = stellarExpertTxUrl({ txHash });
+    openExternalUrl(url).catch(() => {
+      // no-op; this modal doesn't have an error callback and should remain usable
+    });
+  }
 
   function handleClose() {
     reset();
@@ -133,9 +142,11 @@ export function TransferOwnershipModal({
             <View style={styles.successContainer}>
               <Text style={styles.successText}>✓ {STEP_LABELS.done}</Text>
               {txHash ? (
-                <Text style={styles.txHash} numberOfLines={1} ellipsizeMode="middle">
-                  Tx: {txHash}
-                </Text>
+                <Pressable onPress={handleOpenExplorer}>
+                  <Text style={styles.txHash} numberOfLines={1} ellipsizeMode="middle">
+                    Tx: {txHash}
+                  </Text>
+                </Pressable>
               ) : null}
               <Pressable
                 onPress={handleSuccess}

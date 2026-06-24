@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -13,6 +12,7 @@ import {
 import { prepareRegister, submitRegister } from "../api/resources";
 import type { Resource } from "../types";
 import { colors, shared, typography } from "../theme";
+import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 
 interface RegisterModalProps {
   visible: boolean;
@@ -86,11 +86,8 @@ export function RegisterModal({
 
   function handleOpenExplorer() {
     if (!txHash) return;
-    // Stellar testnet explorer - update for mainnet if needed
-    const explorerUrl = `https://stellar.expert/explorer/testnet/tx/${txHash}`;
-    Linking.openURL(explorerUrl).catch(() => {
-      onError("Failed to open explorer");
-    });
+    const explorerUrl = stellarExpertTxUrl({ txHash });
+    openExternalUrl(explorerUrl).catch(() => onError("Failed to open explorer"));
   }
 
   function handleClose() {
@@ -148,9 +145,11 @@ export function RegisterModal({
               <Text style={[typography.body, styles.successText]}>✓ Registration successful!</Text>
               <View style={styles.txHashContainer}>
                 <Text style={typography.caption}>Transaction Hash:</Text>
-                <Text style={[typography.caption, styles.txHash]} numberOfLines={1}>
-                  {txHash}
-                </Text>
+                <Pressable onPress={handleOpenExplorer}>
+                  <Text style={[typography.caption, styles.txHash]} numberOfLines={1}>
+                    {txHash}
+                  </Text>
+                </Pressable>
               </View>
             </View>
             <View style={styles.actions}>

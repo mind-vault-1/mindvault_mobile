@@ -15,6 +15,7 @@ import { fetchResource } from "../api/resources";
 import type { RootStackParamList } from "../navigation";
 import type { Resource } from "../types";
 import { colors, shared, spacing, typography } from "../theme";
+import { openExternalUrl, stellarExpertAccountUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ResourceDetail">;
 
@@ -90,6 +91,18 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     }
   }
 
+  function handleOpenOwner() {
+    if (!resource) return;
+    const url = stellarExpertAccountUrl({ accountId: resource.walletAddress });
+    openExternalUrl(url).catch(() => setToast("Unable to open explorer"));
+  }
+
+  function handleOpenTx() {
+    if (!resource?.onchainTxHash) return;
+    const url = stellarExpertTxUrl({ txHash: resource.onchainTxHash });
+    openExternalUrl(url).catch(() => setToast("Unable to open explorer"));
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={shared.screen} edges={["bottom"]}>
@@ -152,10 +165,27 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
 
         <View style={styles.infoRow}>
           <Text style={styles.label}>Owner</Text>
-          <Text style={typography.body}>
-            {shortenAddress(resource.walletAddress)}
-          </Text>
+          <Pressable onPress={handleOpenOwner}>
+            <Text style={[typography.body, styles.linkText]}>
+              {shortenAddress(resource.walletAddress)}
+            </Text>
+          </Pressable>
         </View>
+
+        {resource.onchainTxHash ? (
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Tx</Text>
+            <Pressable onPress={handleOpenTx}>
+              <Text
+                style={[typography.body, styles.linkText, styles.mono]}
+                numberOfLines={1}
+                ellipsizeMode="middle"
+              >
+                {resource.onchainTxHash}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={styles.infoRow}>
           <Text style={styles.label}>Type</Text>
@@ -238,6 +268,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSubtle,
     lineHeight: 18,
+  },
+  linkText: {
+    color: colors.primary,
+  },
+  mono: {
+    fontFamily: "monospace",
+    fontSize: 12,
+    maxWidth: 220,
   },
   toast: {
     position: "absolute",
