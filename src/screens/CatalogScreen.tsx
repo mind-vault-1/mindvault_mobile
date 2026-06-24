@@ -269,7 +269,13 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
           </View>
         }
         renderItem={({ item }) => (
-          <ResourceCard resource={item} onCopyUrl={setToast} />
+          <ResourceCard
+            resource={item}
+            onCopyUrl={setToast}
+            onPress={() =>
+              navigation.navigate("ResourceDetail", { resourceId: item.id })
+            }
+          />
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={renderEmpty}
@@ -290,3 +296,93 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  listContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+    gap: spacing.md,
+  },
+  header: {
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  registry: {
+    marginTop: spacing.xs,
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.primary,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.text,
+  },
+  apiHint: {
+    fontSize: 11,
+    color: colors.textSubtle,
+  },
+  skeletons: {
+    gap: 12,
+  },
+  separator: {
+    height: spacing.md,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: spacing.xxl,
+    gap: spacing.sm,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  emptyBody: {
+    textAlign: "center",
+    fontSize: 14,
+    color: colors.textMuted,
+    maxWidth: 320,
+    lineHeight: 20,
+  },
+  fab: {
+    position: "absolute",
+    right: spacing.lg,
+    bottom: spacing.xl,
+    backgroundColor: colors.primary,
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  fabText: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  toast: {
+    position: "absolute",
+    bottom: spacing.xl,
+    left: spacing.lg,
+    right: spacing.lg,
+    backgroundColor: colors.text,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  toastText: {
+    color: "#ffffff",
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+});
