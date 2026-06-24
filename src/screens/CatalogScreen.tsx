@@ -13,6 +13,7 @@ import { StatusBar } from "expo-status-bar";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { fetchCatalog, fetchRegistryStatus, getApiBaseUrl } from "../api/resources";
+import { ErrorBanner } from "../components/ErrorBanner";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import type { RootStackParamList } from "../navigation";
@@ -128,12 +129,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
             <Text style={styles.apiHint}>API: {getApiBaseUrl()}</Text>
 
             {error ? (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>{error}</Text>
-                <Pressable onPress={() => void loadData()} style={styles.retryButton}>
-                  <Text style={styles.retryText}>Retry</Text>
-                </Pressable>
-              </View>
+              <ErrorBanner message={error} onRetry={() => void loadData()} />
             ) : null}
 
             {loading ? (
@@ -203,30 +199,6 @@ const styles = StyleSheet.create({
   apiHint: {
     fontSize: 11,
     color: colors.textSubtle,
-  },
-  errorBanner: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#fecaca",
-    backgroundColor: "#fef2f2",
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 14,
-  },
-  retryButton: {
-    alignSelf: "flex-start",
-    borderRadius: 8,
-    backgroundColor: colors.danger,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  retryText: {
-    color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 13,
   },
   skeletons: {
     gap: 12,

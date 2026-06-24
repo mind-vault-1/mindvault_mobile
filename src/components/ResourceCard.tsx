@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -63,6 +64,20 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
     onCopyUrl("Resource URL copied");
   }
 
+  /**
+   * Opens the native iOS/Android share sheet with the resource title and URL.
+   * - `message` is used on Android (plain text share).
+   * - `url` is used on iOS (triggers the URL sharing path in the share sheet).
+   * Both are included so the shared content always contains title + URL.
+   */
+  async function handleShare() {
+    await Share.share({
+      title: resource.title,
+      message: `${resource.title}\n${resource.accessUrl}`,
+      url: resource.accessUrl,
+    });
+  }
+
   async function handleSavePrice() {
     resetError();
     setSuccessMessage(null);
@@ -85,33 +100,35 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
       : null;
 
   return (
-    <Pressable onPress={onPress} disabled={!onPress}>
-      <View style={shared.card}>
-        <Text style={typography.cardTitle}>{resource.title}</Text>
+    <View style={shared.card}>
+      <Text style={typography.cardTitle}>{resource.title}</Text>
 
-        {resource.publisherName ? (
-          <Text style={typography.body}>by {resource.publisherName}</Text>
-        ) : null}
+      {resource.publisherName ? (
+        <Text style={typography.body}>by {resource.publisherName}</Text>
+      ) : null}
 
-        <Text style={typography.caption}>
-          Owner: {shortenAddress(resource.walletAddress)}
-        </Text>
+      <Text style={typography.caption}>
+        Owner: {shortenAddress(resource.walletAddress)}
+      </Text>
 
-        <View style={styles.badges}>
-          <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
-            <Text style={[shared.badgeText, { color: verification.color }]}>
-              {resource.verificationStatus}
-            </Text>
-          </View>
-          <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
-            <Text style={[shared.badgeText, { color: onchain.color }]}>
-              {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
-            </Text>
-          </View>
+      <View style={styles.badges}>
+        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
+          <Text style={[shared.badgeText, { color: verification.color }]}>
+            {resource.verificationStatus}
+          </Text>
+        </View>
+        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
+          <Text style={[shared.badgeText, { color: onchain.color }]}>
+            {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
+          </Text>
         </View>
 
-        <View style={styles.footer}>
-          <Text style={typography.price}>{resource.price} USDC</Text>
+      <View style={styles.footer}>
+        <Text style={typography.price}>{resource.price} USDC</Text>
+        <View style={styles.actions}>
+          <Pressable onPress={handleShare} style={[shared.button, styles.shareButton]}>
+            <Text style={shared.buttonText}>Share</Text>
+          </Pressable>
           <Pressable
             onPress={handleCopy}
             style={shared.button}
@@ -122,6 +139,7 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
             <Text style={shared.buttonText}>Copy URL</Text>
           </Pressable>
         </View>
+      </View>
 
         {editing ? (
           <View style={styles.editor}>
@@ -171,16 +189,19 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
             {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
           </View>
-        ) : (
-          <Pressable
-            onPress={() => setEditing(true)}
-            style={[shared.button, styles.editButton]}
-          >
-            <Text style={shared.buttonText}>Edit price</Text>
-          </Pressable>
-        )}
-      </View>
-    </Pressable>
+          {statusLabel ? <Text style={styles.statusText}>{statusLabel}</Text> : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
+        </View>
+      ) : (
+        <Pressable
+          onPress={() => setEditing(true)}
+          style={[shared.button, styles.editButton]}
+        >
+          <Text style={shared.buttonText}>Edit price</Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -195,6 +216,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 4,
+  },
+  actions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  shareButton: {
+    backgroundColor: colors.primary,
   },
   editor: {
     marginTop: 16,
