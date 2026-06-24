@@ -14,10 +14,14 @@ import { StatusBar } from "expo-status-bar";
 
 import { fetchCatalog, fetchRegistryStatus, getApiBaseUrl } from "./src/api/resources";
 import { ResourceCard } from "./src/components/ResourceCard";
+import { PublisherResourcesScreen } from "./src/components/PublisherResourcesScreen";
 import type { Resource } from "./src/types";
 import { colors, shared, spacing, typography } from "./src/theme";
 
+type Screen = "public" | "publisher";
+
 export default function App() {
+  const [screen, setScreen] = useState<Screen>("public");
   const [resources, setResources] = useState<Resource[]>([]);
   const [registryCount, setRegistryCount] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -84,6 +88,12 @@ export default function App() {
     );
   }
 
+  if (screen === "publisher") {
+    return (
+      <PublisherResourcesScreen onBackToPublic={() => setScreen("public")} />
+    );
+  }
+
   return (
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
       <StatusBar style="dark" />
@@ -96,16 +106,24 @@ export default function App() {
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <View>
-              <Text style={typography.title}>MindVault</Text>
-              <Text style={typography.subtitle}>
-                Payment-protected digital resources on Stellar
-              </Text>
-              {registryCount !== null ? (
-                <Text style={styles.registry}>
-                  {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
+            <View style={styles.titleRow}>
+              <View>
+                <Text style={typography.title}>MindVault</Text>
+                <Text style={typography.subtitle}>
+                  Payment-protected digital resources on Stellar
                 </Text>
-              ) : null}
+                {registryCount !== null ? (
+                  <Text style={styles.registry}>
+                    {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
+                  </Text>
+                ) : null}
+              </View>
+              <Pressable
+                onPress={() => setScreen("publisher")}
+                style={[shared.button, shared.primaryButton]}
+              >
+                <Text style={[shared.buttonText, shared.primaryButtonText]}>Publisher</Text>
+              </Pressable>
             </View>
 
             <TextInput
@@ -163,6 +181,12 @@ const styles = StyleSheet.create({
   header: {
     gap: spacing.md,
     marginBottom: spacing.lg,
+  },
+  titleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: spacing.md,
   },
   registry: {
     marginTop: spacing.xs,

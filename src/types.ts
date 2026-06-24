@@ -24,3 +24,8 @@ export interface CatalogFilters {
 export interface RegistryStatus {
   resourceCount: number;
 }
+
+export interface PublisherResource extends Resource {
+  // Authenticated publisher-specific fields could be added here
+}
+
