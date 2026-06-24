@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -7,7 +8,9 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { colors, shared, spacing, typography } from "../theme";
+import { spacing } from "../theme";
+import type { ThemeColors } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
 import { useTransferOwnership } from "../hooks/useTransferOwnership";
 import type { Resource } from "../types";
 import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
@@ -28,12 +31,109 @@ const STEP_LABELS: Record<string, string> = {
   error: "",
 };
 
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.5)",
+      justifyContent: "flex-end",
+    },
+    sheet: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: spacing.lg,
+      gap: spacing.md,
+      paddingBottom: spacing.xxl,
+    },
+    subtitle: {
+      color: colors.textMuted,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 13,
+      color: colors.text,
+      fontFamily: "monospace",
+    },
+    inputError: {
+      borderColor: colors.danger,
+    },
+    validationHint: {
+      fontSize: 12,
+      color: colors.danger,
+      marginTop: -8,
+    },
+    errorText: {
+      fontSize: 13,
+      color: colors.danger,
+      backgroundColor: colors.dangerBg,
+      borderRadius: 8,
+      padding: 8,
+    },
+    processingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    actions: {
+      flexDirection: "row",
+      gap: 8,
+      marginTop: 8,
+    },
+    cancelButton: {
+      flex: 1,
+      backgroundColor: colors.neutralBg,
+    },
+    cancelText: {
+      color: colors.text,
+      fontWeight: "600",
+      textAlign: "center",
+    },
+    confirmButton: {
+      flex: 1,
+      backgroundColor: colors.primary,
+    },
+    disabledButton: {
+      opacity: 0.4,
+    },
+    successContainer: {
+      gap: 12,
+      alignItems: "center",
+    },
+    successText: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: colors.success,
+    },
+    txHash: {
+      fontSize: 11,
+      fontFamily: "monospace",
+      color: colors.primary,
+      width: "100%",
+      textAlign: "center",
+    },
+  });
+}
+
 export function TransferOwnershipModal({
   resource,
   visible,
   onClose,
   onSuccess,
 }: TransferOwnershipModalProps) {
+  const { colors, shared, typography } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const {
     step,
     error,
@@ -51,9 +151,7 @@ export function TransferOwnershipModal({
   function handleOpenExplorer() {
     if (!txHash) return;
     const url = stellarExpertTxUrl({ txHash });
-    openExternalUrl(url).catch(() => {
-      // no-op; this modal doesn't have an error callback and should remain usable
-    });
+    openExternalUrl(url).catch(() => {});
   }
 
   function handleClose() {
@@ -161,95 +259,3 @@ export function TransferOwnershipModal({
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: spacing.lg,
-    gap: spacing.md,
-    paddingBottom: spacing.xxl,
-  },
-  subtitle: {
-    color: colors.textMuted,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 13,
-    color: colors.text,
-    fontFamily: "monospace",
-  },
-  inputError: {
-    borderColor: colors.danger,
-  },
-  validationHint: {
-    fontSize: 12,
-    color: colors.danger,
-    marginTop: -8,
-  },
-  errorText: {
-    fontSize: 13,
-    color: colors.danger,
-    backgroundColor: "#fef2f2",
-    borderRadius: 8,
-    padding: 8,
-  },
-  processingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  actions: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 8,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: colors.neutralBg,
-  },
-  cancelText: {
-    color: colors.text,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  confirmButton: {
-    flex: 1,
-    backgroundColor: colors.primary,
-  },
-  disabledButton: {
-    opacity: 0.4,
-  },
-  successContainer: {
-    gap: 12,
-    alignItems: "center",
-  },
-  successText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.success,
-  },
-  txHash: {
-    fontSize: 11,
-    fontFamily: "monospace",
-    color: colors.textMuted,
-    width: "100%",
-    textAlign: "center",
-  },
-});

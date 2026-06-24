@@ -1,10 +1,12 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import type { RootStackParamList } from "../navigation";
-import { colors, shared, spacing, typography } from "../theme";
+import { spacing } from "../theme";
+import type { ThemeColors } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
 
 const RESOURCE_URL_RE = /\/resources\/([^\/?#\s]+)/;
 
@@ -12,7 +14,84 @@ interface ScannerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Scanner">;
 }
 
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: "#000",
+    },
+    centered: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: spacing.lg,
+      backgroundColor: colors.background,
+      gap: spacing.md,
+    },
+    heading: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    permissionBody: {
+      textAlign: "center",
+    },
+    overlay: {
+      ...StyleSheet.absoluteFillObject,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    viewfinder: {
+      width: 250,
+      height: 250,
+    },
+    corner: {
+      position: "absolute",
+      width: 30,
+      height: 30,
+      borderColor: "#ffffff",
+    },
+    cornerTopLeft: {
+      top: 0,
+      left: 0,
+      borderTopWidth: 3,
+      borderLeftWidth: 3,
+      borderTopLeftRadius: 4,
+    },
+    cornerTopRight: {
+      top: 0,
+      right: 0,
+      borderTopWidth: 3,
+      borderRightWidth: 3,
+      borderTopRightRadius: 4,
+    },
+    cornerBottomLeft: {
+      bottom: 0,
+      left: 0,
+      borderBottomWidth: 3,
+      borderLeftWidth: 3,
+      borderBottomLeftRadius: 4,
+    },
+    cornerBottomRight: {
+      bottom: 0,
+      right: 0,
+      borderBottomWidth: 3,
+      borderRightWidth: 3,
+      borderBottomRightRadius: 4,
+    },
+    hint: {
+      color: "#ffffff",
+      fontSize: 15,
+      fontWeight: "500",
+      marginTop: spacing.xl,
+    },
+  });
+}
+
 export function ScannerScreen({ navigation }: ScannerScreenProps) {
+  const { colors, shared, typography } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
 
@@ -97,75 +176,3 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: spacing.lg,
-    backgroundColor: colors.background,
-    gap: spacing.md,
-  },
-  heading: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  permissionBody: {
-    textAlign: "center",
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  viewfinder: {
-    width: 250,
-    height: 250,
-  },
-  corner: {
-    position: "absolute",
-    width: 30,
-    height: 30,
-    borderColor: "#ffffff",
-  },
-  cornerTopLeft: {
-    top: 0,
-    left: 0,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderTopLeftRadius: 4,
-  },
-  cornerTopRight: {
-    top: 0,
-    right: 0,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-    borderTopRightRadius: 4,
-  },
-  cornerBottomLeft: {
-    bottom: 0,
-    left: 0,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-    borderBottomLeftRadius: 4,
-  },
-  cornerBottomRight: {
-    bottom: 0,
-    right: 0,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    borderBottomRightRadius: 4,
-  },
-  hint: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "500",
-    marginTop: spacing.xl,
-  },
-});

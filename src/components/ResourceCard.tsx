@@ -1,5 +1,5 @@
 import * as Clipboard from "expo-clipboard";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -11,8 +11,8 @@ import {
 
 import type { Resource } from "../types";
 import { useEditPrice } from "../hooks/useEditPrice";
-import { colors, shared, typography } from "../theme";
-import { PaywallModal } from "./PaywallModal";
+import type { ThemeColors } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
 
 interface ResourceCardProps {
   resource: Resource;
@@ -25,7 +25,7 @@ function shortenAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-function verificationStyle(status: Resource["verificationStatus"]) {
+function verificationStyle(status: Resource["verificationStatus"], colors: ThemeColors) {
   switch (status) {
     case "verified":
       return { backgroundColor: colors.successBg, color: colors.success };
@@ -36,7 +36,7 @@ function verificationStyle(status: Resource["verificationStatus"]) {
   }
 }
 
-function onchainStyle(status: Resource["onchainStatus"]) {
+function onchainStyle(status: Resource["onchainStatus"], colors: ThemeColors) {
   switch (status) {
     case "registered":
       return { backgroundColor: colors.primaryMuted, color: colors.primary };
@@ -49,9 +49,74 @@ function onchainStyle(status: Resource["onchainStatus"]) {
   }
 }
 
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    badges: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
+    footer: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginTop: 4,
+    },
+    editor: {
+      marginTop: 16,
+      gap: 10,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      color: colors.text,
+      fontSize: 14,
+    },
+    actionRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      gap: 8,
+    },
+    primaryButton: {
+      backgroundColor: colors.primary,
+    },
+    primaryButtonText: {
+      color: "#ffffff",
+    },
+    disabledButton: {
+      opacity: 0.6,
+    },
+    statusText: {
+      color: colors.primary,
+      fontSize: 13,
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 13,
+    },
+    successText: {
+      color: colors.success,
+      fontSize: 13,
+    },
+    editButton: {
+      marginTop: 12,
+    },
+    secondaryButton: {
+      backgroundColor: colors.neutralBg,
+    },
+  });
+}
+
 export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardProps) {
-  const verification = verificationStyle(resource.verificationStatus);
-  const onchain = onchainStyle(resource.onchainStatus);
+  const { colors, shared, typography } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const verification = verificationStyle(resource.verificationStatus, colors);
+  const onchain = onchainStyle(resource.onchainStatus, colors);
   const { status, error, editPrice, resetError } = useEditPrice();
   const [editing, setEditing] = useState(false);
   const [newPrice, setNewPrice] = useState(resource.price);
@@ -97,13 +162,13 @@ export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardPr
       </Text>
 
       <View style={styles.badges}>
-        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}> 
-          <Text style={[shared.badgeText, { color: verification.color }]}> 
+        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
+          <Text style={[shared.badgeText, { color: verification.color }]}>
             {resource.verificationStatus}
           </Text>
         </View>
-        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}> 
-          <Text style={[shared.badgeText, { color: onchain.color }]}> 
+        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
+          <Text style={[shared.badgeText, { color: onchain.color }]}>
             {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
           </Text>
         </View>
@@ -178,63 +243,6 @@ export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardPr
           <Text style={shared.buttonText}>Edit price</Text>
         </Pressable>
       )}
-
-const styles = StyleSheet.create({
-  badges: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 4,
-  },
-  editor: {
-    marginTop: 16,
-    gap: 10,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: colors.text,
-    fontSize: 14,
-  },
-  actionRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  primaryButton: {
-    backgroundColor: colors.primary,
-  },
-  primaryButtonText: {
-    color: "#ffffff",
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  statusText: {
-    color: colors.primary,
-    fontSize: 13,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 13,
-  },
-  successText: {
-    color: colors.success,
-    fontSize: 13,
-  },
-  editButton: {
-    marginTop: 12,
-  },
-  secondaryButton: {
-    backgroundColor: colors.neutralBg,
-  },
-});
+    </View>
+  );
+}

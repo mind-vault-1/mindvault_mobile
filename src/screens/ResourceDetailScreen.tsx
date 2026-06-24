@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -14,7 +14,9 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { fetchResource } from "../api/resources";
 import type { RootStackParamList } from "../navigation";
 import type { Resource } from "../types";
-import { colors, shared, spacing, typography } from "../theme";
+import { spacing } from "../theme";
+import type { ThemeColors } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
 import { openExternalUrl, stellarExpertAccountUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ResourceDetail">;
@@ -24,7 +26,7 @@ function shortenAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-function verificationStyle(status: Resource["verificationStatus"]) {
+function verificationStyle(status: Resource["verificationStatus"], colors: ThemeColors) {
   switch (status) {
     case "verified":
       return { backgroundColor: colors.successBg, color: colors.success };
@@ -35,7 +37,7 @@ function verificationStyle(status: Resource["verificationStatus"]) {
   }
 }
 
-function onchainStyle(status: Resource["onchainStatus"]) {
+function onchainStyle(status: Resource["onchainStatus"], colors: ThemeColors) {
   switch (status) {
     case "registered":
       return { backgroundColor: colors.primaryMuted, color: colors.primary };
@@ -48,7 +50,84 @@ function onchainStyle(status: Resource["onchainStatus"]) {
   }
 }
 
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    centered: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: spacing.lg,
+      gap: spacing.md,
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 16,
+      fontWeight: "500",
+    },
+    content: {
+      flex: 1,
+      padding: spacing.lg,
+      gap: spacing.md,
+    },
+    price: {
+      fontSize: 24,
+    },
+    badges: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
+    infoRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.textMuted,
+    },
+    actionButton: {
+      alignSelf: "stretch",
+      alignItems: "center",
+      paddingVertical: 12,
+    },
+    urlText: {
+      fontSize: 13,
+      color: colors.textSubtle,
+      lineHeight: 18,
+    },
+    linkText: {
+      color: colors.primary,
+    },
+    mono: {
+      fontFamily: "monospace",
+      fontSize: 12,
+      maxWidth: 220,
+    },
+    toast: {
+      position: "absolute",
+      bottom: spacing.xl,
+      left: spacing.lg,
+      right: spacing.lg,
+      backgroundColor: colors.text,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+    },
+    toastText: {
+      color: colors.background,
+      textAlign: "center",
+      fontSize: 14,
+      fontWeight: "500",
+    },
+  });
+}
+
 export function ResourceDetailScreen({ route, navigation }: Props) {
+  const { colors, shared, typography } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { resourceId } = route.params;
   const [resource, setResource] = useState<Resource | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,7 +165,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     if (!resource) return;
     try {
       await Sharing.shareAsync(resource.accessUrl);
-    } catch (error) {
+    } catch {
       setToast("Unable to share URL");
     }
   }
@@ -131,8 +210,8 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  const verification = verificationStyle(resource.verificationStatus);
-  const onchain = onchainStyle(resource.onchainStatus);
+  const verification = verificationStyle(resource.verificationStatus, colors);
+  const onchain = onchainStyle(resource.onchainStatus, colors);
 
   return (
     <SafeAreaView style={shared.screen} edges={["bottom"]}>
@@ -222,75 +301,3 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  content: {
-    flex: 1,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  price: {
-    fontSize: 24,
-  },
-  badges: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textMuted,
-  },
-  actionButton: {
-    alignSelf: "stretch",
-    alignItems: "center",
-    paddingVertical: 12,
-  },
-  urlText: {
-    fontSize: 13,
-    color: colors.textSubtle,
-    lineHeight: 18,
-  },
-  linkText: {
-    color: colors.primary,
-  },
-  mono: {
-    fontFamily: "monospace",
-    fontSize: 12,
-    maxWidth: 220,
-  },
-  toast: {
-    position: "absolute",
-    bottom: spacing.xl,
-    left: spacing.lg,
-    right: spacing.lg,
-    backgroundColor: colors.text,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  toastText: {
-    color: "#ffffff",
-    textAlign: "center",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-});

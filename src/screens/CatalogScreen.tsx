@@ -18,13 +18,130 @@ import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import type { RootStackParamList } from "../navigation";
 import type { Resource } from "../types";
-import { colors, shared, spacing, typography } from "../theme";
+import { spacing } from "../theme";
+import type { ThemeColors } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
 
 interface CatalogScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Catalog">;
 }
 
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    listContent: {
+      padding: spacing.lg,
+      paddingBottom: spacing.xxl,
+      gap: spacing.md,
+    },
+    header: {
+      gap: spacing.md,
+      marginBottom: spacing.lg,
+    },
+    headerRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: spacing.md,
+    },
+    settingsButton: {
+      borderRadius: 10,
+      backgroundColor: colors.neutralBg,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      minHeight: 44,
+      minWidth: 44,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    settingsButtonText: {
+      fontSize: 20,
+      color: colors.textMuted,
+    },
+    registry: {
+      marginTop: spacing.xs,
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.primary,
+    },
+    searchInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: colors.text,
+    },
+    apiHint: {
+      fontSize: 11,
+      color: colors.textSubtle,
+    },
+    skeletons: {
+      gap: 12,
+    },
+    separator: {
+      height: spacing.md,
+    },
+    emptyState: {
+      alignItems: "center",
+      paddingVertical: spacing.xxl,
+      gap: spacing.sm,
+    },
+    emptyTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    emptyBody: {
+      textAlign: "center",
+      fontSize: 14,
+      color: colors.textMuted,
+      maxWidth: 320,
+      lineHeight: 20,
+    },
+    fab: {
+      position: "absolute",
+      right: spacing.lg,
+      bottom: spacing.xl,
+      backgroundColor: colors.primary,
+      borderRadius: 28,
+      paddingHorizontal: 20,
+      paddingVertical: 14,
+      elevation: 4,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    },
+    fabText: {
+      color: "#ffffff",
+      fontWeight: "700",
+      fontSize: 15,
+    },
+    toast: {
+      position: "absolute",
+      bottom: spacing.xl,
+      left: spacing.lg,
+      right: spacing.lg,
+      backgroundColor: colors.text,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+    },
+    toastText: {
+      color: colors.background,
+      textAlign: "center",
+      fontSize: 14,
+      fontWeight: "500",
+    },
+  });
+}
+
 export function CatalogScreen({ navigation }: CatalogScreenProps) {
+  const { colors, shared, typography, colorScheme } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [resources, setResources] = useState<Resource[]>([]);
   const [registryCount, setRegistryCount] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -93,7 +210,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
 
   return (
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
-      <StatusBar style="dark" />
+      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <FlatList
         data={loading ? null : filteredResources}
         keyExtractor={(item) => item.id}
@@ -103,16 +220,26 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <View>
-              <Text style={typography.title}>MindVault</Text>
-              <Text style={typography.subtitle}>
-                Payment-protected digital resources on Stellar
-              </Text>
-              {registryCount !== null ? (
-                <Text style={styles.registry}>
-                  {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
+            <View style={styles.headerRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={typography.title}>MindVault</Text>
+                <Text style={typography.subtitle}>
+                  Payment-protected digital resources on Stellar
                 </Text>
-              ) : null}
+                {registryCount !== null ? (
+                  <Text style={styles.registry}>
+                    {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
+                  </Text>
+                ) : null}
+              </View>
+              <Pressable
+                style={styles.settingsButton}
+                onPress={() => navigation.navigate("Settings")}
+                accessibilityRole="button"
+                accessibilityLabel="Open settings"
+              >
+                <Text style={styles.settingsButtonText}>⚙</Text>
+              </Pressable>
             </View>
 
             <TextInput
@@ -163,93 +290,3 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  listContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-    gap: spacing.md,
-  },
-  header: {
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  registry: {
-    marginTop: spacing.xs,
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.primary,
-  },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: colors.text,
-  },
-  apiHint: {
-    fontSize: 11,
-    color: colors.textSubtle,
-  },
-  skeletons: {
-    gap: 12,
-  },
-  separator: {
-    height: spacing.md,
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: spacing.xxl,
-    gap: spacing.sm,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  emptyBody: {
-    textAlign: "center",
-    fontSize: 14,
-    color: colors.textMuted,
-    maxWidth: 320,
-    lineHeight: 20,
-  },
-  fab: {
-    position: "absolute",
-    right: spacing.lg,
-    bottom: spacing.xl,
-    backgroundColor: colors.primary,
-    borderRadius: 28,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  fabText: {
-    color: "#ffffff",
-    fontWeight: "700",
-    fontSize: 15,
-  },
-  toast: {
-    position: "absolute",
-    bottom: spacing.xl,
-    left: spacing.lg,
-    right: spacing.lg,
-    backgroundColor: colors.text,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  toastText: {
-    color: "#ffffff",
-    textAlign: "center",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-});
