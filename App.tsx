@@ -14,6 +14,7 @@ import { StatusBar } from "expo-status-bar";
 
 import { fetchCatalog, fetchRegistryStatus, getApiBaseUrl } from "./src/api/resources";
 import { ResourceCard } from "./src/components/ResourceCard";
+import { ErrorBanner } from "./src/components/ErrorBanner";
 import type { Resource } from "./src/types";
 import { colors, shared, spacing, typography } from "./src/theme";
 
@@ -121,14 +122,7 @@ export default function App() {
 
             <Text style={styles.apiHint}>API: {getApiBaseUrl()}</Text>
 
-            {error ? (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>{error}</Text>
-                <Pressable onPress={() => void loadData()} style={styles.retryButton}>
-                  <Text style={styles.retryText}>Retry</Text>
-                </Pressable>
-              </View>
-            ) : null}
+            {error && <ErrorBanner message={error} onRetry={() => void loadData()} />}
 
             {loading ? (
               <View style={styles.loadingRow}>
@@ -183,30 +177,6 @@ const styles = StyleSheet.create({
   apiHint: {
     fontSize: 11,
     color: colors.textSubtle,
-  },
-  errorBanner: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#fecaca",
-    backgroundColor: "#fef2f2",
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 14,
-  },
-  retryButton: {
-    alignSelf: "flex-start",
-    borderRadius: 8,
-    backgroundColor: colors.danger,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  retryText: {
-    color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 13,
   },
   loadingRow: {
     flexDirection: "row",
