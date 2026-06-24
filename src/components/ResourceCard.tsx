@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -63,6 +64,20 @@ export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardPr
     onCopyUrl("Resource URL copied");
   }
 
+  /**
+   * Opens the native iOS/Android share sheet with the resource title and URL.
+   * - `message` is used on Android (plain text share).
+   * - `url` is used on iOS (triggers the URL sharing path in the share sheet).
+   * Both are included so the shared content always contains title + URL.
+   */
+  async function handleShare() {
+    await Share.share({
+      title: resource.title,
+      message: `${resource.title}\n${resource.accessUrl}`,
+      url: resource.accessUrl,
+    });
+  }
+
   async function handleSavePrice() {
     resetError();
     setSuccessMessage(null);
@@ -97,13 +112,13 @@ export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardPr
       </Text>
 
       <View style={styles.badges}>
-        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}> 
-          <Text style={[shared.badgeText, { color: verification.color }]}> 
+        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
+          <Text style={[shared.badgeText, { color: verification.color }]}>
             {resource.verificationStatus}
           </Text>
         </View>
-        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}> 
-          <Text style={[shared.badgeText, { color: onchain.color }]}> 
+        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
+          <Text style={[shared.badgeText, { color: onchain.color }]}>
             {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
           </Text>
         </View>
@@ -111,15 +126,20 @@ export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardPr
 
       <View style={styles.footer}>
         <Text style={typography.price}>{resource.price} USDC</Text>
-        <Pressable
-          onPress={handleCopy}
-          style={shared.button}
-          accessibilityRole="button"
-          accessibilityLabel={`Copy URL for ${resource.title}`}
-          accessibilityHint="Copies the resource access URL to your clipboard"
-        >
-          <Text style={shared.buttonText}>Copy URL</Text>
-        </Pressable>
+        <View style={styles.actions}>
+          <Pressable onPress={handleShare} style={[shared.button, styles.shareButton]}>
+            <Text style={shared.buttonText}>Share</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleCopy}
+            style={shared.button}
+            accessibilityRole="button"
+            accessibilityLabel={`Copy URL for ${resource.title}`}
+            accessibilityHint="Copies the resource access URL to your clipboard"
+          >
+            <Text style={shared.buttonText}>Copy URL</Text>
+          </Pressable>
+        </View>
       </View>
 
       {editing ? (
@@ -178,6 +198,9 @@ export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardPr
           <Text style={shared.buttonText}>Edit price</Text>
         </Pressable>
       )}
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
   badges: {
@@ -190,6 +213,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 4,
+  },
+  actions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  shareButton: {
+    backgroundColor: colors.primary,
   },
   editor: {
     marginTop: 16,
