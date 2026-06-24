@@ -1,16 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  Modal,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+// App.tsx
+import { NavigationContainer } from "@react-navigation/native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 import {
@@ -123,131 +113,12 @@ export default function App() {
 
 export default function App() {
   return (
-    <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
+    <SafeAreaProvider>
       <StatusBar style="dark" />
-      <FlatList
-        data={filteredResources}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void loadData(true)} />
-        }
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <View style={styles.headerTop}>
-              <View>
-                <Text style={typography.title}>MindVault</Text>
-                <Text style={typography.subtitle}>
-                  Payment-protected digital resources on Stellar
-                </Text>
-                {registryCount !== null ? (
-                  <Text style={styles.registry}>
-                    {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
-                  </Text>
-                ) : null}
-              </View>
-              <Pressable style={[shared.button, styles.settingsButton]} onPress={() => setSettingsOpen(true)}>
-                <Text style={shared.buttonText}>Settings</Text>
-              </Pressable>
-            </View>
-
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search resources…"
-              placeholderTextColor={colors.textSubtle}
-              style={styles.searchInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-              clearButtonMode="while-editing"
-            />
-
-            <Text style={styles.apiHint}>API: {apiBaseUrl || "Loading…"}</Text>
-
-            {error ? (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>{error}</Text>
-                <Pressable
-                  onPress={() => void loadData()}
-                  style={styles.retryButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="Retry loading the catalog"
-                >
-                  <Text style={styles.retryText}>Retry</Text>
-                </Pressable>
-              </View>
-            ) : null}
-
-            {loading ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={typography.body}>Loading catalog…</Text>
-              </View>
-            ) : null}
-          </View>
-        }
-        renderItem={({ item }) => <ResourceCard resource={item} onCopyUrl={setToast} />}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListEmptyComponent={renderEmpty}
-      />
-
-      <Modal
-        visible={settingsOpen}
-        animationType="slide"
-        onRequestClose={() => setSettingsOpen(false)}
-        transparent
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContent}>
-            <Text style={typography.title}>Settings</Text>
-            <Text style={[typography.body, styles.modalNote]}>
-              The app saves an API base URL here. For physical devices, use your machine's LAN IP
-              instead of localhost.
-            </Text>
-            <TextInput
-              value={apiUrlInput}
-              onChangeText={setApiUrlInput}
-              placeholder="http://localhost:4021"
-              placeholderTextColor={colors.textSubtle}
-              style={[styles.searchInput, styles.apiInput]}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-            />
-            <Text style={styles.apiHint}>Current base URL: {apiBaseUrl || "Loading…"}</Text>
-            <View style={styles.modalButtons}>
-              <Pressable style={[shared.button, styles.modalButton]} onPress={() => setSettingsOpen(false)}>
-                <Text style={shared.buttonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[shared.button, shared.primaryButton, styles.modalButton]}
-                onPress={handleSaveApiUrl}
-              >
-                <Text style={[shared.buttonText, shared.primaryButtonText]}>Save</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {toast ? (
-        <View
-          style={styles.toast}
-          accessibilityRole="alert"
-          accessibilityLiveRegion="polite"
-        >
-          <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      ) : null}
-
-      <RegisterModal
-        visible={registerModalVisible}
-        resource={selectedResource}
-        onClose={handleCloseRegisterModal}
-        onSuccess={handleRegisterSuccess}
-        onError={handleRegisterError}
-      />
-    </SafeAreaView>
+      <NavigationContainer>
+        <RootNavigator />
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 

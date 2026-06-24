@@ -142,7 +142,13 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
           </View>
         }
         renderItem={({ item }) => (
-          <ResourceCard resource={item} onCopyUrl={setToast} />
+          <ResourceCard
+            resource={item}
+            onCopyUrl={setToast}
+            onPress={() =>
+              navigation.navigate("ResourceDetail", { resourceId: item.id })
+            }
+          />
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={renderEmpty}
