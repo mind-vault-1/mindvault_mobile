@@ -1,10 +1,14 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { RootStackParamList } from "../navigation";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { useAppTheme } from "../theme/ThemeProvider";
 
 export function SettingsScreen() {
   const { colors, shared } = useAppTheme();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
     <SafeAreaView style={shared.screen}>
@@ -25,6 +29,19 @@ export function SettingsScreen() {
           <Text style={[styles.infoText, { color: colors.textMuted }]}>
             Theme preferences are saved locally and persist across app launches.
           </Text>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.warningBg, marginTop: 32 }]}>
+          <Text style={[styles.title, { fontSize: 16, color: colors.warning, marginBottom: 8 }]}>Developer Options</Text>
+          <Text style={[styles.infoText, { color: colors.warning, marginBottom: 16 }]}>
+            These tools are for testing purposes only.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.warning }]}
+            onPress={() => navigation.navigate("DevSigner")}
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>Open Dev Signer PoC</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
