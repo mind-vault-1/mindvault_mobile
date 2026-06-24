@@ -1,20 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+// App.tsx
+import { NavigationContainer } from "@react-navigation/native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
-import { fetchCatalog, fetchRegistryStatus, getApiBaseUrl } from "./src/api/resources";
+import {
+  fetchCatalog,
+  fetchRegistryStatus,
+  initializeApiBaseUrl,
+  setApiBaseUrl,
+} from "./src/api/resources";
 import { ResourceCard } from "./src/components/ResourceCard";
-import { PublisherResourcesScreen } from "./src/components/PublisherResourcesScreen";
+import { EmptyState } from "./src/components/EmptyState";
 import type { Resource } from "./src/types";
 import { colors, shared, spacing, typography } from "./src/theme";
 
@@ -29,6 +25,9 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [apiBaseUrl, setApiBaseUrlState] = useState<string>("");
+  const [apiUrlInput, setApiUrlInput] = useState<string>("");
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -55,9 +54,31 @@ export default function App() {
     }
   }, []);
 
+  const loadSettings = useCallback(async () => {
+    const loadedUrl = await initializeApiBaseUrl();
+    setApiBaseUrlState(loadedUrl);
+    setApiUrlInput(loadedUrl);
+  }, []);
+
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    void (async () => {
+      await loadSettings();
+      await loadData();
+    })();
+  }, [loadSettings, loadData]);
+
+  const handleSaveApiUrl = useCallback(async () => {
+    try {
+      const savedUrl = await setApiBaseUrl(apiUrlInput);
+      setApiBaseUrlState(savedUrl);
+      setApiUrlInput(savedUrl);
+      setToast("API base URL saved");
+      setSettingsOpen(false);
+      void loadData();
+    } catch {
+      setToast("Unable to save API base URL");
+    }
+  }, [apiUrlInput, loadData]);
 
   useEffect(() => {
     if (!toast) return;
@@ -74,101 +95,33 @@ export default function App() {
   function renderEmpty() {
     if (loading) return null;
 
+    if (resources.length > 0) {
+      return (
+        <EmptyState
+          title="No matches"
+          body="No resources match your search. Try a different term or clear the filter."
+          actionLabel="Clear search"
+          onAction={() => setSearch("")}
+        />
+      );
+    }
+
     return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyTitle}>
-          {resources.length > 0 ? "No matches" : "The catalog is empty"}
-        </Text>
-        <Text style={styles.emptyBody}>
-          {resources.length > 0
-            ? "Try a different search term."
-            : "No resources have been published yet. Connect to a running MindVault server to browse the vault."}
-        </Text>
-      </View>
-    );
-  }
-
-  if (screen === "publisher") {
-    return (
-      <PublisherResourcesScreen onBackToPublic={() => setScreen("public")} />
-    );
-  }
-
-  return (
-    <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
-      <StatusBar style="dark" />
-      <FlatList
-        data={filteredResources}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void loadData(true)} />
-        }
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <View style={styles.titleRow}>
-              <View>
-                <Text style={typography.title}>MindVault</Text>
-                <Text style={typography.subtitle}>
-                  Payment-protected digital resources on Stellar
-                </Text>
-                {registryCount !== null ? (
-                  <Text style={styles.registry}>
-                    {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
-                  </Text>
-                ) : null}
-              </View>
-              <Pressable
-                onPress={() => setScreen("publisher")}
-                style={[shared.button, shared.primaryButton]}
-              >
-                <Text style={[shared.buttonText, shared.primaryButtonText]}>Publisher</Text>
-              </Pressable>
-            </View>
-
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search resources…"
-              placeholderTextColor={colors.textSubtle}
-              style={styles.searchInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-              clearButtonMode="while-editing"
-            />
-
-            <Text style={styles.apiHint}>API: {getApiBaseUrl()}</Text>
-
-            {error ? (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>{error}</Text>
-                <Pressable onPress={() => void loadData()} style={styles.retryButton}>
-                  <Text style={styles.retryText}>Retry</Text>
-                </Pressable>
-              </View>
-            ) : null}
-
-            {loading ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={typography.body}>Loading catalog…</Text>
-              </View>
-            ) : null}
-          </View>
-        }
-        renderItem={({ item }) => (
-          <ResourceCard resource={item} onCopyUrl={setToast} />
-        )}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListEmptyComponent={renderEmpty}
+      <EmptyState
+        title="The catalog is empty"
+        body="No resources have been published yet. Connect to a running MindVault server to browse the vault."
       />
+    );
+  }
 
-      {toast ? (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      ) : null}
-    </SafeAreaView>
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <StatusBar style="dark" />
+      <NavigationContainer>
+        <RootNavigator />
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 
@@ -182,11 +135,14 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
-  titleRow: {
+  headerTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: spacing.md,
+    gap: spacing.sm,
+  },
+  settingsButton: {
+    alignSelf: "flex-start",
   },
   registry: {
     marginTop: spacing.xs,
@@ -203,6 +159,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: colors.text,
+  },
+  apiInput: {
+    marginTop: spacing.sm,
   },
   apiHint: {
     fontSize: 11,
@@ -226,6 +185,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    minHeight: 44,
+    justifyContent: "center",
   },
   retryText: {
     color: "#ffffff",
@@ -240,23 +201,7 @@ const styles = StyleSheet.create({
   separator: {
     height: spacing.md,
   },
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: spacing.xxl,
-    gap: spacing.sm,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  emptyBody: {
-    textAlign: "center",
-    fontSize: 14,
-    color: colors.textMuted,
-    maxWidth: 320,
-    lineHeight: 20,
-  },
+
   toast: {
     position: "absolute",
     bottom: spacing.xl,
@@ -272,5 +217,30 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 14,
     fontWeight: "500",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+  },
+  modalButton: {
+    minWidth: 88,
+    alignItems: "center",
+  },
+  modalNote: {
+    color: colors.textMuted,
+    lineHeight: 20,
   },
 });

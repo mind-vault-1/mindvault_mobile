@@ -25,7 +25,16 @@ export interface RegistryStatus {
   resourceCount: number;
 }
 
-export interface PublisherResource extends Resource {
-  // Authenticated publisher-specific fields could be added here
+/** Headers parsed from an HTTP 402 Payment Required response */
+export interface PaymentChallenge {
+  price: string;        // e.g. "1.00"
+  destination: string;  // Stellar wallet address
+  network: string;      // e.g. "testnet" | "mainnet"
+  assetCode?: string;   // e.g. "USDC"
+  memo?: string;
 }
+
+export type AccessResult =
+  | { type: "text"; content: string }
+  | { type: "external"; url: string };
 
