@@ -55,14 +55,11 @@ export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]
   if (!res.ok) {
     throw new Error("Failed to fetch catalog");
   }
-}
-
-export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]> {
-  return request<Resource[]>(`/resources${buildQuery(filters)}`, "Failed to fetch catalog");
+  return res.json();
 }
 
 export async function fetchResource(id: string): Promise<Resource> {
-  const res = await fetch(`${API_BASE}/resources/${encodeURIComponent(id)}`);
+  const res = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error("Resource not found");
   return res.json();
 }
@@ -79,7 +76,7 @@ export async function prepareEditPrice(
   resourceId: string,
   price: string
 ): Promise<{ xdr: string; networkPassphrase?: string }> {
-  const response = await fetch(`${API_BASE}/resources/${encodeURIComponent(resourceId)}/price/prepare`, {
+  const response = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(resourceId)}/price/prepare`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ price }),
@@ -94,7 +91,7 @@ export async function prepareEditPrice(
 }
 
 export async function submitPriceEdit(resourceId: string, signedXdr: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/resources/${encodeURIComponent(resourceId)}/price`, {
+  const response = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(resourceId)}/price`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ xdr: signedXdr }),
@@ -117,9 +114,6 @@ export function signTransactionXdr(
   return transaction.toEnvelope().toXDR("base64");
 }
 
-export function getApiBaseUrl(): string {
-  return API_BASE;
-}
 
 export interface PrepareOwnershipResponse {
   xdr: string;
@@ -134,7 +128,7 @@ export interface TransferOwnershipResponse {
 export async function prepareOwnershipTransfer(
   resourceId: string
 ): Promise<PrepareOwnershipResponse> {
-  const res = await fetch(`${API_BASE}/resources/${resourceId}/ownership/prepare`, {
+  const res = await fetch(`${apiBaseUrl}/resources/${resourceId}/ownership/prepare`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });
@@ -149,7 +143,7 @@ export async function submitOwnershipTransfer(
   signedXdr: string,
   destinationAddress: string
 ): Promise<TransferOwnershipResponse> {
-  const res = await fetch(`${API_BASE}/resources/${resourceId}/ownership`, {
+  const res = await fetch(`${apiBaseUrl}/resources/${resourceId}/ownership`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ signedXdr, destinationAddress }),

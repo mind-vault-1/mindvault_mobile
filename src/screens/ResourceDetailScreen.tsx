@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -9,6 +8,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
+import * as Sharing from "expo-sharing";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { fetchResource } from "../api/resources";
@@ -81,9 +81,13 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     setToast("Resource URL copied");
   }
 
-  function handleOpen() {
+  async function handleShare() {
     if (!resource) return;
-    Linking.openURL(resource.accessUrl).catch(() => {});
+    try {
+      await Sharing.shareAsync(resource.accessUrl);
+    } catch (error) {
+      setToast("Unable to share URL");
+    }
   }
 
   if (loading) {
@@ -158,6 +162,11 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
           <Text style={typography.body}>{resource.resourceType}</Text>
         </View>
 
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>Access URL</Text>
+        </View>
+        <Text style={styles.urlText}>{resource.accessUrl}</Text>
+
         <Pressable
           style={[shared.button, shared.primaryButton, styles.actionButton]}
           onPress={handleCopy}
@@ -169,9 +178,9 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
 
         <Pressable
           style={[shared.button, styles.actionButton]}
-          onPress={handleOpen}
+          onPress={handleShare}
         >
-          <Text style={shared.buttonText}>Open in Browser</Text>
+          <Text style={shared.buttonText}>Share Access URL</Text>
         </Pressable>
       </View>
 
@@ -224,6 +233,11 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     alignItems: "center",
     paddingVertical: 12,
+  },
+  urlText: {
+    fontSize: 13,
+    color: colors.textSubtle,
+    lineHeight: 18,
   },
   toast: {
     position: "absolute",
