@@ -12,12 +12,12 @@ import {
 import type { Resource } from "../types";
 import { useEditPrice } from "../hooks/useEditPrice";
 import { colors, shared, typography } from "../theme";
-import { PaywallModal } from "./PaywallModal";
 
 interface ResourceCardProps {
   resource: Resource;
   onCopyUrl: (message: string) => void;
   onRegister?: (resource: Resource) => void;
+  onPress?: () => void;
 }
 
 function shortenAddress(address: string): string {
@@ -49,7 +49,7 @@ function onchainStyle(status: Resource["onchainStatus"]) {
   }
 }
 
-export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardProps) {
+export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: ResourceCardProps) {
   const verification = verificationStyle(resource.verificationStatus);
   const onchain = onchainStyle(resource.onchainStatus);
   const { status, error, editPrice, resetError } = useEditPrice();
@@ -85,99 +85,104 @@ export function ResourceCard({ resource, onCopyUrl, onRegister }: ResourceCardPr
       : null;
 
   return (
-    <View style={shared.card}>
-      <Text style={typography.cardTitle}>{resource.title}</Text>
+    <Pressable onPress={onPress} disabled={!onPress}>
+      <View style={shared.card}>
+        <Text style={typography.cardTitle}>{resource.title}</Text>
 
-      {resource.publisherName ? (
-        <Text style={typography.body}>by {resource.publisherName}</Text>
-      ) : null}
+        {resource.publisherName ? (
+          <Text style={typography.body}>by {resource.publisherName}</Text>
+        ) : null}
 
-      <Text style={typography.caption}>
-        Owner: {shortenAddress(resource.walletAddress)}
-      </Text>
+        <Text style={typography.caption}>
+          Owner: {shortenAddress(resource.walletAddress)}
+        </Text>
 
-      <View style={styles.badges}>
-        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}> 
-          <Text style={[shared.badgeText, { color: verification.color }]}> 
-            {resource.verificationStatus}
-          </Text>
-        </View>
-        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}> 
-          <Text style={[shared.badgeText, { color: onchain.color }]}> 
-            {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.footer}>
-        <Text style={typography.price}>{resource.price} USDC</Text>
-        <Pressable
-          onPress={handleCopy}
-          style={shared.button}
-          accessibilityRole="button"
-          accessibilityLabel={`Copy URL for ${resource.title}`}
-          accessibilityHint="Copies the resource access URL to your clipboard"
-        >
-          <Text style={shared.buttonText}>Copy URL</Text>
-        </Pressable>
-      </View>
-
-      {editing ? (
-        <View style={styles.editor}>
-          <TextInput
-            value={newPrice}
-            onChangeText={setNewPrice}
-            placeholder="New price"
-            placeholderTextColor={colors.textSubtle}
-            keyboardType="numeric"
-            style={styles.input}
-            editable={!isBusy}
-          />
-          <TextInput
-            value={secretKey}
-            onChangeText={setSecretKey}
-            placeholder="Stellar secret key"
-            placeholderTextColor={colors.textSubtle}
-            secureTextEntry
-            style={styles.input}
-            editable={!isBusy}
-          />
-          <View style={styles.actionRow}>
-            <Pressable
-              onPress={() => setEditing(false)}
-              style={[shared.button, styles.secondaryButton]}
-              disabled={isBusy}
-            >
-              <Text style={shared.buttonText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              onPress={handleSavePrice}
-              style={[
-                shared.button,
-                styles.primaryButton,
-                isBusy ? styles.disabledButton : null,
-              ]}
-              disabled={isBusy || !newPrice || !secretKey}
-            >
-              {isBusy ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text style={[shared.buttonText, styles.primaryButtonText]}>Save Price</Text>
-              )}
-            </Pressable>
+        <View style={styles.badges}>
+          <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
+            <Text style={[shared.badgeText, { color: verification.color }]}>
+              {resource.verificationStatus}
+            </Text>
           </View>
-          {statusLabel ? <Text style={styles.statusText}>{statusLabel}</Text> : null}
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
+          <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
+            <Text style={[shared.badgeText, { color: onchain.color }]}>
+              {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
+            </Text>
+          </View>
         </View>
-      ) : (
-        <Pressable
-          onPress={() => setEditing(true)}
-          style={[shared.button, styles.editButton]}
-        >
-          <Text style={shared.buttonText}>Edit price</Text>
-        </Pressable>
-      )}
+
+        <View style={styles.footer}>
+          <Text style={typography.price}>{resource.price} USDC</Text>
+          <Pressable
+            onPress={handleCopy}
+            style={shared.button}
+            accessibilityRole="button"
+            accessibilityLabel={`Copy URL for ${resource.title}`}
+            accessibilityHint="Copies the resource access URL to your clipboard"
+          >
+            <Text style={shared.buttonText}>Copy URL</Text>
+          </Pressable>
+        </View>
+
+        {editing ? (
+          <View style={styles.editor}>
+            <TextInput
+              value={newPrice}
+              onChangeText={setNewPrice}
+              placeholder="New price"
+              placeholderTextColor={colors.textSubtle}
+              keyboardType="numeric"
+              style={styles.input}
+              editable={!isBusy}
+            />
+            <TextInput
+              value={secretKey}
+              onChangeText={setSecretKey}
+              placeholder="Stellar secret key"
+              placeholderTextColor={colors.textSubtle}
+              secureTextEntry
+              style={styles.input}
+              editable={!isBusy}
+            />
+            <View style={styles.actionRow}>
+              <Pressable
+                onPress={() => setEditing(false)}
+                style={[shared.button, styles.secondaryButton]}
+                disabled={isBusy}
+              >
+                <Text style={shared.buttonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSavePrice}
+                style={[
+                  shared.button,
+                  styles.primaryButton,
+                  isBusy ? styles.disabledButton : null,
+                ]}
+                disabled={isBusy || !newPrice || !secretKey}
+              >
+                {isBusy ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={[shared.buttonText, styles.primaryButtonText]}>Save Price</Text>
+                )}
+              </Pressable>
+            </View>
+            {statusLabel ? <Text style={styles.statusText}>{statusLabel}</Text> : null}
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
+          </View>
+        ) : (
+          <Pressable
+            onPress={() => setEditing(true)}
+            style={[shared.button, styles.editButton]}
+          >
+            <Text style={shared.buttonText}>Edit price</Text>
+          </Pressable>
+        )}
+      </View>
+    </Pressable>
+  );
+}
 
 const styles = StyleSheet.create({
   badges: {
