@@ -13,6 +13,8 @@ const DEFAULT_NETWORK_PASSPHRASE =
   (Constants.expoConfig?.extra?.networkPassphrase as string | undefined) ??
   "Test SDF Network ; September 2015";
 
+const API_KEY_STORAGE_KEY = "mindvault_api_key";
+
 function buildQuery(filters?: CatalogFilters): string {
   if (!filters) return "";
 
@@ -153,3 +155,4 @@ export async function submitOwnershipTransfer(
   }
   return res.json();
 }
+

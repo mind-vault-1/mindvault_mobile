@@ -14,7 +14,10 @@ import { EmptyState } from "./src/components/EmptyState";
 import type { Resource } from "./src/types";
 import { colors, shared, spacing, typography } from "./src/theme";
 
+type Screen = "public" | "publisher";
+
 export default function App() {
+  const [screen, setScreen] = useState<Screen>("public");
   const [resources, setResources] = useState<Resource[]>([]);
   const [registryCount, setRegistryCount] = useState<number | null>(null);
   const [search, setSearch] = useState("");
