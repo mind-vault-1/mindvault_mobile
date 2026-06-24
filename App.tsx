@@ -20,6 +20,7 @@ import {
   setApiBaseUrl,
 } from "./src/api/resources";
 import { ResourceCard } from "./src/components/ResourceCard";
+import { EmptyState } from "./src/components/EmptyState";
 import type { Resource } from "./src/types";
 import { colors, shared, spacing, typography } from "./src/theme";
 
@@ -101,17 +102,22 @@ export default function App() {
   function renderEmpty() {
     if (loading) return null;
 
+    if (resources.length > 0) {
+      return (
+        <EmptyState
+          title="No matches"
+          body="No resources match your search. Try a different term or clear the filter."
+          actionLabel="Clear search"
+          onAction={() => setSearch("")}
+        />
+      );
+    }
+
     return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyTitle}>
-          {resources.length > 0 ? "No matches" : "The catalog is empty"}
-        </Text>
-        <Text style={styles.emptyBody}>
-          {resources.length > 0
-            ? "Try a different search term."
-            : "No resources have been published yet. Connect to a running MindVault server to browse the vault."}
-        </Text>
-      </View>
+      <EmptyState
+        title="The catalog is empty"
+        body="No resources have been published yet. Connect to a running MindVault server to browse the vault."
+      />
     );
   }
 
@@ -321,23 +327,7 @@ const styles = StyleSheet.create({
   separator: {
     height: spacing.md,
   },
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: spacing.xxl,
-    gap: spacing.sm,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  emptyBody: {
-    textAlign: "center",
-    fontSize: 14,
-    color: colors.textMuted,
-    maxWidth: 320,
-    lineHeight: 20,
-  },
+
   toast: {
     position: "absolute",
     bottom: spacing.xl,
