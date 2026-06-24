@@ -1,5 +1,5 @@
 import * as Clipboard from "expo-clipboard";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -26,7 +26,7 @@ function shortenAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-function verificationStyle(status: Resource["verificationStatus"]) {
+function verificationStyle(status: Resource["verificationStatus"], colors: ThemeColors) {
   switch (status) {
     case "verified":
       return { backgroundColor: colors.successBg, color: colors.success };
@@ -37,7 +37,7 @@ function verificationStyle(status: Resource["verificationStatus"]) {
   }
 }
 
-function onchainStyle(status: Resource["onchainStatus"]) {
+function onchainStyle(status: Resource["onchainStatus"], colors: ThemeColors) {
   switch (status) {
     case "registered":
       return { backgroundColor: colors.primaryMuted, color: colors.primary };

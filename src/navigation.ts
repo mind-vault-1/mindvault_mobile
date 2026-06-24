@@ -6,6 +6,7 @@ import { ResourceDetailScreen } from "./screens/ResourceDetailScreen";
 export type RootStackParamList = {
   Catalog: undefined;
   ResourceDetail: { resourceId: string };
+  Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

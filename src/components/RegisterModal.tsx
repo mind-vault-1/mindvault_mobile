@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -11,7 +11,8 @@ import {
 
 import { prepareRegister, submitRegister } from "../api/resources";
 import type { Resource } from "../types";
-import { colors, shared, typography } from "../theme";
+import type { ThemeColors } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
 import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 
 interface RegisterModalProps {
@@ -24,6 +25,85 @@ interface RegisterModalProps {
 
 type RegistrationStep = "idle" | "preparing" | "signing" | "submitting" | "success" | "error";
 
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 20,
+    },
+    modal: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      width: "100%",
+      maxWidth: 500,
+      maxHeight: "80%",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+      elevation: 5,
+    },
+    content: {
+      padding: 20,
+    },
+    actions: {
+      flexDirection: "row",
+      gap: 12,
+      marginTop: 20,
+    },
+    buttonSecondary: {
+      backgroundColor: "transparent",
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    buttonTextSecondary: {
+      color: colors.text,
+    },
+    loadingContainer: {
+      alignItems: "center",
+      gap: 12,
+      paddingVertical: 20,
+    },
+    xdrPreview: {
+      fontFamily: "monospace",
+      fontSize: 11,
+      color: colors.textMuted,
+    },
+    successContainer: {
+      gap: 16,
+      paddingVertical: 12,
+    },
+    successText: {
+      color: colors.success,
+      fontSize: 18,
+      fontWeight: "600",
+    },
+    txHashContainer: {
+      gap: 4,
+    },
+    txHash: {
+      fontFamily: "monospace",
+      fontSize: 11,
+      color: colors.textMuted,
+      backgroundColor: colors.neutralBg,
+      padding: 8,
+      borderRadius: 4,
+    },
+    errorContainer: {
+      gap: 12,
+      paddingVertical: 12,
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 18,
+      fontWeight: "600",
+    },
+  });
+}
+
 export function RegisterModal({
   visible,
   resource,
@@ -31,6 +111,9 @@ export function RegisterModal({
   onSuccess,
   onError,
 }: RegisterModalProps) {
+  const { colors, shared, typography } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [step, setStep] = useState<RegistrationStep>("idle");
   const [xdr, setXdr] = useState<string>("");
   const [txHash, setTxHash] = useState<string>("");
@@ -206,80 +289,3 @@ export function RegisterModal({
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  modal: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    width: "100%",
-    maxWidth: 500,
-    maxHeight: "80%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  content: {
-    padding: 20,
-  },
-  actions: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 20,
-  },
-  buttonSecondary: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  buttonTextSecondary: {
-    color: colors.text,
-  },
-  loadingContainer: {
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 20,
-  },
-  xdrPreview: {
-    fontFamily: "monospace",
-    fontSize: 11,
-    color: colors.textMuted,
-  },
-  successContainer: {
-    gap: 16,
-    paddingVertical: 12,
-  },
-  successText: {
-    color: colors.success,
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  txHashContainer: {
-    gap: 4,
-  },
-  txHash: {
-    fontFamily: "monospace",
-    fontSize: 11,
-    color: colors.textMuted,
-    backgroundColor: colors.neutralBg,
-    padding: 8,
-    borderRadius: 4,
-  },
-  errorContainer: {
-    gap: 12,
-    paddingVertical: 12,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 18,
-    fontWeight: "600",
-  },
-});
