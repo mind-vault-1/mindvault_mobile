@@ -1,5 +1,5 @@
 {
-  "expo": {
+  "expo": { "scheme": "mindvault",
     "name": "MindVault",
     "slug": "mindvault-mobile",
     "version": "1.0.0",
@@ -36,3 +36,4 @@
     }
   }
 }
+
