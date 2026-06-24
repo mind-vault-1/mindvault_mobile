@@ -26,29 +26,12 @@ interface CatalogScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Catalog">;
 }
 
-type VerificationFilter = "all" | VerificationStatus;
-type ResourceTypeFilter = "all" | "file" | "link";
-
-interface FilterOption<T> {
-  label: string;
-  value: T;
+function formatLastUpdated(value: Date): string {
+  return value.toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
-
-const VERIFICATION_OPTIONS: FilterOption<VerificationFilter>[] = [
-  { label: "All", value: "all" },
-  { label: "Verified", value: "verified" },
-  { label: "Pending", value: "pending" },
-  { label: "Rejected", value: "rejected" },
-];
-
-const RESOURCE_TYPE_OPTIONS: FilterOption<ResourceTypeFilter>[] = [
-  { label: "All", value: "all" },
-  { label: "File", value: "file" },
-  { label: "Link", value: "link" },
-];
-
-const DEFAULT_VERIFICATION: VerificationFilter = "all";
-const DEFAULT_RESOURCE_TYPE: ResourceTypeFilter = "all";
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
@@ -86,6 +69,10 @@ function createStyles(colors: ThemeColors) {
       fontSize: 13,
       fontWeight: "600",
       color: colors.primary,
+    },
+    lastUpdated: {
+      fontSize: 12,
+      color: colors.textSubtle,
     },
     searchInput: {
       borderWidth: 1,
@@ -259,6 +246,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -275,6 +263,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       ]);
       setResources(catalog);
       setRegistryCount(registry?.resourceCount ?? null);
+      setLastUpdatedAt(new Date());
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Something went wrong loading the catalog.";
@@ -380,6 +369,11 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                 {registryCount !== null ? (
                   <Text style={styles.registry}>
                     {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
+                  </Text>
+                ) : null}
+                {lastUpdatedAt ? (
+                  <Text style={styles.lastUpdated}>
+                    Last updated {formatLastUpdated(lastUpdatedAt)}
                   </Text>
                 ) : null}
               </View>
