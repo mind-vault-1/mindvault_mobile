@@ -20,7 +20,8 @@ import {
   storeApiKey,
 } from "../api/resources";
 import type { PublisherResource } from "../types";
-import { colors, shared, spacing, typography } from "../theme";
+import { spacing } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
 import { ResourceCard } from "./ResourceCard";
 
 interface PublisherResourcesScreenProps {
@@ -28,6 +29,7 @@ interface PublisherResourcesScreenProps {
 }
 
 export function PublisherResourcesScreen({ onBackToPublic }: PublisherResourcesScreenProps) {
+  const { colors, shared, typography } = useAppTheme();
   const [apiKey, setApiKey] = useState("");
   const [storedApiKey, setStoredApiKey] = useState<string | null>(null);
   const [resources, setResources] = useState<PublisherResource[]>([]);

@@ -1,5 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, shared, spacing, typography } from "../theme";
+
+import { spacing } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
 
 interface EmptyStateProps {
   title: string;
@@ -14,11 +16,13 @@ interface EmptyStateProps {
  * 2. No search match — filters/search yield no results
  */
 export function EmptyState({ title, body, actionLabel, onAction }: EmptyStateProps) {
+  const { colors, shared } = useAppTheme();
+
   return (
     <View style={styles.container}>
       <Text style={styles.icon}>🗂️</Text>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.body}>{body}</Text>
+      <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+      <Text style={[styles.body, { color: colors.textMuted }]}>{body}</Text>
       {actionLabel && onAction ? (
         <Pressable onPress={onAction} style={[shared.button, styles.action]}>
           <Text style={shared.buttonText}>{actionLabel}</Text>
@@ -42,13 +46,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.text,
     textAlign: "center",
   },
   body: {
     textAlign: "center",
     fontSize: 14,
-    color: colors.textMuted,
     maxWidth: 320,
     lineHeight: 20,
   },
