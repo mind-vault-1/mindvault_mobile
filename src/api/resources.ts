@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 
+import { getApiKey } from "../services/secureStorage";
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
 
 const API_BASE =
@@ -39,4 +40,31 @@ export async function fetchRegistryStatus(): Promise<RegistryStatus> {
 
 export function getApiBaseUrl(): string {
   return API_BASE;
+}
+
+export async function fetchPublisherResources(): Promise<Resource[]> {
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    throw new Error("No API key configured");
+  }
+
+  const res = await fetch(`${API_BASE}/publishers/me/resources`, {
+    headers: {
+      "x-api-key": apiKey,
+    },
+  });
+
+  if (res.status === 401) {
+    throw new Error("Unauthorized: Invalid API key");
+  }
+
+  if (res.status === 403) {
+    throw new Error("Forbidden: Access denied");
+  }
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch publisher resources");
+  }
+
+  return res.json();
 }
