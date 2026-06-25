@@ -1,5 +1,5 @@
 {
-  "expo": {
+  "expo": { "scheme": "mindvault",
     "name": "MindVault",
     "slug": "mindvault-mobile",
     "version": "1.0.0",
@@ -23,8 +23,17 @@
       },
       "package": "app.mindvault.mobile"
     },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow MindVault to access your camera to scan QR codes."
+        }
+      ]
+    ],
     "extra": {
       "apiUrl": "http://localhost:4021"
     }
   }
 }
+

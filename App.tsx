@@ -1,25 +1,27 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+// App.tsx
+import { NavigationContainer } from "@react-navigation/native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 import { fetchCatalog, fetchPublisherResources, fetchRegistryStatus, getApiBaseUrl } from "./src/api/resources";
 import { PublisherSettings } from "./src/components/PublisherSettings";
 import { ResourceCard } from "./src/components/ResourceCard";
 import { getApiKey } from "./src/services/secureStorage";
+import {
+  fetchCatalog,
+  fetchRegistryStatus,
+  initializeApiBaseUrl,
+  setApiBaseUrl,
+} from "./src/api/resources";
+import { ResourceCard } from "./src/components/ResourceCard";
+import { EmptyState } from "./src/components/EmptyState";
 import type { Resource } from "./src/types";
 import { colors, shared, spacing, typography } from "./src/theme";
 
+type Screen = "public" | "publisher";
+
 export default function App() {
+  const [screen, setScreen] = useState<Screen>("public");
   const [resources, setResources] = useState<Resource[]>([]);
   const [registryCount, setRegistryCount] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -35,6 +37,9 @@ export default function App() {
     const key = await getApiKey();
     setHasApiKey(!!key);
   }, []);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [apiBaseUrl, setApiBaseUrlState] = useState<string>("");
+  const [apiUrlInput, setApiUrlInput] = useState<string>("");
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -66,9 +71,31 @@ export default function App() {
     }
   }, [publisherMode]);
 
+  const loadSettings = useCallback(async () => {
+    const loadedUrl = await initializeApiBaseUrl();
+    setApiBaseUrlState(loadedUrl);
+    setApiUrlInput(loadedUrl);
+  }, []);
+
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    void (async () => {
+      await loadSettings();
+      await loadData();
+    })();
+  }, [loadSettings, loadData]);
+
+  const handleSaveApiUrl = useCallback(async () => {
+    try {
+      const savedUrl = await setApiBaseUrl(apiUrlInput);
+      setApiBaseUrlState(savedUrl);
+      setApiUrlInput(savedUrl);
+      setToast("API base URL saved");
+      setSettingsOpen(false);
+      void loadData();
+    } catch {
+      setToast("Unable to save API base URL");
+    }
+  }, [apiUrlInput, loadData]);
 
   useEffect(() => {
     void checkApiKey();
@@ -94,22 +121,27 @@ export default function App() {
   function renderEmpty() {
     if (loading) return null;
 
+    if (resources.length > 0) {
+      return (
+        <EmptyState
+          title="No matches"
+          body="No resources match your search. Try a different term or clear the filter."
+          actionLabel="Clear search"
+          onAction={() => setSearch("")}
+        />
+      );
+    }
+
     return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyTitle}>
-          {resources.length > 0 ? "No matches" : "The catalog is empty"}
-        </Text>
-        <Text style={styles.emptyBody}>
-          {resources.length > 0
-            ? "Try a different search term."
-            : "No resources have been published yet. Connect to a running MindVault server to browse the vault."}
-        </Text>
-      </View>
+      <EmptyState
+        title="The catalog is empty"
+        body="No resources have been published yet. Connect to a running MindVault server to browse the vault."
+      />
     );
   }
 
   return (
-    <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
+    <SafeAreaProvider>
       <StatusBar style="dark" />
       <FlatList
         data={filteredResources}
@@ -201,6 +233,10 @@ export default function App() {
         onApiKeySet={handleApiKeySet}
       />
     </SafeAreaView>
+      <NavigationContainer>
+        <RootNavigator />
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 
@@ -224,6 +260,14 @@ const styles = StyleSheet.create({
   },
   settingsButtonText: {
     fontSize: 24,
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  },
+  settingsButton: {
+    alignSelf: "flex-start",
   },
   registry: {
     marginTop: spacing.xs,
@@ -265,6 +309,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
   },
+  apiInput: {
+    marginTop: spacing.sm,
+  },
   apiHint: {
     fontSize: 11,
     color: colors.textSubtle,
@@ -287,6 +334,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    minHeight: 44,
+    justifyContent: "center",
   },
   retryText: {
     color: "#ffffff",
@@ -301,23 +350,7 @@ const styles = StyleSheet.create({
   separator: {
     height: spacing.md,
   },
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: spacing.xxl,
-    gap: spacing.sm,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  emptyBody: {
-    textAlign: "center",
-    fontSize: 14,
-    color: colors.textMuted,
-    maxWidth: 320,
-    lineHeight: 20,
-  },
+
   toast: {
     position: "absolute",
     bottom: spacing.xl,
@@ -333,5 +366,30 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 14,
     fontWeight: "500",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+  },
+  modalButton: {
+    minWidth: 88,
+    alignItems: "center",
+  },
+  modalNote: {
+    color: colors.textMuted,
+    lineHeight: 20,
   },
 });
