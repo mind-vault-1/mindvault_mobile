@@ -35,6 +35,24 @@ The app reads its API base URL from `app.json` under `extra.apiUrl`:
 
 Find your LAN IP with `ipconfig` (Windows) or `ifconfig` / `ip a` (macOS/Linux). The MindVault API server defaults to port `4021`.
 
+## Publisher API Key Setup
+
+To access publisher features (e.g., editing prices, transferring ownership), you need to configure a publisher API key in the app:
+
+### Obtaining an API Key
+1. Ensure you have a MindVault server running locally or access to a remote instance
+2. Create an API key through the MindVault web app or server CLI (follow instructions in the main MindVault monorepo)
+
+### Configuring in the Mobile App
+1. Launch the mobile app and navigate to **Settings**
+2. Tap **Publisher Settings**
+3. Enter your API key in the "API Key (x-api-key)" field
+4. Tap **Save API Key** to store it securely using Expo Secure Store
+
+### Troubleshooting
+- **401 Unauthorized**: Your API key is invalid or expired. Double-check that you copied it correctly and that it's still active.
+- **403 Forbidden**: Your API key is valid, but you don't have permission to access the requested resource. Ensure your account has publisher privileges.
+
 ## Running the App
 
 ```bash
