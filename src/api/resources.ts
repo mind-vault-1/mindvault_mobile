@@ -1,6 +1,6 @@
 import { loadApiBaseUrl, saveApiBaseUrl } from "./apiSettings";
 import Constants from "expo-constants";
-import { Keypair, Transaction } from "stellar-sdk";
+import { Keypair, Transaction } from "@stellar/stellar-sdk";
 
 import { getApiKey } from "../services/secureStorage";
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
@@ -16,7 +16,7 @@ const DEFAULT_NETWORK_PASSPHRASE =
 
 const API_KEY_STORAGE_KEY = "mindvault_api_key";
 
-function buildQuery(filters?: CatalogFilters): string {
+export function buildQuery(filters?: CatalogFilters): string {
   if (!filters) return "";
 
   const params = new URLSearchParams();
@@ -163,7 +163,7 @@ export async function fetchPublisherResources(): Promise<Resource[]> {
     throw new Error("No API key configured");
   }
 
-  const res = await fetch(`${API_BASE}/publishers/me/resources`, {
+  const res = await fetch(`${apiBaseUrl}/publishers/me/resources`, {
     headers: {
       "x-api-key": apiKey,
     },
