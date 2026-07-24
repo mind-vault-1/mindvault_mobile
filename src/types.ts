@@ -17,6 +17,8 @@ export interface Resource {
   updatedAt?: string;
 }
 
+export type PublisherResource = Resource;
+
 export interface CatalogFilters {
   search?: string;
   verificationStatus?: "all" | VerificationStatus;

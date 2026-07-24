@@ -280,6 +280,25 @@ function createStyles(colors: ThemeColors) {
   });
 }
 
+type VerificationFilter = "all" | VerificationStatus;
+type ResourceTypeFilter = "all" | "file" | "link";
+
+const DEFAULT_VERIFICATION: VerificationFilter = "all";
+const DEFAULT_RESOURCE_TYPE: ResourceTypeFilter = "all";
+
+const VERIFICATION_OPTIONS: { label: string; value: VerificationFilter }[] = [
+  { label: "All", value: "all" },
+  { label: "Verified", value: "verified" },
+  { label: "Pending", value: "pending" },
+  { label: "Rejected", value: "rejected" },
+];
+
+const RESOURCE_TYPE_OPTIONS: { label: string; value: ResourceTypeFilter }[] = [
+  { label: "All", value: "all" },
+  { label: "File", value: "file" },
+  { label: "Link", value: "link" },
+];
+
 export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const { colors, shared, typography, colorScheme } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
