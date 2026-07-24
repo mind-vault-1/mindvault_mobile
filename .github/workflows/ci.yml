@@ -1,6 +1,12 @@
 name: CI
 
 on:
+  push:
+    # Scoped to main only: pull_request already re-runs on every commit
+    # pushed to a branch with an open PR (via GitHub's default
+    # "synchronize" event), so this only needs to cover pushes that have
+    # no open PR — direct pushes/merges to main.
+    branches: ["main"]
   pull_request:
     branches: ["*"]
 
