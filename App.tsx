@@ -232,10 +232,6 @@ export default function App() {
         onClose={() => setSettingsVisible(false)}
         onApiKeySet={handleApiKeySet}
       />
-    </SafeAreaView>
-      <NavigationContainer>
-        <RootNavigator />
-      </NavigationContainer>
     </SafeAreaProvider>
   );
 }
@@ -260,6 +256,7 @@ const styles = StyleSheet.create({
   },
   settingsButtonText: {
     fontSize: 24,
+  },
   headerTop: {
     flexDirection: "row",
     justifyContent: "space-between",
