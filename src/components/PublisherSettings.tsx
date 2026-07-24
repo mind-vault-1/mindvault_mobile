@@ -28,9 +28,13 @@ export function PublisherSettings({
   const [error, setError] = useState<string | null>(null);
 
   const loadApiKey = async () => {
-    const key = await getApiKey();
-    setHasKey(!!key);
-    if (key) setApiKey(key);
+    try {
+      const key = await getApiKey();
+      setHasKey(!!key);
+      if (key) setApiKey(key);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load API key");
+    }
   };
 
   const handleSave = async () => {
@@ -48,7 +52,7 @@ export function PublisherSettings({
       onApiKeySet();
       onClose();
     } catch (err) {
-      setError("Failed to save API key");
+      setError(err instanceof Error ? err.message : "Failed to save API key");
     } finally {
       setLoading(false);
     }
@@ -62,7 +66,7 @@ export function PublisherSettings({
       setHasKey(false);
       onApiKeySet();
     } catch (err) {
-      setError("Failed to clear API key");
+      setError(err instanceof Error ? err.message : "Failed to clear API key");
     } finally {
       setLoading(false);
     }
