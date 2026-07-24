@@ -32,6 +32,13 @@ Point the app at your MindVault API server by editing `app.json`:
 
 For a physical device, use your machine's LAN IP instead of `localhost` (e.g. `http://192.168.1.10:4021`).
 
+## Publisher Authentication
+
+Publisher resources require an API key for authentication:
+- **API Key Origin:** Publisher API keys are issued by your MindVault backend server.
+- **Server Configuration:** On self-hosted servers, configure your keys using the `PUBLISHER_API_KEYS` environment variable or generate one through your server's admin interface.
+- **App Usage:** Enter the key in the **Publisher Resources** tab or Publisher Settings modal to view and manage your resources.
+
 ## Run
 
 ```bash
