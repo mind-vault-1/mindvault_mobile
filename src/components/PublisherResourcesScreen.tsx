@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -23,6 +22,7 @@ import type { PublisherResource } from "../types";
 import { spacing } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { ResourceCard } from "./ResourceCard";
+import { SkeletonCard } from "./SkeletonCard";
 
 interface PublisherResourcesScreenProps {
   onBackToPublic?: () => void;
@@ -203,7 +203,7 @@ export function PublisherResourcesScreen({ onBackToPublic }: PublisherResourcesS
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
       <StatusBar style="dark" />
       <FlatList
-        data={filteredResources}
+        data={loading ? null : filteredResources}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
@@ -244,9 +244,10 @@ export function PublisherResourcesScreen({ onBackToPublic }: PublisherResourcesS
             ) : null}
 
             {loading ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={typography.body}>Loading your resources…</Text>
+              <View style={styles.skeletons}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <SkeletonCard key={i} />
+                ))}
               </View>
             ) : null}
 
@@ -395,6 +396,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
+  },
+  skeletons: {
+    gap: 12,
   },
   logoutButton: {
     borderRadius: 10,
