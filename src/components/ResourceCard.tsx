@@ -61,6 +61,45 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
   const [secretKey, setSecretKey] = useState("");
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Dynamic styles that depend on runtime theme colors — must live inside the component.
+  const dynamicStyles = useMemo(
+    () =>
+      StyleSheet.create({
+        shareButton: {
+          backgroundColor: colors.primary,
+        },
+        input: {
+          borderWidth: 1,
+          borderColor: colors.border,
+          borderRadius: 12,
+          backgroundColor: colors.surface,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          color: colors.text,
+          fontSize: 14,
+        },
+        primaryButton: {
+          backgroundColor: colors.primary,
+        },
+        statusText: {
+          color: colors.primary,
+          fontSize: 13,
+        },
+        errorText: {
+          color: colors.danger,
+          fontSize: 13,
+        },
+        successText: {
+          color: colors.success,
+          fontSize: 13,
+        },
+        secondaryButton: {
+          backgroundColor: colors.neutralBg,
+        },
+      }),
+    [colors]
+  );
+
   async function handleCopy() {
     await Clipboard.setStringAsync(resource.accessUrl);
     onCopyUrl("Resource URL copied");
@@ -92,6 +131,8 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
   }
 
   const isBusy = status !== "idle";
+  const isSaveDisabled = isBusy || !newPrice || !secretKey;
+
   const statusLabel =
     status === "preparing"
       ? "Preparing transaction…"
@@ -129,8 +170,14 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
       <View style={styles.footer}>
         <Text style={typography.price}>{resource.price} USDC</Text>
         <View style={styles.actions}>
-          <Pressable onPress={handleShare} style={[shared.button, styles.shareButton]}>
-            <Text style={shared.buttonText}>Share</Text>
+          <Pressable
+            onPress={handleShare}
+            style={[shared.button, dynamicStyles.shareButton]}
+            accessibilityRole="button"
+            accessibilityLabel={`Share ${resource.title}`}
+            accessibilityHint="Opens the share sheet with the resource title and URL"
+          >
+            <Text style={[shared.buttonText, styles.primaryButtonText]}>Share</Text>
           </Pressable>
           <Pressable
             onPress={handleCopy}
@@ -152,8 +199,10 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
             placeholder="New price"
             placeholderTextColor={colors.textSubtle}
             keyboardType="numeric"
-            style={styles.input}
+            style={dynamicStyles.input}
             editable={!isBusy}
+            accessibilityLabel="New price in USDC"
+            accessibilityHint="Enter the updated price for this resource"
           />
           <TextInput
             value={secretKey}
@@ -161,14 +210,20 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
             placeholder="Stellar secret key"
             placeholderTextColor={colors.textSubtle}
             secureTextEntry
-            style={styles.input}
+            style={dynamicStyles.input}
             editable={!isBusy}
+            accessibilityLabel="Stellar secret key"
+            accessibilityHint="Enter your Stellar secret key to sign the price update transaction"
           />
           <View style={styles.actionRow}>
             <Pressable
               onPress={() => setEditing(false)}
-              style={[shared.button, styles.secondaryButton]}
+              style={[shared.button, dynamicStyles.secondaryButton]}
               disabled={isBusy}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel price edit"
+              accessibilityHint="Discards changes and closes the price editor"
+              accessibilityState={{ disabled: isBusy }}
             >
               <Text style={shared.buttonText}>Cancel</Text>
             </Pressable>
@@ -176,10 +231,18 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
               onPress={handleSavePrice}
               style={[
                 shared.button,
-                styles.primaryButton,
-                isBusy ? styles.disabledButton : null,
+                dynamicStyles.primaryButton,
+                isSaveDisabled ? styles.disabledButton : null,
               ]}
-              disabled={isBusy || !newPrice || !secretKey}
+              disabled={isSaveDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Save new price"
+              accessibilityHint={
+                isBusy
+                  ? "Transaction in progress, please wait"
+                  : "Submits the price update transaction to the Stellar network"
+              }
+              accessibilityState={{ disabled: isSaveDisabled, busy: isBusy }}
             >
               {isBusy ? (
                 <ActivityIndicator color="#ffffff" />
@@ -188,14 +251,41 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
               )}
             </Pressable>
           </View>
-          {statusLabel ? <Text style={styles.statusText}>{statusLabel}</Text> : null}
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
+          {statusLabel ? (
+            <Text
+              style={dynamicStyles.statusText}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="status"
+            >
+              {statusLabel}
+            </Text>
+          ) : null}
+          {error ? (
+            <Text
+              style={dynamicStyles.errorText}
+              accessibilityLiveRegion="assertive"
+              accessibilityRole="alert"
+            >
+              {error}
+            </Text>
+          ) : null}
+          {successMessage ? (
+            <Text
+              style={dynamicStyles.successText}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="status"
+            >
+              {successMessage}
+            </Text>
+          ) : null}
         </View>
       ) : (
         <Pressable
           onPress={() => setEditing(true)}
           style={[shared.button, styles.editButton]}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit price for ${resource.title}`}
+          accessibilityHint="Opens the price editor for this resource"
         >
           <Text style={shared.buttonText}>Edit price</Text>
         </Pressable>
@@ -204,6 +294,7 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
   );
 }
 
+// Static styles that do not depend on theme colors.
 const styles = StyleSheet.create({
   badges: {
     flexDirection: "row",
@@ -220,30 +311,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
-  shareButton: {
-    backgroundColor: colors.primary,
-  },
   editor: {
     marginTop: 16,
     gap: 10,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: colors.text,
-    fontSize: 14,
   },
   actionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 8,
-  },
-  primaryButton: {
-    backgroundColor: colors.primary,
   },
   primaryButtonText: {
     color: "#ffffff",
@@ -251,22 +326,7 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.6,
   },
-  statusText: {
-    color: colors.primary,
-    fontSize: 13,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 13,
-  },
-  successText: {
-    color: colors.success,
-    fontSize: 13,
-  },
   editButton: {
     marginTop: 12,
-  },
-  secondaryButton: {
-    backgroundColor: colors.neutralBg,
   },
 });
