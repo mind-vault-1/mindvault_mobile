@@ -1,0 +1,60 @@
+name: Contributor Task
+description: A focused task for contributors — includes context, suggested files, acceptance criteria, and testing notes.
+title: "[Task] "
+labels: ["contributor-task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for picking this up! Please read through all sections before starting work.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What needs to be done and why?
+      placeholder: A concise description of the task and its motivation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested_files
+    attributes:
+      label: Suggested Files
+      description: Files likely relevant to this task. Not exhaustive — use your judgment.
+      placeholder: |
+        - src/components/ExampleComponent.tsx
+        - src/api/resources.ts
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: What must be true for this task to be considered complete?
+      placeholder: |
+        - [ ] The described behaviour is implemented or documented in a focused change.
+        - [ ] Existing behaviour outside this task is preserved.
+        - [ ] `npm run typecheck` passes with no errors.
+        - [ ] UI changes include screenshots or a short manual verification note.
+    validations:
+      required: true
+
+  - type: textarea
+    id: testing_notes
+    attributes:
+      label: Testing Notes
+      description: Steps or scenarios the reviewer should verify manually.
+      placeholder: |
+        1. Run `npm start` and open the app in Expo Go.
+        2. Navigate to the affected screen.
+        3. Confirm the new behaviour matches the acceptance criteria.
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        **Contributor notes:** Please keep the PR scoped to this issue and mention any backend assumptions in the PR description.
