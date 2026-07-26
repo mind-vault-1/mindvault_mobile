@@ -1,18 +1,13 @@
 // App.tsx
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { StyleSheet, Text, View, FlatList, TextInput, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
-import { fetchCatalog, fetchPublisherResources, fetchRegistryStatus, getApiBaseUrl } from "./src/api/resources";
+import { fetchCatalog, fetchPublisherResources, fetchRegistryStatus, getApiBaseUrl, initializeApiBaseUrl, setApiBaseUrl } from "./src/api/resources";
 import { PublisherSettings } from "./src/components/PublisherSettings";
-import { ResourceCard } from "./src/components/ResourceCard";
 import { getApiKey } from "./src/services/secureStorage";
-import {
-  fetchCatalog,
-  fetchRegistryStatus,
-  initializeApiBaseUrl,
-  setApiBaseUrl,
-} from "./src/api/resources";
 import { ResourceCard } from "./src/components/ResourceCard";
 import { EmptyState } from "./src/components/EmptyState";
 import type { Resource } from "./src/types";
@@ -232,10 +227,7 @@ export default function App() {
         onClose={() => setSettingsVisible(false)}
         onApiKeySet={handleApiKeySet}
       />
-    </SafeAreaView>
-      <NavigationContainer>
-        <RootNavigator />
-      </NavigationContainer>
+
     </SafeAreaProvider>
   );
 }
@@ -260,15 +252,14 @@ const styles = StyleSheet.create({
   },
   settingsButtonText: {
     fontSize: 24,
+  },
   headerTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     gap: spacing.sm,
   },
-  settingsButton: {
-    alignSelf: "flex-start",
-  },
+
   registry: {
     marginTop: spacing.xs,
     fontSize: 13,
