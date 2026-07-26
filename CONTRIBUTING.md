@@ -25,15 +25,15 @@ The app reads its API base URL from `app.json` under `extra.apiUrl`:
 }
 ```
 
-`localhost` works fine for simulators running on your machine. For a physical device connected over Wi-Fi, replace it with your machine's LAN IP:
+### Local Development Network Configuration
+- **iOS Simulator / Android Emulator**: `localhost` works fine, as they share the host machine's network stack
+- **Physical iOS/Android Devices**: Use your machine's LAN IP instead of `localhost` (e.g. `http://192.168.1.10:4021`), since the device can't reach the host's `localhost` directly over Wi-Fi
 
-```json
-"extra": {
-  "apiUrl": "http://192.168.1.10:4021"
-}
-```
+Find your LAN IP with:
+- **Windows**: `ipconfig` (look for "IPv4 Address" under your active network adapter, typically Wi-Fi or Ethernet)
+- **macOS/Linux**: `ifconfig` or `ip a` (look for "inet" address under your active network interface)
 
-Find your LAN IP with `ipconfig` (Windows) or `ifconfig` / `ip a` (macOS/Linux). The MindVault API server defaults to port `4021`.
+The MindVault API server defaults to port `4021`.
 
 ## Publisher API Key Setup
 

@@ -30,7 +30,13 @@ Point the app at your MindVault API server by editing `app.json`:
 }
 ```
 
-For a physical device, use your machine's LAN IP instead of `localhost` (e.g. `http://192.168.1.10:4021`).
+### Local Development Network Configuration
+- **Simulators/emulators (iOS/Android)**: `localhost` works fine, as they share the host machine's network stack
+- **Physical devices**: Use your machine's LAN IP instead of `localhost` (e.g. `http://192.168.1.10:4021`), since the device can't reach the host's `localhost` directly
+
+Find your LAN IP with:
+- **Windows**: `ipconfig` (look for "IPv4 Address" under your active network adapter)
+- **macOS/Linux**: `ifconfig` or `ip a` (look for "inet" address under your active network interface)
 
 ## Run
 
