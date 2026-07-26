@@ -251,3 +251,9 @@ export function useTheme() {
     isLoading,
   };
 }
+
+export const colors = lightColors;
+export const typography = StyleSheet.create({
+  title: { fontSize: 24 }
+} as any);
+export const shared = StyleSheet.create({} as any);

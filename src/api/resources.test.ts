@@ -1,0 +1,36 @@
+import { buildQuery } from './resources';
+
+describe('buildQuery', () => {
+  it('returns empty string for empty filters or undefined', () => {
+    expect(buildQuery()).toBe('');
+    expect(buildQuery({})).toBe('');
+  });
+
+  it('includes search query when provided', () => {
+    expect(buildQuery({ search: 'test' })).toBe('?search=test');
+    expect(buildQuery({ search: 'hello world' })).toBe('?search=hello+world');
+  });
+
+  it('includes verificationStatus when it is not "all"', () => {
+    expect(buildQuery({ verificationStatus: 'verified' })).toBe('?verificationStatus=verified');
+    expect(buildQuery({ verificationStatus: 'all' })).toBe('');
+  });
+
+  it('includes resourceType when it is not "all"', () => {
+    expect(buildQuery({ resourceType: 'file' as any })).toBe('?resourceType=file');
+    expect(buildQuery({ resourceType: 'all' })).toBe('');
+  });
+
+  it('combines multiple filters correctly', () => {
+    const filters: any = {
+      search: 'ai',
+      verificationStatus: 'verified',
+      resourceType: 'file'
+    };
+    const query = buildQuery(filters);
+    expect(query).toContain('search=ai');
+    expect(query).toContain('verificationStatus=verified');
+    expect(query).toContain('resourceType=model');
+    expect(query.startsWith('?')).toBe(true);
+  });
+});
