@@ -40,6 +40,16 @@ npm start
 
 Then press `i` for iOS simulator, `a` for Android emulator, or scan the QR code with Expo Go.
 
+## Available npm scripts
+
+| Script          | Description                                                                 |
+|-----------------|-----------------------------------------------------------------------------|
+| `npm start`     | Start the Expo development server (supports Android, iOS, and web)          |
+| `npm run android` | Run the app on an Android device or emulator using Expo's development build |
+| `npm run ios`   | Run the app on an iOS device or simulator using Expo's development build    |
+| `npm run web`   | Run the app in a web browser                                                |
+| `npm run typecheck` | Run TypeScript type checking without emitting files                         |
+
 ## Related
 
 The main MindVault monorepo lives at `../mindvault` and includes the server, web app, MCP server, and Soroban contracts.
