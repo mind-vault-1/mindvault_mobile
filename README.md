@@ -62,6 +62,13 @@ The app defaults to the Stellar **Testnet**. The passphrase `Test SDF Network ; 
 
 `src/screens/DevSignerScreen.tsx` is a developer-only debug screen and intentionally hardcodes `Networks.TESTNET` regardless of any config — it's not affected by the `app.json` value and always targets testnet.
 
+## Publisher Authentication
+
+Publisher resources require an API key for authentication:
+- **API Key Origin:** Publisher API keys are issued by your MindVault backend server.
+- **Server Configuration:** On self-hosted servers, configure your keys using the `PUBLISHER_API_KEYS` environment variable or generate one through your server's admin interface.
+- **App Usage:** Enter the key in the **Publisher Resources** tab or Publisher Settings modal to view and manage your resources.
+
 ## Run
 
 ```bash
