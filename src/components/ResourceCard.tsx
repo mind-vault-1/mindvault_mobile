@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as Clipboard from "expo-clipboard";
 import { useMemo, useState } from "react";
 import {

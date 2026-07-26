@@ -32,3 +32,9 @@ For the **production** publisher flow, we will implement **Option 1: WalletConne
 6. **Handle Response**: Await the user's approval in their wallet and process the returned signed XDR.
 
 However, to enable rapid development and testing (as requested in Issue #16), we have implemented **Option 3: In-App Signer** as a Proof-of-Concept (PoC). This PoC is available on the `DevSignerScreen` (accessible via Settings) and allows developers to easily generate and sign dummy Soroban transactions using a provided secret key without needing external wallets on the simulator/device.
+
+## Current Network Configuration
+
+Note: the `stellar:pubnet` in step 3 above is just an illustrative example for the not-yet-implemented WalletConnect flow — it is **not** the app's actual current default. The app currently defaults to **Testnet**, configured via `app.json`'s `expo.extra.networkPassphrase`. See the [README's "Stellar Network Configuration" section](./README.md#stellar-network-configuration) for the full breakdown, including where each screen/flow gets its passphrase from and the one exception (register/price-edit flows take the passphrase from the backend's API response).
+
+`DevSignerScreen` (the PoC above) always hardcodes testnet regardless of any config, by design — it's a dev-only tool and isn't affected by `app.json`.

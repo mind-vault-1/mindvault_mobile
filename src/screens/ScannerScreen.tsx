@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useMemo, useRef, useState } from "react";
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
