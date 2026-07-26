@@ -72,6 +72,16 @@ npm run typecheck
 
 This runs `tsc --noEmit` and reports any TypeScript errors without emitting output files. Fix all type errors before opening a PR.
 
+## Dependency Validation
+
+```bash
+npm run validate-deps
+```
+
+This runs `expo-doctor`, which checks that your installed Expo and native module versions are compatible with the project's Expo SDK and validates `app.json`/config. It requires no native build credentials (no Xcode signing, no Android keystore, no EAS token), so it runs anywhere `npm` does, including CI. Run it after changing dependencies and before opening a PR.
+
+Both `npm run validate-deps` and `npm run typecheck` run automatically on every pull request via the `Typecheck & Dependency Validation` workflow (`.github/workflows/typecheck.yml`).
+
 ## Submitting a PR
 
 1. Fork the repo and create a branch off `main` with a descriptive name (e.g. `feat/search-filters` or `fix/refresh-crash`).
