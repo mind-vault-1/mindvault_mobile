@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -9,7 +9,15 @@ import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 
-const RESOURCE_URL_RE = /\/resources\/([^\/?#\s]+)/;
+/**
+ * Matches a MindVault resource URL anchored to its scheme and host.
+ * Accepts:
+ *   - https://example.com/resources/<id>
+ *   - http://example.com/resources/<id>
+ *   - mindvault://resources/<id>  (deep-link, host is optional)
+ */
+const RESOURCE_URL_RE =
+  /^(?:https?:\/\/[^\/?#\s]+|mindvault:\/\/[^\/?#\s]*)\/resources\/([^\/?#\s]+)/i;
 
 interface ScannerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Scanner">;
@@ -86,6 +94,20 @@ function createStyles(colors: ThemeColors) {
       fontWeight: "500",
       marginTop: spacing.xl,
     },
+    errorBanner: {
+      marginTop: spacing.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      backgroundColor: "rgba(200, 30, 30, 0.85)",
+      borderRadius: 8,
+      maxWidth: 280,
+    },
+    errorText: {
+      color: "#ffffff",
+      fontSize: 13,
+      fontWeight: "600",
+      textAlign: "center",
+    },
   });
 }
 
@@ -95,6 +117,8 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
 
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function handleBarcodeScanned({ data }: { data: string }) {
     if (scanned) return;
@@ -120,14 +144,13 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
       return;
     }
 
-    Alert.alert(
-      "Unrecognized Code",
-      "This QR code does not contain a valid resource URL.",
-      [
-        { text: "Try Again", onPress: () => setScanned(false) },
-        { text: "Cancel", onPress: () => navigation.goBack() },
-      ],
-    );
+    // Non-blocking inline error — auto-resumes scanning after 2.5 s
+    setScanError("Unrecognized QR code. Point at a MindVault resource code.");
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = setTimeout(() => {
+      setScanError(null);
+      setScanned(false);
+    }, 2500);
   }
 
   if (!permission) {
@@ -172,7 +195,14 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
           <View style={[styles.corner, styles.cornerBottomLeft]} />
           <View style={[styles.corner, styles.cornerBottomRight]} />
         </View>
-        <Text style={styles.hint}>Point at a QR code</Text>
+        <Text style={styles.hint}>
+          {scanError ? "" : "Point at a QR code"}
+        </Text>
+        {scanError ? (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorText}>{scanError}</Text>
+          </View>
+        ) : null}
       </View>
     </View>
   );
