@@ -1,5 +1,4 @@
-// @ts-nocheck
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Modal,
   Pressable,
@@ -10,7 +9,8 @@ import {
 } from "react-native";
 
 import { clearApiKey, getApiKey, storeApiKey } from "../services/secureStorage";
-import { colors, shared, spacing, typography } from "../theme";
+import { spacing, type ThemeColors } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
 
 interface PublisherSettingsProps {
   visible: boolean;
@@ -23,6 +23,9 @@ export function PublisherSettings({
   onClose,
   onApiKeySet,
 }: PublisherSettingsProps) {
+  const { colors, shared, typography } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -105,8 +108,8 @@ export function PublisherSettings({
           </View>
 
           {error ? (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{error}</Text>
+            <View style={[styles.errorBanner, { borderColor: colors.danger, backgroundColor: colors.dangerBg }]}>
+              <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
             </View>
           ) : null}
 
@@ -130,10 +133,11 @@ export function PublisherSettings({
               disabled={loading}
               style={({ pressed }) => [
                 styles.button,
+                styles.saveButton,
                 pressed && styles.buttonPressed,
               ]}
             >
-              <Text style={styles.buttonText}>
+              <Text style={styles.saveButtonText}>
                 {loading ? "Saving..." : "Save API Key"}
               </Text>
             </Pressable>
@@ -155,73 +159,75 @@ export function PublisherSettings({
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  content: {
-    flex: 1,
-    padding: spacing.lg,
-    gap: spacing.lg,
-  },
-  inputGroup: {
-    gap: spacing.sm,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: colors.text,
-  },
-  errorBanner: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#fecaca",
-    backgroundColor: "#fef2f2",
-    padding: spacing.md,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 14,
-  },
-  button: {
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    alignItems: "center",
-  },
-  buttonPressed: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 16,
-  },
-  logoutButton: {
-    backgroundColor: colors.danger,
-  },
-  logoutButtonText: {
-    color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 16,
-  },
-  cancelButton: {
-    backgroundColor: colors.border,
-  },
-  cancelButtonText: {
-    color: colors.text,
-    fontWeight: "600",
-    fontSize: 16,
-  },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    header: {
+      padding: spacing.lg,
+      gap: spacing.sm,
+    },
+    content: {
+      flex: 1,
+      padding: spacing.lg,
+      gap: spacing.lg,
+    },
+    inputGroup: {
+      gap: spacing.sm,
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: colors.text,
+    },
+    errorBanner: {
+      borderRadius: 12,
+      borderWidth: 1,
+      padding: spacing.md,
+    },
+    errorText: {
+      fontSize: 14,
+    },
+    button: {
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      alignItems: "center",
+    },
+    buttonPressed: {
+      opacity: 0.7,
+    },
+    saveButton: {
+      backgroundColor: colors.primary,
+    },
+    saveButtonText: {
+      color: "#ffffff",
+      fontWeight: "600",
+      fontSize: 16,
+    },
+    logoutButton: {
+      backgroundColor: colors.danger,
+    },
+    logoutButtonText: {
+      color: "#ffffff",
+      fontWeight: "600",
+      fontSize: 16,
+    },
+    cancelButton: {
+      backgroundColor: colors.neutralBg,
+    },
+    cancelButtonText: {
+      color: colors.text,
+      fontWeight: "600",
+      fontSize: 16,
+    },
+  });
+}
