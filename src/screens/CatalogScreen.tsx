@@ -22,7 +22,7 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import type { RootStackParamList } from "../navigation";
-import type { Resource, VerificationStatus } from "../types";
+import type { CatalogFilters, Resource, VerificationStatus } from "../types";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
@@ -283,9 +283,18 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     }
     setError(null);
 
+    const filters: CatalogFilters = {};
+    if (search.trim()) filters.search = search.trim();
+    if (verification !== DEFAULT_VERIFICATION) {
+      filters.verificationStatus = verification;
+    }
+    if (resourceType !== DEFAULT_RESOURCE_TYPE) {
+      filters.resourceType = resourceType;
+    }
+
     try {
       const [catalog, registry] = await Promise.all([
-        fetchCatalog(),
+        fetchCatalog(Object.keys(filters).length > 0 ? filters : undefined),
         fetchRegistryStatus().catch(() => null),
       ]);
       setResources(catalog);
@@ -301,7 +310,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [search, verification, resourceType]);
 
   useEffect(() => {
     void loadData();
@@ -329,40 +338,21 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   }, []);
 
   const filteredResources = useMemo(() => {
-    const query = search.trim().toLowerCase();
     const min = Number.parseFloat(minPrice);
     const max = Number.parseFloat(maxPrice);
     const hasMin = !Number.isNaN(min);
     const hasMax = !Number.isNaN(max);
 
+    if (!hasMin && !hasMax) return resources;
+
     return resources.filter((resource) => {
-      if (query) {
-        const haystack =
-          `${resource.title} ${resource.publisherName ?? ""} ${resource.resourceType}`.toLowerCase();
-        if (!haystack.includes(query)) return false;
-      }
-
-      if (
-        verification !== "all" &&
-        resource.verificationStatus !== verification
-      ) {
-        return false;
-      }
-
-      if (resourceType !== "all" && resource.resourceType !== resourceType) {
-        return false;
-      }
-
-      if (hasMin || hasMax) {
-        const price = Number.parseFloat(resource.price);
-        if (Number.isNaN(price)) return false;
-        if (hasMin && price < min) return false;
-        if (hasMax && price > max) return false;
-      }
-
+      const price = Number.parseFloat(resource.price);
+      if (Number.isNaN(price)) return false;
+      if (hasMin && price < min) return false;
+      if (hasMax && price > max) return false;
       return true;
     });
-  }, [resources, search, verification, resourceType, minPrice, maxPrice]);
+  }, [resources, minPrice, maxPrice]);
 
   function renderEmpty() {
     if (loading) return null;
