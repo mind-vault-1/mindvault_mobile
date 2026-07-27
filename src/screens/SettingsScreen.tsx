@@ -172,26 +172,6 @@ export function SettingsScreen() {
           </View>
         </View>
 
-        <View
-          style={[
-            styles.infoCard,
-            { backgroundColor: colors.warningBg, marginTop: 32 },
-          ]}
-        >
-          <Text
-            style={[
-              styles.title,
-              { fontSize: 16, color: colors.warning, marginBottom: 8 },
-            ]}
-          >
-            Developer Options
-          </Text>
-          <Text
-            style={[
-              styles.infoText,
-              { color: colors.warning, marginBottom: 16 },
-            ]}
-          >
         <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
           <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>Publisher Resources</Text>
           <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
