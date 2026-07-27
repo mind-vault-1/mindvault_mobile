@@ -192,6 +192,24 @@ export function SettingsScreen() {
               { color: colors.warning, marginBottom: 16 },
             ]}
           >
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>Publisher Resources</Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            Authenticate with a publisher API key to manage the resources you have published.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("PublisherResources")}
+            accessibilityRole="button"
+            accessibilityLabel="Open publisher resources"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>Open Publisher Resources</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.warningBg, marginTop: 16 }]}>
+          <Text style={[styles.title, { fontSize: 16, color: colors.warning, marginBottom: 8 }]}>Developer Options</Text>
+          <Text style={[styles.infoText, { color: colors.warning, marginBottom: 16 }]}>
             These tools are for testing purposes only.
           </Text>
           <TouchableOpacity

@@ -11,6 +11,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import {
   deleteStoredApiKey,
@@ -20,17 +22,28 @@ import {
   storeApiKey,
 } from "../api/resources";
 import type { PublisherResource } from "../types";
+import type { RootStackParamList } from "../navigation";
 import { spacing } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
-import { ResourceCard } from "./ResourceCard";
-import { SkeletonCard } from "./SkeletonCard";
+import { ResourceCard } from "../components/ResourceCard";
+import { SkeletonCard } from "../components/SkeletonCard";
 
-interface PublisherResourcesScreenProps {
-  onBackToPublic?: () => void;
-}
+type PublisherResourcesNavigation = NativeStackNavigationProp<
+  RootStackParamList,
+  "PublisherResources"
+>;
 
-export function PublisherResourcesScreen({ onBackToPublic }: PublisherResourcesScreenProps) {
+export function PublisherResourcesScreen() {
   const { colors, shared, typography } = useAppTheme();
+  const navigation = useNavigation<PublisherResourcesNavigation>();
+
+  const goToPublicCatalog = useCallback(() => {
+    // Pop back to the root screen (the public Catalog). The Stack header's
+    // back button is sufficient for returning to Settings; the explicit
+    // "Back to Public Catalog" affordance skips past Settings to the root.
+    navigation.popToTop();
+  }, [navigation]);
+
   const [apiKey, setApiKey] = useState("");
   const [storedApiKey, setStoredApiKey] = useState<string | null>(null);
   const [resources, setResources] = useState<PublisherResource[]>([]);
@@ -183,11 +196,9 @@ export function PublisherResourcesScreen({ onBackToPublic }: PublisherResourcesS
             </Text>
           </Pressable>
 
-          {onBackToPublic ? (
-            <Pressable onPress={onBackToPublic} style={styles.secondaryButton}>
-              <Text style={styles.secondaryButtonText}>Back to Public Catalog</Text>
-            </Pressable>
-          ) : null}
+          <Pressable onPress={goToPublicCatalog} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>Back to Public Catalog</Text>
+          </Pressable>
 
           <View style={styles.helpCard}>
             <View style={styles.helpHeaderRow}>
@@ -248,11 +259,9 @@ export function PublisherResourcesScreen({ onBackToPublic }: PublisherResourcesS
                 <Text style={typography.title}>My Resources</Text>
                 <Text style={typography.subtitle}>Your published resources</Text>
               </View>
-              {onBackToPublic ? (
-                <Pressable onPress={onBackToPublic} style={styles.backButton}>
-                  <Text style={styles.backButtonText}>← Public</Text>
-                </Pressable>
-              ) : null}
+              <Pressable onPress={goToPublicCatalog} style={styles.backButton}>
+                <Text style={styles.backButtonText}>← Public</Text>
+              </Pressable>
             </View>
 
             <TextInput
