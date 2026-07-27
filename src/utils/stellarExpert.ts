@@ -1,11 +1,8 @@
-import Constants from "expo-constants";
 import { Linking } from "react-native";
 
-type StellarExpertNetworkSegment = "testnet" | "public";
+import { DEFAULT_STELLAR_NETWORK, DEFAULT_NETWORK_PASSPHRASE } from "../api/resources";
 
-const DEFAULT_NETWORK_PASSPHRASE =
-  (Constants.expoConfig?.extra?.networkPassphrase as string | undefined) ??
-  "Test SDF Network ; September 2015";
+type StellarExpertNetworkSegment = "testnet" | "public";
 
 function normalizeNetwork(input?: string): string | null {
   const value = input?.trim().toLowerCase();
@@ -32,14 +29,23 @@ function networkSegmentFromPassphrase(passphrase?: string): StellarExpertNetwork
   return "testnet";
 }
 
+function resolveExplorerNetworkSegment(opts: {
+  network?: string;
+  networkPassphrase?: string;
+}): StellarExpertNetworkSegment {
+  return (
+    networkSegmentFromNetworkName(opts.network) ??
+    networkSegmentFromNetworkName(DEFAULT_STELLAR_NETWORK) ??
+    networkSegmentFromPassphrase(opts.networkPassphrase)
+  );
+}
+
 export function stellarExpertTxUrl(opts: {
   txHash: string;
   network?: string;
   networkPassphrase?: string;
 }): string {
-  const segment =
-    networkSegmentFromNetworkName(opts.network) ??
-    networkSegmentFromPassphrase(opts.networkPassphrase);
+  const segment = resolveExplorerNetworkSegment(opts);
   return `https://stellar.expert/explorer/${segment}/tx/${encodeURIComponent(opts.txHash)}`;
 }
 
@@ -48,9 +54,7 @@ export function stellarExpertAccountUrl(opts: {
   network?: string;
   networkPassphrase?: string;
 }): string {
-  const segment =
-    networkSegmentFromNetworkName(opts.network) ??
-    networkSegmentFromPassphrase(opts.networkPassphrase);
+  const segment = resolveExplorerNetworkSegment(opts);
   return `https://stellar.expert/explorer/${segment}/account/${encodeURIComponent(opts.accountId)}`;
 }
 
