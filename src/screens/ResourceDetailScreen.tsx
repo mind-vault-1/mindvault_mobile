@@ -14,6 +14,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { fetchResource, ResourceFetchError } from "../api/resources";
 import type { RootStackParamList } from "../navigation";
 import type { Resource } from "../types";
+import { getResourceTypeLabel } from "../types";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
@@ -294,7 +295,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
 
         <View style={styles.infoRow}>
           <Text style={styles.label}>Type</Text>
-          <Text style={typography.body}>{resource.resourceType}</Text>
+          <Text style={typography.body}>{getResourceTypeLabel(resource.resourceType)}</Text>
         </View>
 
         <View style={styles.infoRow}>

@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import type { Resource } from "../types";
+import { getResourceTypeLabel } from "../types";
 import { useEditPrice } from "../hooks/useEditPrice";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
@@ -171,6 +172,11 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
       </Text>
 
       <View style={styles.badges}>
+        <View style={[shared.badge, { backgroundColor: colors.neutralBg }]}>
+          <Text style={[shared.badgeText, { color: colors.textMuted }]}>
+            {getResourceTypeLabel(resource.resourceType)}
+          </Text>
+        </View>
         <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
           <Text style={[shared.badgeText, { color: verification.color }]}>
             {resource.verificationStatus}

@@ -34,6 +34,15 @@ export interface PaymentChallenge {
   memo?: string;
 }
 
+const RESOURCE_TYPE_LABELS: Record<string, string> = {
+  file: "File",
+  link: "Link",
+};
+
+export function getResourceTypeLabel(type: string): string {
+  return RESOURCE_TYPE_LABELS[type] ?? type;
+}
+
 export type AccessResult =
   | { type: "text"; content: string }
   | { type: "external"; url: string };
