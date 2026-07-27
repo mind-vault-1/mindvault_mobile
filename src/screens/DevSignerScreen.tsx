@@ -77,21 +77,35 @@ export function DevSignerScreen() {
         autoCorrect={false}
       />
 
-      <TouchableOpacity
-        style={[
-          shared.button,
-          shared.primaryButton,
-          { marginTop: spacing.md, opacity: isButtonDisabled ? 0.6 : 1 }
-        ]}
-        disabled={isButtonDisabled}
-        onPress={handleSignTransaction}
-      >
-        {isSigning ? (
-          <ActivityIndicator color="#ffffff" />
-        ) : (
-          <Text style={shared.primaryButtonText}>Sign Test Transaction</Text>
+      <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.md }}>
+        <TouchableOpacity
+          style={[
+            shared.button,
+            shared.primaryButton,
+            { flex: 1, opacity: isButtonDisabled ? 0.6 : 1 }
+          ]}
+          disabled={isButtonDisabled}
+          onPress={handleSignTransaction}
+        >
+          {isSigning ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text style={shared.primaryButtonText}>Sign Test Transaction</Text>
+          )}
+        </TouchableOpacity>
+
+        {secretKey.length > 0 && (
+          <TouchableOpacity
+            style={[
+              shared.button,
+              { flex: 1, backgroundColor: colors.neutralBg, borderColor: colors.border, borderWidth: 1 }
+            ]}
+            onPress={() => setSecretKey("")}
+          >
+            <Text style={{ color: colors.text, fontWeight: "600" }}>Clear Key</Text>
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
+      </View>
 
       {error && (
         <View style={[styles.errorBox, { backgroundColor: colors.dangerBg, borderColor: colors.danger }]}>

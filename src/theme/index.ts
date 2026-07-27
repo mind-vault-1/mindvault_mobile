@@ -98,6 +98,29 @@ export function resolveColorScheme(
   return mode;
 }
 
+export const colors = lightColors;
+
+export const typography = StyleSheet.create({
+  heading: { fontSize: 20, fontWeight: "700", color: colors.text },
+  title: { fontSize: 28, fontWeight: "700", color: colors.text },
+  subtitle: { fontSize: 14, color: colors.textMuted },
+  cardTitle: { fontSize: 16, fontWeight: "600", color: colors.text },
+  body: { fontSize: 14, color: colors.textMuted },
+  caption: { fontSize: 12, color: colors.textSubtle },
+  price: { fontSize: 15, fontWeight: "600", color: colors.primary },
+});
+
+export const shared = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background },
+  card: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 8 },
+  badge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  badgeText: { fontSize: 11, fontWeight: "600", textTransform: "capitalize" },
+  button: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.neutralBg, minHeight: 44, minWidth: 44, justifyContent: "center", alignItems: "center" },
+  buttonText: { fontSize: 12, fontWeight: "600", color: colors.text },
+  primaryButton: { backgroundColor: colors.primary },
+  primaryButtonText: { color: "#ffffff" },
+});
+
 // Theme hook for components
 export function useTheme() {
   const systemColorScheme = useColorScheme();
