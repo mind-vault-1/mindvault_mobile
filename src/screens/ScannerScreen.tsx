@@ -2,6 +2,7 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useMemo, useRef, useState } from "react";
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import type { RootStackParamList } from "../navigation";
@@ -155,15 +156,15 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
 
   if (!permission) {
     return (
-      <View style={styles.centered}>
+      <SafeAreaView style={styles.centered} edges={["top", "left", "right"]}>
         <Text style={typography.body}>Requesting camera permission…</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (!permission.granted) {
     return (
-      <View style={styles.centered}>
+      <SafeAreaView style={styles.centered} edges={["top", "left", "right"]}>
         <Text style={styles.heading}>Camera access is required</Text>
         <Text style={[typography.body, styles.permissionBody]}>
           MindVault needs camera permission to scan QR codes.
@@ -176,7 +177,7 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
             Grant Permission
           </Text>
         </Pressable>
-      </View>
+      </SafeAreaView>
     );
   }
 
