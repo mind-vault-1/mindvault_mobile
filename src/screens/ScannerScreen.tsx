@@ -1,7 +1,17 @@
 // @ts-nocheck
+import * as Clipboard from "expo-clipboard";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useMemo, useRef, useState } from "react";
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Linking,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import type { RootStackParamList } from "../navigation";
@@ -108,6 +118,89 @@ function createStyles(colors: ThemeColors) {
       fontWeight: "600",
       textAlign: "center",
     },
+    pasteButton: {
+      marginTop: spacing.lg,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: "#ffffff",
+    },
+    pasteButtonText: {
+      color: "#ffffff",
+      fontSize: 14,
+      fontWeight: "600",
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.5)",
+      justifyContent: "flex-end",
+    },
+    modalSheet: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: spacing.lg,
+      gap: spacing.md,
+      paddingBottom: spacing.xxl,
+    },
+    modalLabel: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    modalInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 13,
+      color: colors.text,
+    },
+    modalInputError: {
+      borderColor: colors.danger,
+    },
+    modalErrorText: {
+      fontSize: 13,
+      color: colors.danger,
+      backgroundColor: colors.dangerBg,
+      borderRadius: 8,
+      padding: 8,
+    },
+    modalActions: {
+      flexDirection: "row",
+      gap: 8,
+    },
+    modalCancelButton: {
+      flex: 1,
+      backgroundColor: colors.background,
+      alignItems: "center",
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    modalCancelText: {
+      color: colors.text,
+      fontWeight: "600",
+    },
+    modalConfirmButton: {
+      flex: 1,
+      alignItems: "center",
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    modalDisabledButton: {
+      opacity: 0.5,
+    },
+    modalPasteInlineButton: {
+      alignSelf: "flex-start",
+    },
+    modalPasteInlineText: {
+      color: colors.primary,
+      fontSize: 13,
+      fontWeight: "600",
+    },
   });
 }
 
@@ -119,6 +212,10 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
   const [scanned, setScanned] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [pasteModalVisible, setPasteModalVisible] = useState(false);
+  const [pasteValue, setPasteValue] = useState("");
+  const [pasteError, setPasteError] = useState<string | null>(null);
 
   function handleBarcodeScanned({ data }: { data: string }) {
     if (scanned) return;
@@ -153,6 +250,115 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
     }, 2500);
   }
 
+  function openPasteModal() {
+    setPasteValue("");
+    setPasteError(null);
+    setPasteModalVisible(true);
+  }
+
+  function closePasteModal() {
+    setPasteModalVisible(false);
+    setPasteValue("");
+    setPasteError(null);
+  }
+
+  async function handlePasteFromClipboard() {
+    const text = await Clipboard.getStringAsync();
+    if (text) {
+      setPasteValue(text.trim());
+      setPasteError(null);
+    }
+  }
+
+  function handleSubmitPastedUrl() {
+    const trimmed = pasteValue.trim();
+    if (!trimmed) {
+      setPasteError("Enter or paste a MindVault resource URL.");
+      return;
+    }
+
+    const match = trimmed.match(RESOURCE_URL_RE);
+    if (match) {
+      closePasteModal();
+      navigation.replace("ResourceDetail", { resourceId: match[1] });
+      return;
+    }
+
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      closePasteModal();
+      Alert.alert("Open URL", trimmed, [
+        { text: "Cancel" },
+        {
+          text: "Open",
+          onPress: () => {
+            Linking.openURL(trimmed).catch(() => {});
+          },
+        },
+      ]);
+      return;
+    }
+
+    setPasteError("This doesn't look like a valid MindVault resource URL.");
+  }
+
+  const pasteModal = (
+    <Modal
+      visible={pasteModalVisible}
+      transparent
+      animationType="slide"
+      onRequestClose={closePasteModal}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <Text style={typography.title}>Enter Resource Link</Text>
+          <Text style={styles.modalLabel}>MindVault Resource URL</Text>
+          <TextInput
+            value={pasteValue}
+            onChangeText={(text) => {
+              setPasteValue(text);
+              setPasteError(null);
+            }}
+            placeholder="https://mindvault.app/resources/…"
+            placeholderTextColor={colors.textSubtle}
+            style={[styles.modalInput, pasteError ? styles.modalInputError : null]}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
+          <Pressable
+            onPress={() => void handlePasteFromClipboard()}
+            style={styles.modalPasteInlineButton}
+          >
+            <Text style={styles.modalPasteInlineText}>Paste from Clipboard</Text>
+          </Pressable>
+          {pasteError ? (
+            <Text style={styles.modalErrorText}>{pasteError}</Text>
+          ) : null}
+          <View style={styles.modalActions}>
+            <Pressable
+              onPress={closePasteModal}
+              style={[shared.button, styles.modalCancelButton]}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={handleSubmitPastedUrl}
+              style={[
+                shared.button,
+                styles.modalConfirmButton,
+                { backgroundColor: colors.primary },
+                pasteValue.trim().length === 0 ? styles.modalDisabledButton : null,
+              ]}
+              disabled={pasteValue.trim().length === 0}
+            >
+              <Text style={shared.buttonText}>Go</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   if (!permission) {
     return (
       <View style={styles.centered}>
@@ -176,6 +382,12 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
             Grant Permission
           </Text>
         </Pressable>
+        <Pressable onPress={openPasteModal}>
+          <Text style={[typography.body, { color: colors.primary, fontWeight: "600" }]}>
+            Paste a resource link instead
+          </Text>
+        </Pressable>
+        {pasteModal}
       </View>
     );
   }
@@ -203,7 +415,11 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
             <Text style={styles.errorText}>{scanError}</Text>
           </View>
         ) : null}
+        <Pressable style={styles.pasteButton} onPress={openPasteModal}>
+          <Text style={styles.pasteButtonText}>Paste Link Instead</Text>
+        </Pressable>
       </View>
+      {pasteModal}
     </View>
   );
 }
