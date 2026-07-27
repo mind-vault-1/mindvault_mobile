@@ -5,6 +5,7 @@ import { Keypair, Transaction } from "@stellar/stellar-sdk";
 import { getApiKey } from "../services/secureStorage";
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
 import { logError } from "../utils/errorLogger";
+import { validateStellarSecret } from "../utils/validateStellarSecret";
 
 const DEFAULT_API_BASE_URL =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? "http://localhost:4021";
@@ -138,6 +139,11 @@ export function signTransactionXdr(
   secretKey: string,
   networkPassphrase: string = DEFAULT_NETWORK_PASSPHRASE
 ): string {
+  const validation = validateStellarSecret(secretKey);
+  if (!validation.isValid) {
+    throw new Error(validation.errorMessage ?? "Invalid secret key.");
+  }
+
   const transaction = new Transaction(xdr, networkPassphrase);
   const keypair = Keypair.fromSecret(secretKey.trim());
   transaction.sign(keypair);

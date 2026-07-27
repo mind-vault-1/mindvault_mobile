@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as Clipboard from "expo-clipboard";
 import { useMemo, useState } from "react";
+import { validateStellarSecret } from "../utils/validateStellarSecret";
 import {
   ActivityIndicator,
   Pressable,
@@ -60,6 +61,7 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
   const [editing, setEditing] = useState(false);
   const [newPrice, setNewPrice] = useState(resource.price);
   const [secretKey, setSecretKey] = useState("");
+  const [secretKeyTouched, setSecretKeyTouched] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Dynamic styles that depend on runtime theme colors — must live inside the component.
@@ -120,19 +122,32 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
     });
   }
 
+  const secretKeyValidation = useMemo(() => validateStellarSecret(secretKey), [secretKey]);
+
   async function handleSavePrice() {
     resetError();
     setSuccessMessage(null);
+
+    if (!secretKeyValidation.isValid) {
+      setSecretKeyTouched(true);
+      return;
+    }
+
     const ok = await editPrice(resource.id, newPrice, secretKey);
     if (ok) {
       setSuccessMessage("Price edit submitted.");
       setEditing(false);
       setSecretKey("");
+      setSecretKeyTouched(false);
     }
   }
 
   const isBusy = status !== "idle";
-  const isSaveDisabled = isBusy || !newPrice || !secretKey;
+  const isSaveDisabled = isBusy || !newPrice || !secretKeyValidation.isValid;
+
+  const secretKeyFieldError = secretKeyTouched && secretKey.length > 0 && !secretKeyValidation.isValid
+    ? secretKeyValidation.errorMessage
+    : null;
 
   const statusLabel =
     status === "preparing"
@@ -207,7 +222,11 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
           />
           <TextInput
             value={secretKey}
-            onChangeText={setSecretKey}
+            onChangeText={(text) => {
+              setSecretKey(text);
+              if (!secretKeyTouched) setSecretKeyTouched(true);
+            }}
+            onBlur={() => setSecretKeyTouched(true)}
             placeholder="Stellar secret key"
             placeholderTextColor={colors.textSubtle}
             secureTextEntry
@@ -259,6 +278,15 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
               accessibilityRole="status"
             >
               {statusLabel}
+            </Text>
+          ) : null}
+          {secretKeyFieldError ? (
+            <Text
+              style={dynamicStyles.errorText}
+              accessibilityLiveRegion="assertive"
+              accessibilityRole="alert"
+            >
+              {secretKeyFieldError}
             </Text>
           ) : null}
           {error ? (
