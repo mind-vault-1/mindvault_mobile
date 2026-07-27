@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -11,7 +11,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Sharing from "expo-sharing";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
-import { fetchResource } from "../api/resources";
+import { fetchResource, ResourceFetchError } from "../api/resources";
 import type { RootStackParamList } from "../navigation";
 import type { Resource } from "../types";
 import { spacing } from "../theme";
@@ -132,22 +132,33 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
   const [resource, setResource] = useState<Resource | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isTransientError, setIsTransientError] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const data = await fetchResource(resourceId);
-        setResource(data);
-        navigation.setOptions({ title: data.title });
-      } catch {
-        setError("Resource not found.");
-      } finally {
-        setLoading(false);
+  const loadResource = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setIsTransientError(false);
+    try {
+      const data = await fetchResource(resourceId);
+      setResource(data);
+      navigation.setOptions({ title: data.title });
+    } catch (err) {
+      if (err instanceof ResourceFetchError) {
+        setError(err.message);
+        setIsTransientError(err.isTransient);
+      } else {
+        setError("An unexpected error occurred.");
+        setIsTransientError(true);
       }
+    } finally {
+      setLoading(false);
     }
-    void load();
   }, [resourceId, navigation]);
+
+  useEffect(() => {
+    void loadResource();
+  }, [loadResource]);
 
   useEffect(() => {
     if (!toast) return;
@@ -197,11 +208,26 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
       <SafeAreaView style={shared.screen} edges={["bottom"]}>
         <View style={styles.centered}>
           <Text style={styles.errorText}>{error}</Text>
+          {isTransientError ? (
+            <Pressable
+              style={[shared.button, shared.primaryButton]}
+              onPress={() => void loadResource()}
+            >
+              <Text style={[shared.buttonText, shared.primaryButtonText]}>
+                Try Again
+              </Text>
+            </Pressable>
+          ) : null}
           <Pressable
-            style={[shared.button, shared.primaryButton]}
+            style={[shared.button, isTransientError ? undefined : shared.primaryButton]}
             onPress={() => navigation.goBack()}
           >
-            <Text style={[shared.buttonText, shared.primaryButtonText]}>
+            <Text
+              style={[
+                shared.buttonText,
+                isTransientError ? undefined : shared.primaryButtonText,
+              ]}
+            >
               Go Back
             </Text>
           </Pressable>

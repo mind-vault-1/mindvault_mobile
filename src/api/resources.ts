@@ -61,9 +61,36 @@ export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]
   return res.json();
 }
 
+export class ResourceFetchError extends Error {
+  constructor(
+    message: string,
+    public readonly isTransient: boolean
+  ) {
+    super(message);
+    this.name = "ResourceFetchError";
+  }
+}
+
 export async function fetchResource(id: string): Promise<Resource> {
-  const res = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(id)}`);
-  if (!res.ok) throw new Error("Resource not found");
+  let res: Response;
+  try {
+    res = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(id)}`);
+  } catch {
+    throw new ResourceFetchError("Network error. Please check your connection.", true);
+  }
+
+  if (res.status === 404) {
+    throw new ResourceFetchError("Resource not found.", false);
+  }
+
+  if (res.status >= 500) {
+    throw new ResourceFetchError("Server error. Please try again.", true);
+  }
+
+  if (!res.ok) {
+    throw new ResourceFetchError("Failed to load resource.", false);
+  }
+
   return res.json();
 }
 
