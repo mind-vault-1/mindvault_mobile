@@ -200,7 +200,7 @@ export function TransferOwnershipModal({
 
               {destinationAddress.length > 0 && !isValidAddress ? (
                 <Text style={styles.validationHint}>
-                  Address must start with G and be 56 characters long.
+                  Enter a valid Stellar public key (starts with G).
                 </Text>
               ) : null}
 

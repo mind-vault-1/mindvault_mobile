@@ -1,3 +1,4 @@
+import { StrKey } from "@stellar/stellar-sdk";
 import { useState } from "react";
 import {
   prepareOwnershipTransfer,
@@ -18,16 +19,16 @@ export interface UseTransferOwnershipResult {
 }
 
 /**
- * Validates a Stellar public key:
- * - Must start with "G"
- * - Must be exactly 56 characters long
- * - Must contain only base32 characters
+ * Validates a Stellar ed25519 public key (checksum and encoding).
  */
 export function validateStellarAddress(address: string): boolean {
-  if (!address.startsWith("G")) return false;
-  if (address.length !== 56) return false;
-  if (!/^[A-Z2-7]+$/.test(address)) return false;
-  return true;
+  const normalized = address.trim().toUpperCase();
+  if (!normalized) return false;
+  return StrKey.isValidEd25519PublicKey(normalized);
+}
+
+function normalizeStellarAddress(address: string): string {
+  return address.trim().toUpperCase();
 }
 
 /**
@@ -42,10 +43,11 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [destinationAddress, setDestinationAddress] = useState("");
 
-  const isValidAddress = validateStellarAddress(destinationAddress.trim());
+  const isValidAddress = validateStellarAddress(destinationAddress);
 
   async function start(resourceId: string): Promise<void> {
-    if (!isValidAddress) {
+    const destination = normalizeStellarAddress(destinationAddress);
+    if (!validateStellarAddress(destination)) {
       setError("Invalid destination address.");
       return;
     }
@@ -67,7 +69,7 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
       const result = await submitOwnershipTransfer(
         resourceId,
         signedXdr,
-        destinationAddress.trim()
+        destination
       );
 
       setTxHash(result.txHash ?? null);
