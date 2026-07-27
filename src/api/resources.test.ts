@@ -30,7 +30,20 @@ describe('buildQuery', () => {
     const query = buildQuery(filters);
     expect(query).toContain('search=ai');
     expect(query).toContain('verificationStatus=verified');
-    expect(query).toContain('resourceType=model');
+    expect(query).toContain('resourceType=file');
     expect(query.startsWith('?')).toBe(true);
+  });
+
+  it('ignores extra properties not in CatalogFilters', () => {
+    const filters: any = {
+      search: 'test',
+      minPrice: '1.00',
+      maxPrice: '10.00',
+    };
+    expect(buildQuery(filters)).toBe('?search=test');
+  });
+
+  it('omits search when it is empty string', () => {
+    expect(buildQuery({ search: '' })).toBe('');
   });
 });
