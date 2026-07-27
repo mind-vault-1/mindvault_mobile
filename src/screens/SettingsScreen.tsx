@@ -172,28 +172,10 @@ export function SettingsScreen() {
           </View>
         </View>
 
-        <View
-          style={[
-            styles.infoCard,
-            { backgroundColor: colors.warningBg, marginTop: 32 },
-          ]}
-        >
-          <Text
-            style={[
-              styles.title,
-              { fontSize: 16, color: colors.warning, marginBottom: 8 },
-            ]}
-          >
-            Developer Options
-          </Text>
-          <Text
-            style={[
-              styles.infoText,
-              { color: colors.warning, marginBottom: 16 },
-            ]}
-          >
         <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
-          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>Publisher Resources</Text>
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
+            Publisher Resources
+          </Text>
           <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
             Authenticate with a publisher API key to manage the resources you have published.
           </Text>
@@ -208,7 +190,9 @@ export function SettingsScreen() {
         </View>
 
         <View style={[styles.infoCard, { backgroundColor: colors.warningBg, marginTop: 16 }]}>
-          <Text style={[styles.title, { fontSize: 16, color: colors.warning, marginBottom: 8 }]}>Developer Options</Text>
+          <Text style={[styles.title, { fontSize: 16, color: colors.warning, marginBottom: 8 }]}>
+            Developer Options
+          </Text>
           <Text style={[styles.infoText, { color: colors.warning, marginBottom: 16 }]}>
             These tools are for testing purposes only.
           </Text>
@@ -216,9 +200,7 @@ export function SettingsScreen() {
             style={[shared.button, { backgroundColor: colors.warning }]}
             onPress={() => navigation.navigate("DevSigner")}
           >
-            <Text style={[shared.buttonText, { color: "#ffffff" }]}>
-              Open Dev Signer PoC
-            </Text>
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>Open Dev Signer PoC</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
