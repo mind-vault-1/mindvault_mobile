@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Keypair, TransactionBuilder, Networks, Asset, Operation } from "@stellar/stellar-sdk";
 import { useTheme } from "../theme";
+import { validateStellarSecret } from "../utils/validateStellarSecret";
 
 export function DevSignerScreen() {
   const { colors, typography, shared, spacing } = useTheme();
@@ -10,6 +11,10 @@ export function DevSignerScreen() {
   const [signedXdr, setSignedXdr] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSigning, setIsSigning] = useState(false);
+  const [touched, setTouched] = useState(false);
+
+  const validation = useMemo(() => validateStellarSecret(secretKey), [secretKey]);
+  const fieldError = touched && secretKey.length > 0 && !validation.isValid ? validation.errorMessage : null;
 
   const handleSignTransaction = async () => {
     setError(null);
@@ -47,7 +52,7 @@ export function DevSignerScreen() {
     }
   };
 
-  const isButtonDisabled = !secretKey || isSigning;
+  const isButtonDisabled = !validation.isValid || isSigning;
 
   return (
     <ScrollView style={[shared.screen, { padding: spacing.lg }]} keyboardShouldPersistTaps="handled">
@@ -72,10 +77,20 @@ export function DevSignerScreen() {
         placeholderTextColor={colors.textSubtle}
         secureTextEntry
         value={secretKey}
-        onChangeText={setSecretKey}
+        onChangeText={(text) => {
+          setSecretKey(text);
+          if (!touched) setTouched(true);
+        }}
+        onBlur={() => setTouched(true)}
         autoCapitalize="none"
         autoCorrect={false}
       />
+
+      {fieldError && (
+        <Text style={{ color: colors.danger, fontSize: 13, marginTop: spacing.xs }}>
+          {fieldError}
+        </Text>
+      )}
 
       <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.md }}>
         <TouchableOpacity
@@ -100,7 +115,10 @@ export function DevSignerScreen() {
               shared.button,
               { flex: 1, backgroundColor: colors.neutralBg, borderColor: colors.border, borderWidth: 1 }
             ]}
-            onPress={() => setSecretKey("")}
+            onPress={() => {
+              setSecretKey("");
+              setTouched(false);
+            }}
           >
             <Text style={{ color: colors.text, fontWeight: "600" }}>Clear Key</Text>
           </TouchableOpacity>
