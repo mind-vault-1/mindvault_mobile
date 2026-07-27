@@ -13,7 +13,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
-import { fetchCatalog, fetchRegistryStatus, getApiBaseUrl } from "../api/resources";
+import {
+  fetchCatalog,
+  fetchRegistryStatus,
+  getApiBaseUrl,
+} from "../api/resources";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
@@ -26,6 +30,25 @@ import { useAppTheme } from "../theme/ThemeProvider";
 interface CatalogScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Catalog">;
 }
+
+type VerificationFilter = "all" | VerificationStatus;
+type ResourceTypeFilter = "all" | "file" | "link";
+
+const DEFAULT_VERIFICATION: VerificationFilter = "all";
+const DEFAULT_RESOURCE_TYPE: ResourceTypeFilter = "all";
+
+const VERIFICATION_OPTIONS: { value: VerificationFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "verified", label: "Verified" },
+  { value: "pending", label: "Pending" },
+  { value: "rejected", label: "Rejected" },
+];
+
+const RESOURCE_TYPE_OPTIONS: { value: ResourceTypeFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "file", label: "File" },
+  { value: "link", label: "Link" },
+];
 
 function formatLastUpdated(value: Date): string {
   return value.toLocaleString([], {
@@ -239,8 +262,11 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [resources, setResources] = useState<Resource[]>([]);
   const [registryCount, setRegistryCount] = useState<number | null>(null);
   const [search, setSearch] = useState("");
-  const [verification, setVerification] = useState<VerificationFilter>(DEFAULT_VERIFICATION);
-  const [resourceType, setResourceType] = useState<ResourceTypeFilter>(DEFAULT_RESOURCE_TYPE);
+  const [verification, setVerification] =
+    useState<VerificationFilter>(DEFAULT_VERIFICATION);
+  const [resourceType, setResourceType] = useState<ResourceTypeFilter>(
+    DEFAULT_RESOURCE_TYPE,
+  );
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [loading, setLoading] = useState(true);
@@ -267,7 +293,9 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       setLastUpdatedAt(new Date());
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Something went wrong loading the catalog.";
+        err instanceof Error
+          ? err.message
+          : "Something went wrong loading the catalog.";
       setError(message);
     } finally {
       setLoading(false);
@@ -309,11 +337,15 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
 
     return resources.filter((resource) => {
       if (query) {
-        const haystack = `${resource.title} ${resource.publisherName ?? ""} ${resource.resourceType}`.toLowerCase();
+        const haystack =
+          `${resource.title} ${resource.publisherName ?? ""} ${resource.resourceType}`.toLowerCase();
         if (!haystack.includes(query)) return false;
       }
 
-      if (verification !== "all" && resource.verificationStatus !== verification) {
+      if (
+        verification !== "all" &&
+        resource.verificationStatus !== verification
+      ) {
         return false;
       }
 
@@ -357,7 +389,10 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void loadData(true)} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void loadData(true)}
+          />
         }
         ListHeaderComponent={
           <View style={styles.header}>
@@ -369,7 +404,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                 </Text>
                 {registryCount !== null ? (
                   <Text style={styles.registry}>
-                    {registryCount} resource{registryCount === 1 ? "" : "s"} on-chain
+                    {registryCount} resource{registryCount === 1 ? "" : "s"}{" "}
+                    on-chain
                   </Text>
                 ) : null}
                 {lastUpdatedAt ? (
@@ -397,12 +433,17 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
               autoCapitalize="none"
               autoCorrect={false}
               clearButtonMode="while-editing"
+              accessibilityLabel="Search resources"
             />
 
             <View style={styles.filters}>
               <View style={styles.filterGroup}>
                 <Text style={styles.filterLabel}>Verification</Text>
-                <View style={styles.chipRow}>
+                <View
+                  style={styles.chipRow}
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Verification filter"
+                >
                   {VERIFICATION_OPTIONS.map((option) => {
                     const active = verification === option.value;
                     return (
@@ -410,11 +451,21 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                         key={option.value}
                         onPress={() => setVerification(option.value)}
                         style={[styles.chip, active && styles.chipActive]}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: active }}
-                        accessibilityLabel={`Filter by verification: ${option.label}`}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: active }}
+                        accessibilityLabel={option.label}
+                        accessibilityHint={
+                          active
+                            ? "Currently selected"
+                            : "Tap to filter by this status"
+                        }
                       >
-                        <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                        <Text
+                          style={[
+                            styles.chipText,
+                            active && styles.chipTextActive,
+                          ]}
+                        >
                           {option.label}
                         </Text>
                       </Pressable>
@@ -425,7 +476,11 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
 
               <View style={styles.filterGroup}>
                 <Text style={styles.filterLabel}>Type</Text>
-                <View style={styles.chipRow}>
+                <View
+                  style={styles.chipRow}
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Resource type filter"
+                >
                   {RESOURCE_TYPE_OPTIONS.map((option) => {
                     const active = resourceType === option.value;
                     return (
@@ -433,11 +488,21 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                         key={option.value}
                         onPress={() => setResourceType(option.value)}
                         style={[styles.chip, active && styles.chipActive]}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: active }}
-                        accessibilityLabel={`Filter by type: ${option.label}`}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: active }}
+                        accessibilityLabel={option.label}
+                        accessibilityHint={
+                          active
+                            ? "Currently selected"
+                            : "Tap to filter by this type"
+                        }
                       >
-                        <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                        <Text
+                          style={[
+                            styles.chipText,
+                            active && styles.chipTextActive,
+                          ]}
+                        >
                           {option.label}
                         </Text>
                       </Pressable>
@@ -479,7 +544,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
               {!loading && resources.length > 0 ? (
                 <View style={styles.resultsRow}>
                   <Text style={styles.resultsCount}>
-                    Showing {filteredResources.length} of {resources.length} resource
+                    Showing {filteredResources.length} of {resources.length}{" "}
+                    resource
                     {resources.length === 1 ? "" : "s"}
                   </Text>
                   <Pressable
@@ -530,6 +596,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       <Pressable
         style={styles.fab}
         onPress={() => navigation.navigate("Scanner")}
+        accessibilityRole="button"
+        accessibilityLabel="Scan QR code"
       >
         <Text style={styles.fabText}>Scan QR</Text>
       </Pressable>
