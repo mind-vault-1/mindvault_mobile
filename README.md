@@ -32,16 +32,19 @@ Point the app at your MindVault API server by editing `app.json`:
 ```
 
 ### Local Development Network Configuration
+
 - **Simulators/emulators (iOS/Android)**: `localhost` works fine, as they share the host machine's network stack
 - **Physical devices**: Use your machine's LAN IP instead of `localhost` (e.g. `http://192.168.1.10:4021`), since the device can't reach the host's `localhost` directly
 
 Find your LAN IP with:
+
 - **Windows**: `ipconfig` (look for "IPv4 Address" under your active network adapter)
 - **macOS/Linux**: `ifconfig` or `ip a` (look for "inet" address under your active network interface)
 
 ## Publisher Authentication
 
 Publisher resources require an API key for authentication:
+
 - **API Key Origin:** Publisher API keys are issued by your MindVault backend server.
 - **Server Configuration:** On self-hosted servers, configure your keys using the `PUBLISHER_API_KEYS` environment variable or generate one through your server's admin interface.
 - **App Usage:** Enter the key in the **Publisher Resources** tab or Publisher Settings modal to view and manage your resources.
@@ -65,9 +68,26 @@ The app defaults to the Stellar **Testnet**. The passphrase `Test SDF Network ; 
 ## Publisher Authentication
 
 Publisher resources require an API key for authentication:
+
 - **API Key Origin:** Publisher API keys are issued by your MindVault backend server.
 - **Server Configuration:** On self-hosted servers, configure your keys using the `PUBLISHER_API_KEYS` environment variable or generate one through your server's admin interface.
 - **App Usage:** Enter the key in the **Publisher Resources** tab or Publisher Settings modal to view and manage your resources.
+
+## Theme Preferences
+
+The app supports light, dark, and system-synced themes, selectable from the Settings screen.
+
+**How persistence works:** When you pick a theme, it's written to `AsyncStorage` under the key `@mindvault_theme_mode` via `useTheme` in `src/theme/index.ts`. On the next launch, the hook reads that key during its initial `useEffect` and restores your selection before the first render completes — so the chosen theme is active immediately on startup, with no flash.
+
+**Manual verification steps:**
+
+1. Open the app and go to **Settings**.
+2. Select **Dark** (or **Light**) theme — the UI updates immediately.
+3. Close the app fully (remove from recents).
+4. Reopen — the same theme should be active without any flicker.
+5. Select **System** to confirm it follows the device's OS-level setting.
+
+If the stored value is missing or unrecognized, the hook silently falls back to **System** mode.
 
 ## Run
 
@@ -79,12 +99,12 @@ Then press `i` for iOS simulator, `a` for Android emulator, or scan the QR code 
 
 ## Available npm scripts
 
-| Script          | Description                                                                 |
-|-----------------|-----------------------------------------------------------------------------|
-| `npm start`     | Start the Expo development server (supports Android, iOS, and web)          |
-| `npm run android` | Run the app on an Android device or emulator using Expo's development build |
-| `npm run ios`   | Run the app on an iOS device or simulator using Expo's development build    |
-| `npm run web`   | Run the app in a web browser                                                |
+| Script              | Description                                                                 |
+| ------------------- | --------------------------------------------------------------------------- |
+| `npm start`         | Start the Expo development server (supports Android, iOS, and web)          |
+| `npm run android`   | Run the app on an Android device or emulator using Expo's development build |
+| `npm run ios`       | Run the app on an iOS device or simulator using Expo's development build    |
+| `npm run web`       | Run the app in a web browser                                                |
 | `npm run typecheck` | Run TypeScript type checking without emitting files                         |
 
 ## Related
