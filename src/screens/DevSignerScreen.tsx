@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
-import { Keypair, TransactionBuilder, Networks, Asset, Operation } from "@stellar/stellar-sdk";
+import { Account, Keypair, TransactionBuilder, Networks, Asset, Operation } from "@stellar/stellar-sdk";
 import { useTheme } from "../theme";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
 
@@ -28,7 +28,7 @@ export function DevSignerScreen() {
       const keypair = Keypair.fromSecret(secretKey);
       
       // Dummy source account using testnet
-      const sourceAccount = new (require("@stellar/stellar-sdk")).Account(keypair.publicKey(), "1");
+      const sourceAccount = new Account(keypair.publicKey(), "1");
       
       // Build a dummy transaction
       const transaction = new TransactionBuilder(sourceAccount, {
