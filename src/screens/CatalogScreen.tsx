@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { Ionicons } from "@expo/vector-icons";
 
 import {
   fetchCatalog,
@@ -94,10 +95,6 @@ function createStyles(colors: ThemeColors) {
       minWidth: 44,
       justifyContent: "center",
       alignItems: "center",
-    },
-    settingsButtonText: {
-      fontSize: 20,
-      color: colors.textMuted,
     },
     registry: {
       marginTop: spacing.xs,
@@ -466,7 +463,11 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                 accessibilityRole="button"
                 accessibilityLabel="Open settings"
               >
-                <Text style={styles.settingsButtonText}>⚙</Text>
+                <Ionicons
+                  name="settings-outline"
+                  size={24}
+                  color={colors.textMuted}
+                />
               </Pressable>
             </View>
 
