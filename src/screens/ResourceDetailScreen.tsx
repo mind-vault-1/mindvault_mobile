@@ -51,6 +51,28 @@ function onchainStyle(status: Resource["onchainStatus"], colors: ThemeColors) {
   }
 }
 
+function formatTimestamp(value: string | undefined): string | null {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function getResourceTimestamp(resource: Resource): { label: string; text: string } | null {
+  const updatedAt = formatTimestamp(resource.updatedAt);
+  if (updatedAt) return { label: "Last updated", text: updatedAt };
+
+  const publishedAt = formatTimestamp(resource.publishedAt);
+  if (publishedAt) return { label: "Published", text: publishedAt };
+
+  return null;
+}
+
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     centered: {
@@ -87,6 +109,11 @@ function createStyles(colors: ThemeColors) {
       fontSize: 14,
       fontWeight: "600",
       color: colors.textMuted,
+    },
+    metadata: {
+      color: colors.textSubtle,
+      fontSize: 14,
+      lineHeight: 20,
     },
     actionButton: {
       alignSelf: "stretch",
@@ -239,6 +266,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
 
   const verification = verificationStyle(resource.verificationStatus, colors);
   const onchain = onchainStyle(resource.onchainStatus, colors);
+  const timestamp = getResourceTimestamp(resource);
 
   return (
     <SafeAreaView style={shared.screen} edges={["bottom"]}>
@@ -248,6 +276,12 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
 
         {resource.publisherName ? (
           <Text style={typography.body}>Published by {resource.publisherName}</Text>
+        ) : null}
+
+        {timestamp ? (
+          <Text style={styles.metadata}>
+            {timestamp.label} {timestamp.text}
+          </Text>
         ) : null}
 
         <View style={styles.badges}>
