@@ -50,6 +50,14 @@ const RESOURCE_TYPE_OPTIONS: { value: ResourceTypeFilter; label: string }[] = [
   { value: "link", label: "Link" },
 ];
 
+type SortBy = "newest" | "title" | "price";
+
+const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: "newest", label: "Newest" },
+  { value: "title", label: "Title" },
+  { value: "price", label: "Price" },
+];
+
 function formatLastUpdated(value: Date): string {
   return value.toLocaleString([], {
     dateStyle: "medium",
@@ -269,6 +277,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   );
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>("newest");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -326,6 +335,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     setResourceType(DEFAULT_RESOURCE_TYPE);
     setMinPrice("");
     setMaxPrice("");
+    setSortBy("newest");
   }, []);
 
   const filteredResources = useMemo(() => {
@@ -335,7 +345,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     const hasMin = !Number.isNaN(min);
     const hasMax = !Number.isNaN(max);
 
-    return resources.filter((resource) => {
+    let result = resources.filter((resource) => {
       if (query) {
         const haystack =
           `${resource.title} ${resource.publisherName ?? ""} ${resource.resourceType}`.toLowerCase();
@@ -362,7 +372,22 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
 
       return true;
     });
-  }, [resources, search, verification, resourceType, minPrice, maxPrice]);
+
+    if (sortBy === "title") {
+      result = [...result].sort((a, b) => a.title.localeCompare(b.title));
+    } else if (sortBy === "price") {
+      result = [...result].sort((a, b) => {
+        const pa = Number.parseFloat(a.price);
+        const pb = Number.parseFloat(b.price);
+        if (Number.isNaN(pa) && Number.isNaN(pb)) return 0;
+        if (Number.isNaN(pa)) return 1;
+        if (Number.isNaN(pb)) return -1;
+        return pa - pb;
+      });
+    }
+
+    return result;
+  }, [resources, search, verification, resourceType, minPrice, maxPrice, sortBy]);
 
   function renderEmpty() {
     if (loading) return null;
@@ -538,6 +563,38 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                       accessibilityLabel="Maximum price"
                     />
                   </View>
+                </View>
+              </View>
+
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterLabel}>Sort by</Text>
+                <View
+                  style={styles.chipRow}
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Sort order"
+                >
+                  {SORT_OPTIONS.map((option) => {
+                    const active = sortBy === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => setSortBy(option.value)}
+                        style={[styles.chip, active && styles.chipActive]}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: active }}
+                        accessibilityLabel={option.label}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            active && styles.chipTextActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               </View>
 
