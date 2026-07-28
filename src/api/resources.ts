@@ -11,7 +11,10 @@ const DEFAULT_API_BASE_URL =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? "http://localhost:4021";
 let apiBaseUrl = DEFAULT_API_BASE_URL;
 
-const DEFAULT_NETWORK_PASSPHRASE =
+export const DEFAULT_STELLAR_NETWORK =
+  (Constants.expoConfig?.extra?.network as string | undefined)?.trim().toLowerCase() || "testnet";
+
+export const DEFAULT_NETWORK_PASSPHRASE =
   (Constants.expoConfig?.extra?.networkPassphrase as string | undefined) ??
   "Test SDF Network ; September 2015";
 

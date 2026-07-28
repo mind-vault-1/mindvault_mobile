@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { useCallback, useEffect, useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Pressable,
@@ -22,10 +23,20 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import type { RootStackParamList } from "../navigation";
-import type { Resource, VerificationStatus } from "../types";
+import type { CatalogFilters, Resource, VerificationStatus } from "../types";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
+
+const CATALOG_FILTERS_KEY = "@mindvault_catalog_filters";
+
+interface PersistedFilters {
+  search: string;
+  verification: VerificationFilter;
+  resourceType: ResourceTypeFilter;
+  minPrice: string;
+  maxPrice: string;
+}
 
 interface CatalogScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Catalog">;
@@ -266,6 +277,7 @@ function createStyles(colors: ThemeColors) {
 export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const { colors, shared, typography, colorScheme } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const filtersRestored = useRef(false);
 
   const [resources, setResources] = useState<Resource[]>([]);
   const [registryCount, setRegistryCount] = useState<number | null>(null);
@@ -281,8 +293,41 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [registryFailed, setRegistryFailed] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+
+  useEffect(() => {
+    async function restoreFilters() {
+      try {
+        const raw = await AsyncStorage.getItem(CATALOG_FILTERS_KEY);
+        if (raw) {
+          const saved: PersistedFilters = JSON.parse(raw);
+          setSearch(saved.search);
+          setVerification(saved.verification);
+          setResourceType(saved.resourceType);
+          setMinPrice(saved.minPrice);
+          setMaxPrice(saved.maxPrice);
+        }
+      } catch {
+      } finally {
+        filtersRestored.current = true;
+      }
+    }
+    restoreFilters();
+  }, []);
+
+  useEffect(() => {
+    async function persistFilters() {
+      if (!filtersRestored.current) return;
+      const data: PersistedFilters = { search, verification, resourceType, minPrice, maxPrice };
+      try {
+        await AsyncStorage.setItem(CATALOG_FILTERS_KEY, JSON.stringify(data));
+      } catch {
+      }
+    }
+    persistFilters();
+  }, [search, verification, resourceType, minPrice, maxPrice]);
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -292,13 +337,29 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     }
     setError(null);
 
+    const filters: CatalogFilters = {};
+    if (search.trim()) filters.search = search.trim();
+    if (verification !== DEFAULT_VERIFICATION) {
+      filters.verificationStatus = verification;
+    }
+    if (resourceType !== DEFAULT_RESOURCE_TYPE) {
+      filters.resourceType = resourceType;
+    }
+
     try {
-      const [catalog, registry] = await Promise.all([
-        fetchCatalog(),
-        fetchRegistryStatus().catch(() => null),
+      let registryResult: { resourceCount: number } | null = null;
+      try {
+        registryResult = await fetchRegistryStatus();
+        setRegistryFailed(false);
+      } catch {
+        setRegistryFailed(true);
+        registryResult = null;
+      }
+      const [catalog] = await Promise.all([
+        fetchCatalog(Object.keys(filters).length > 0 ? filters : undefined),
       ]);
       setResources(catalog);
-      setRegistryCount(registry?.resourceCount ?? null);
+      setRegistryCount(registryResult?.resourceCount ?? null);
       setLastUpdatedAt(new Date());
     } catch (err) {
       const message =
@@ -310,7 +371,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [search, verification, resourceType]);
 
   useEffect(() => {
     void loadData();
@@ -339,44 +400,28 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   }, []);
 
   const filteredResources = useMemo(() => {
-    const query = search.trim().toLowerCase();
     const min = Number.parseFloat(minPrice);
     const max = Number.parseFloat(maxPrice);
     const hasMin = !Number.isNaN(min);
     const hasMax = !Number.isNaN(max);
 
-    let result = resources.filter((resource) => {
-      if (query) {
-        const haystack =
-          `${resource.title} ${resource.publisherName ?? ""} ${resource.resourceType}`.toLowerCase();
-        if (!haystack.includes(query)) return false;
-      }
-
-      if (
-        verification !== "all" &&
-        resource.verificationStatus !== verification
-      ) {
-        return false;
-      }
-
-      if (resourceType !== "all" && resource.resourceType !== resourceType) {
-        return false;
-      }
-
-      if (hasMin || hasMax) {
+    let result: Resource[];
+    if (!hasMin && !hasMax) {
+      result = [...resources];
+    } else {
+      result = resources.filter((resource) => {
         const price = Number.parseFloat(resource.price);
         if (Number.isNaN(price)) return false;
         if (hasMin && price < min) return false;
         if (hasMax && price > max) return false;
-      }
-
-      return true;
-    });
+        return true;
+      });
+    }
 
     if (sortBy === "title") {
-      result = [...result].sort((a, b) => a.title.localeCompare(b.title));
+      result.sort((a, b) => a.title.localeCompare(b.title));
     } else if (sortBy === "price") {
-      result = [...result].sort((a, b) => {
+      result.sort((a, b) => {
         const pa = Number.parseFloat(a.price);
         const pb = Number.parseFloat(b.price);
         if (Number.isNaN(pa) && Number.isNaN(pb)) return 0;
@@ -387,7 +432,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     }
 
     return result;
-  }, [resources, search, verification, resourceType, minPrice, maxPrice, sortBy]);
+  }, [resources, minPrice, maxPrice, sortBy]);
 
   function renderEmpty() {
     if (loading) return null;
@@ -431,6 +476,10 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                   <Text style={styles.registry}>
                     {registryCount} resource{registryCount === 1 ? "" : "s"}{" "}
                     on-chain
+                  </Text>
+                ) : registryFailed ? (
+                  <Text style={styles.registry}>
+                    On-chain count unavailable
                   </Text>
                 ) : null}
                 {lastUpdatedAt ? (
