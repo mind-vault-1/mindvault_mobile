@@ -38,9 +38,6 @@ export function PublisherResourcesScreen() {
   const navigation = useNavigation<PublisherResourcesNavigation>();
 
   const goToPublicCatalog = useCallback(() => {
-    // Pop back to the root screen (the public Catalog). The Stack header's
-    // back button is sufficient for returning to Settings; the explicit
-    // "Back to Public Catalog" affordance skips past Settings to the root.
     navigation.popToTop();
   }, [navigation]);
 
@@ -55,7 +52,6 @@ export function PublisherResourcesScreen() {
   const [authenticated, setAuthenticated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
-  // Load stored API key on mount
   useEffect(() => {
     const loadStoredKey = async () => {
       try {
@@ -73,7 +69,6 @@ export function PublisherResourcesScreen() {
     void loadStoredKey();
   }, []);
 
-  // Toast auto-dismiss
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 2500);
@@ -114,9 +109,7 @@ export function PublisherResourcesScreen() {
     setError(null);
 
     try {
-      // Test the API key by fetching resources
       const testData = await fetchPublisherResources(apiKey.trim());
-      // If successful, store it
       await storeApiKey(apiKey.trim());
       setStoredApiKey(apiKey.trim());
       setAuthenticated(true);
@@ -297,7 +290,7 @@ export function PublisherResourcesScreen() {
             </Pressable>
           </View>
         }
-        renderItem={({ item }) => <ResourceCard resource={item} onCopyUrl={setToast} />}
+        renderItem={({ item }) => <ResourceCard resource={item} onCopyUrl={setToast} editablePrice={true} />}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={() =>
           !loading ? (
