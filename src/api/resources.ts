@@ -2,7 +2,7 @@ import { loadApiBaseUrl, saveApiBaseUrl } from "./apiSettings";
 import Constants from "expo-constants";
 import { Keypair, Transaction } from "@stellar/stellar-sdk";
 
-import { getApiKey } from "../services/secureStorage";
+import { getApiKey, storeApiKey, clearApiKey } from "../services/secureStorage";
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
 import { logError } from "../utils/errorLogger";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
@@ -193,15 +193,30 @@ export async function submitOwnershipTransfer(
   return res.json();
 }
 
-export async function fetchPublisherResources(): Promise<Resource[]> {
-  const apiKey = await getApiKey();
-  if (!apiKey) {
+/**
+ * Fetches the resources owned by the authenticated publisher.
+ *
+ * The request always targets the API base URL configured for the rest of the
+ * API client (see {@link getApiBaseUrl}), so a base URL changed at runtime
+ * from Settings is picked up here too.
+ *
+ * @param apiKey Optional key to authenticate with. When omitted, the key
+ *   persisted in secure storage is used.
+ * @param search Optional search term forwarded to the API as a query param.
+ */
+export async function fetchPublisherResources(
+  apiKey?: string,
+  search?: string
+): Promise<Resource[]> {
+  const key = apiKey?.trim() || (await getApiKey());
+  if (!key) {
     throw new Error("No API key configured");
   }
 
-  const res = await fetch(`${apiBaseUrl}/publishers/me/resources`, {
+  const query = buildQuery(search?.trim() ? { search: search.trim() } : undefined);
+  const res = await fetch(`${getApiBaseUrl()}/publishers/me/resources${query}`, {
     headers: {
-      "x-api-key": apiKey,
+      "x-api-key": key,
     },
   });
 
@@ -219,3 +234,7 @@ export async function fetchPublisherResources(): Promise<Resource[]> {
 
   return res.json();
 }
+
+export { storeApiKey };
+export const getStoredApiKey = getApiKey;
+export const deleteStoredApiKey = clearApiKey;
