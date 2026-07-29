@@ -81,6 +81,7 @@ export function PublisherSettings({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
+      onShow={loadApiKey}
       onRequestClose={onClose}
     >
       <View style={shared.screen}>
@@ -209,7 +210,7 @@ function createStyles(colors: ThemeColors) {
       backgroundColor: colors.primary,
     },
     saveButtonText: {
-      color: "#ffffff",
+      color: colors.onPrimary,
       fontWeight: "600",
       fontSize: 16,
     },
@@ -217,7 +218,7 @@ function createStyles(colors: ThemeColors) {
       backgroundColor: colors.danger,
     },
     logoutButtonText: {
-      color: "#ffffff",
+      color: colors.onDanger,
       fontWeight: "600",
       fontSize: 16,
     },

@@ -124,6 +124,7 @@ function createStyles(colors: ThemeColors) {
       fontSize: 13,
       color: colors.textSubtle,
       lineHeight: 18,
+      flexShrink: 1,
     },
     linkText: {
       color: colors.primary,
@@ -335,7 +336,12 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         <View style={styles.infoRow}>
           <Text style={styles.label}>Access URL</Text>
         </View>
-        <Text style={styles.urlText}>{resource.accessUrl}</Text>
+        <Text 
+          style={styles.urlText}
+          selectable={true}
+        >
+          {resource.accessUrl}
+        </Text>
 
         <Pressable
           style={[shared.button, shared.primaryButton, styles.actionButton]}

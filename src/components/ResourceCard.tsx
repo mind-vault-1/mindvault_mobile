@@ -23,6 +23,7 @@ interface ResourceCardProps {
   onCopyUrl: (message: string) => void;
   onRegister?: (resource: Resource) => void;
   onPress?: () => void;
+  editablePrice?: boolean;
 }
 
 function shortenAddress(address: string): string {
@@ -54,7 +55,7 @@ function onchainStyle(status: Resource["onchainStatus"], colors: ThemeColors) {
   }
 }
 
-export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: ResourceCardProps) {
+export function ResourceCard({ resource, onCopyUrl, onRegister, onPress, editablePrice = false }: ResourceCardProps) {
   const { colors, shared, typography } = useAppTheme();
   const verification = verificationStyle(resource.verificationStatus, colors);
   const onchain = onchainStyle(resource.onchainStatus, colors);
@@ -65,7 +66,6 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
   const [secretKeyTouched, setSecretKeyTouched] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Dynamic styles that depend on runtime theme colors — must live inside the component.
   const dynamicStyles = useMemo(
     () =>
       StyleSheet.create({
@@ -109,12 +109,6 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
     onCopyUrl("Resource URL copied");
   }
 
-  /**
-   * Opens the native iOS/Android share sheet with the resource title and URL.
-   * - `message` is used on Android (plain text share).
-   * - `url` is used on iOS (triggers the URL sharing path in the share sheet).
-   * Both are included so the shared content always contains title + URL.
-   */
   async function handleShare() {
     await Share.share({
       title: resource.title,
@@ -213,123 +207,124 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress }: Resou
         </View>
       </View>
 
-      {editing ? (
-        <View style={styles.editor}>
-          <TextInput
-            value={newPrice}
-            onChangeText={setNewPrice}
-            placeholder="New price"
-            placeholderTextColor={colors.textSubtle}
-            keyboardType="numeric"
-            style={dynamicStyles.input}
-            editable={!isBusy}
-            accessibilityLabel="New price in USDC"
-            accessibilityHint="Enter the updated price for this resource"
-          />
-          <TextInput
-            value={secretKey}
-            onChangeText={(text) => {
-              setSecretKey(text);
-              if (!secretKeyTouched) setSecretKeyTouched(true);
-            }}
-            onBlur={() => setSecretKeyTouched(true)}
-            placeholder="Stellar secret key"
-            placeholderTextColor={colors.textSubtle}
-            secureTextEntry
-            style={dynamicStyles.input}
-            editable={!isBusy}
-            accessibilityLabel="Stellar secret key"
-            accessibilityHint="Enter your Stellar secret key to sign the price update transaction"
-          />
-          <View style={styles.actionRow}>
-            <Pressable
-              onPress={() => setEditing(false)}
-              style={[shared.button, dynamicStyles.secondaryButton]}
-              disabled={isBusy}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel price edit"
-              accessibilityHint="Discards changes and closes the price editor"
-              accessibilityState={{ disabled: isBusy }}
-            >
-              <Text style={shared.buttonText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              onPress={handleSavePrice}
-              style={[
-                shared.button,
-                dynamicStyles.primaryButton,
-                isSaveDisabled ? styles.disabledButton : null,
-              ]}
-              disabled={isSaveDisabled}
-              accessibilityRole="button"
-              accessibilityLabel="Save new price"
-              accessibilityHint={
-                isBusy
-                  ? "Transaction in progress, please wait"
-                  : "Submits the price update transaction to the Stellar network"
-              }
-              accessibilityState={{ disabled: isSaveDisabled, busy: isBusy }}
-            >
-              {isBusy ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text style={[shared.buttonText, styles.primaryButtonText]}>Save Price</Text>
-              )}
-            </Pressable>
+      {editablePrice ? (
+        editing ? (
+          <View style={styles.editor}>
+            <TextInput
+              value={newPrice}
+              onChangeText={setNewPrice}
+              placeholder="New price"
+              placeholderTextColor={colors.textSubtle}
+              keyboardType="numeric"
+              style={dynamicStyles.input}
+              editable={!isBusy}
+              accessibilityLabel="New price in USDC"
+              accessibilityHint="Enter the updated price for this resource"
+            />
+            <TextInput
+              value={secretKey}
+              onChangeText={(text) => {
+                setSecretKey(text);
+                if (!secretKeyTouched) setSecretKeyTouched(true);
+              }}
+              onBlur={() => setSecretKeyTouched(true)}
+              placeholder="Stellar secret key"
+              placeholderTextColor={colors.textSubtle}
+              secureTextEntry
+              style={dynamicStyles.input}
+              editable={!isBusy}
+              accessibilityLabel="Stellar secret key"
+              accessibilityHint="Enter your Stellar secret key to sign the price update transaction"
+            />
+            <View style={styles.actionRow}>
+              <Pressable
+                onPress={() => setEditing(false)}
+                style={[shared.button, dynamicStyles.secondaryButton]}
+                disabled={isBusy}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel price edit"
+                accessibilityHint="Discards changes and closes the price editor"
+                accessibilityState={{ disabled: isBusy }}
+              >
+                <Text style={shared.buttonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSavePrice}
+                style={[
+                  shared.button,
+                  dynamicStyles.primaryButton,
+                  isSaveDisabled ? styles.disabledButton : null,
+                ]}
+                disabled={isSaveDisabled}
+                accessibilityRole="button"
+                accessibilityLabel="Save new price"
+                accessibilityHint={
+                  isBusy
+                    ? "Transaction in progress, please wait"
+                    : "Submits the price update transaction to the Stellar network"
+                }
+                accessibilityState={{ disabled: isSaveDisabled, busy: isBusy }}
+              >
+                {isBusy ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={[shared.buttonText, styles.primaryButtonText]}>Save Price</Text>
+                )}
+              </Pressable>
+            </View>
+            {statusLabel ? (
+              <Text
+                style={dynamicStyles.statusText}
+                accessibilityLiveRegion="polite"
+                accessibilityRole="status"
+              >
+                {statusLabel}
+              </Text>
+            ) : null}
+            {secretKeyFieldError ? (
+              <Text
+                style={dynamicStyles.errorText}
+                accessibilityLiveRegion="assertive"
+                accessibilityRole="alert"
+              >
+                {secretKeyFieldError}
+              </Text>
+            ) : null}
+            {error ? (
+              <Text
+                style={dynamicStyles.errorText}
+                accessibilityLiveRegion="assertive"
+                accessibilityRole="alert"
+              >
+                {error}
+              </Text>
+            ) : null}
+            {successMessage ? (
+              <Text
+                style={dynamicStyles.successText}
+                accessibilityLiveRegion="polite"
+                accessibilityRole="status"
+              >
+                {successMessage}
+              </Text>
+            ) : null}
           </View>
-          {statusLabel ? (
-            <Text
-              style={dynamicStyles.statusText}
-              accessibilityLiveRegion="polite"
-              accessibilityRole="status"
-            >
-              {statusLabel}
-            </Text>
-          ) : null}
-          {secretKeyFieldError ? (
-            <Text
-              style={dynamicStyles.errorText}
-              accessibilityLiveRegion="assertive"
-              accessibilityRole="alert"
-            >
-              {secretKeyFieldError}
-            </Text>
-          ) : null}
-          {error ? (
-            <Text
-              style={dynamicStyles.errorText}
-              accessibilityLiveRegion="assertive"
-              accessibilityRole="alert"
-            >
-              {error}
-            </Text>
-          ) : null}
-          {successMessage ? (
-            <Text
-              style={dynamicStyles.successText}
-              accessibilityLiveRegion="polite"
-              accessibilityRole="status"
-            >
-              {successMessage}
-            </Text>
-          ) : null}
-        </View>
-      ) : (
-        <Pressable
-          onPress={() => setEditing(true)}
-          style={[shared.button, styles.editButton]}
-          accessibilityRole="button"
-          accessibilityLabel={`Edit price for ${resource.title}`}
-          accessibilityHint="Opens the price editor for this resource"
-        >
-          <Text style={shared.buttonText}>Edit price</Text>
-        </Pressable>
-      )}
+        ) : (
+          <Pressable
+            onPress={() => setEditing(true)}
+            style={[shared.button, styles.editButton]}
+            accessibilityRole="button"
+            accessibilityLabel={`Edit price for ${resource.title}`}
+            accessibilityHint="Opens the price editor for this resource"
+          >
+            <Text style={shared.buttonText}>Edit price</Text>
+          </Pressable>
+        )
+      ) : null}
     </View>
   );
 }
 
-// Static styles that do not depend on theme colors.
 const styles = StyleSheet.create({
   badges: {
     flexDirection: "row",
