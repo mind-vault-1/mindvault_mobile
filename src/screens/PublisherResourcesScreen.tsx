@@ -356,6 +356,18 @@ export function PublisherResourcesScreen() {
     }
   };
 
+  /**
+   * Issue #65: When a price edit succeeds, update the resource in local state
+   * immediately so the displayed price does not remain stale. The next pull-to-
+   * refresh will re-fetch the authoritative value from the server.
+   */
+  const handlePriceUpdated = useCallback((resourceId: string, newPrice: string) => {
+    setResources((prev) =>
+      prev.map((r) => (r.id === resourceId ? { ...r, price: newPrice } : r))
+    );
+    setToast("Price updated successfully");
+  }, []);
+
   const filteredResources = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return resources;
@@ -502,7 +514,14 @@ export function PublisherResourcesScreen() {
             </Pressable>
           </View>
         }
-        renderItem={({ item }) => <ResourceCard resource={item} onCopyUrl={setToast} editablePrice={true} />}
+        renderItem={({ item }) => (
+          <ResourceCard
+            resource={item}
+            onCopyUrl={setToast}
+            editablePrice={true}
+            onPriceUpdated={handlePriceUpdated}
+          />
+        )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={() =>
           !loading ? (
