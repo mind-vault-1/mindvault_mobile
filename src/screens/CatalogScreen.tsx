@@ -29,6 +29,7 @@ import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 
 const CATALOG_FILTERS_KEY = "@mindvault_catalog_filters";
+const SEARCH_DEBOUNCE_MS = 300;
 
 interface PersistedFilters {
   search: string;
@@ -274,6 +275,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [resources, setResources] = useState<Resource[]>([]);
   const [registryCount, setRegistryCount] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [verification, setVerification] =
     useState<VerificationFilter>(DEFAULT_VERIFICATION);
   const [resourceType, setResourceType] = useState<ResourceTypeFilter>(
@@ -295,6 +297,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         if (raw) {
           const saved: PersistedFilters = JSON.parse(raw);
           setSearch(saved.search);
+          setDebouncedSearch(saved.search);
           setVerification(saved.verification);
           setResourceType(saved.resourceType);
           setMinPrice(saved.minPrice);
@@ -307,6 +310,15 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     }
     restoreFilters();
   }, []);
+
+  // Debounce the search text so the catalog only refetches after typing
+  // pauses, rather than on every keystroke.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [search]);
 
   useEffect(() => {
     async function persistFilters() {
@@ -329,7 +341,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     setError(null);
 
     const filters: CatalogFilters = {};
-    if (search.trim()) filters.search = search.trim();
+    if (debouncedSearch.trim()) filters.search = debouncedSearch.trim();
     if (verification !== DEFAULT_VERIFICATION) {
       filters.verificationStatus = verification;
     }
@@ -362,7 +374,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [search, verification, resourceType]);
+  }, [debouncedSearch, verification, resourceType]);
 
   useEffect(() => {
     void loadData();
@@ -383,6 +395,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
 
   const clearFilters = useCallback(() => {
     setSearch("");
+    setDebouncedSearch("");
     setVerification(DEFAULT_VERIFICATION);
     setResourceType(DEFAULT_RESOURCE_TYPE);
     setMinPrice("");
@@ -656,3 +669,4 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     </SafeAreaView>
   );
 }
+
