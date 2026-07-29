@@ -4,11 +4,17 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { CatalogScreen } from "./CatalogScreen";
 import { fetchCatalog, fetchRegistryStatus, getApiBaseUrl } from "../api/resources";
+import { ThemeProvider } from "../theme/ThemeProvider";
 
 jest.mock("../api/resources");
 jest.mock("@react-native-async-storage/async-storage", () => ({
   getItem: jest.fn().mockResolvedValue(null),
   setItem: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock("react-native-safe-area-context", () => ({
+  SafeAreaView: ({ children }: any) => children,
+  SafeAreaProvider: ({ children }: any) => children,
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
 const mockedFetchCatalog = fetchCatalog as jest.Mock;
@@ -31,7 +37,12 @@ afterEach(() => {
 
 describe("CatalogScreen search debounce", () => {
   it("does not refetch on every keystroke, only after typing pauses", async () => {
-    const { getByLabelText } = render(<CatalogScreen navigation={navigation} />);
+    const { getByLabelText } = render(
+      <ThemeProvider>
+        <CatalogScreen navigation={navigation} />
+      </ThemeProvider>
+    );
+
 
     await waitFor(() => expect(mockedFetchCatalog).toHaveBeenCalledTimes(1));
     mockedFetchCatalog.mockClear();
