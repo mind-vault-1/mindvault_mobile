@@ -578,7 +578,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                       ]}
                       keyboardType="decimal-pad"
                       inputMode="decimal"
-                      accessibilityLabel="Minimum price"
+                      accessibilityLabel="Minimum price"
+
                       accessibilityHint={
                         priceRange.isInvalid ? INVALID_PRICE_RANGE_MESSAGE : undefined
                       }
@@ -596,7 +597,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                       ]}
                       keyboardType="decimal-pad"
                       inputMode="decimal"
-                      accessibilityLabel="Maximum price"
+                      accessibilityLabel="Maximum price"
+
                       accessibilityHint={
                         priceRange.isInvalid ? INVALID_PRICE_RANGE_MESSAGE : undefined
                       }
@@ -683,3 +685,736 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     </SafeAreaView>
   );
 }
+// @ts-nocheck
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { Ionicons } from "@expo/vector-icons";
+
+import {
+  fetchCatalog,
+  fetchRegistryStatus,
+  getApiBaseUrl,
+} from "../api/resources";
+import { ErrorBanner } from "../components/ErrorBanner";
+import { ResourceCard } from "../components/ResourceCard";
+import { SkeletonCard } from "../components/SkeletonCard";
+import type { RootStackParamList } from "../navigation";
+import type { CatalogFilters, Resource, VerificationStatus } from "../types";
+import { spacing } from "../theme";
+import type { ThemeColors } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
+
+const CATALOG_FILTERS_KEY = "@mindvault_catalog_filters";
+const SEARCH_DEBOUNCE_MS = 300;
+
+interface PersistedFilters {
+  search: string;
+  verification: VerificationFilter;
+  resourceType: ResourceTypeFilter;
+  minPrice: string;
+  maxPrice: string;
+}
+
+interface CatalogScreenProps {
+  navigation: NativeStackNavigationProp<RootStackParamList, "Catalog">;
+}
+
+type VerificationFilter = "all" | VerificationStatus;
+type ResourceTypeFilter = "all" | "file" | "link";
+
+const DEFAULT_VERIFICATION: VerificationFilter = "all";
+const DEFAULT_RESOURCE_TYPE: ResourceTypeFilter = "all";
+
+const VERIFICATION_OPTIONS: { value: VerificationFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "verified", label: "Verified" },
+  { value: "pending", label: "Pending" },
+  { value: "rejected", label: "Rejected" },
+];
+
+const RESOURCE_TYPE_OPTIONS: { value: ResourceTypeFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "file", label: "File" },
+  { value: "link", label: "Link" },
+];
+
+type SortBy = "newest" | "title" | "price";
+
+const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: "newest", label: "Newest" },
+  { value: "title", label: "Title" },
+  { value: "price", label: "Price" },
+];
+
+function formatLastUpdated(value: Date): string {
+  return value.toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    listContent: {
+      padding: spacing.lg,
+      paddingBottom: spacing.xxl,
+      gap: spacing.md,
+    },
+    header: {
+      gap: spacing.md,
+      marginBottom: spacing.lg,
+    },
+    headerRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: spacing.md,
+    },
+    settingsButton: {
+      borderRadius: 10,
+      backgroundColor: colors.neutralBg,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      minHeight: 44,
+      minWidth: 44,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    registry: {
+      marginTop: spacing.xs,
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.primary,
+    },
+    lastUpdated: {
+      fontSize: 12,
+      color: colors.textSubtle,
+    },
+    searchInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: colors.text,
+    },
+    filters: {
+      gap: spacing.md,
+    },
+    filterGroup: {
+      gap: spacing.sm,
+    },
+    filterLabel: {
+      fontSize: 12,
+      fontWeight: "600",
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+      color: colors.textMuted,
+    },
+    chipRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+    },
+    chip: {
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    chipActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primaryMuted,
+    },
+    chipText: {
+      fontSize: 13,
+      fontWeight: "500",
+      color: colors.textMuted,
+    },
+    chipTextActive: {
+      color: colors.primary,
+      fontWeight: "600",
+    },
+    priceRow: {
+      flexDirection: "row",
+      gap: spacing.md,
+    },
+    priceField: {
+      flex: 1,
+      gap: spacing.xs,
+    },
+    priceInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      fontSize: 15,
+      color: colors.text,
+    },
+    resultsRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    resultsCount: {
+      flex: 1,
+      fontSize: 13,
+      color: colors.textMuted,
+    },
+    clearButton: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 10,
+      backgroundColor: colors.neutralBg,
+    },
+    clearButtonDisabled: {
+      opacity: 0.5,
+    },
+    clearButtonText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.primary,
+    },
+    apiHint: {
+      fontSize: 11,
+      color: colors.textSubtle,
+    },
+    skeletons: {
+      gap: 12,
+    },
+    separator: {
+      height: spacing.md,
+    },
+    emptyState: {
+      alignItems: "center",
+      paddingVertical: spacing.xxl,
+      gap: spacing.sm,
+    },
+    emptyTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    emptyBody: {
+      textAlign: "center",
+      fontSize: 14,
+      color: colors.textMuted,
+      maxWidth: 320,
+      lineHeight: 20,
+    },
+    fab: {
+      position: "absolute",
+      right: spacing.lg,
+      bottom: spacing.xl,
+      backgroundColor: colors.primary,
+      borderRadius: 28,
+      paddingHorizontal: 20,
+      paddingVertical: 14,
+      elevation: 4,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    },
+    fabText: {
+      color: "#ffffff",
+      fontWeight: "700",
+      fontSize: 15,
+    },
+    toast: {
+      position: "absolute",
+      bottom: spacing.xl,
+      left: spacing.lg,
+      right: spacing.lg,
+      backgroundColor: colors.text,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+    },
+    toastText: {
+      color: colors.background,
+      textAlign: "center",
+      fontSize: 14,
+      fontWeight: "500",
+    },
+  });
+}
+
+export function CatalogScreen({ navigation }: CatalogScreenProps) {
+  const { colors, shared, typography, colorScheme } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const filtersRestored = useRef(false);
+
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [registryCount, setRegistryCount] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [verification, setVerification] =
+    useState<VerificationFilter>(DEFAULT_VERIFICATION);
+  const [resourceType, setResourceType] = useState<ResourceTypeFilter>(
+    DEFAULT_RESOURCE_TYPE,
+  );
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>("newest");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [registryFailed, setRegistryFailed] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+
+  useEffect(() => {
+    async function restoreFilters() {
+      try {
+        const raw = await AsyncStorage.getItem(CATALOG_FILTERS_KEY);
+        if (raw) {
+          const saved: PersistedFilters = JSON.parse(raw);
+          setSearch(saved.search);
+          setDebouncedSearch(saved.search);
+          setVerification(saved.verification);
+          setResourceType(saved.resourceType);
+          setMinPrice(saved.minPrice);
+          setMaxPrice(saved.maxPrice);
+        }
+      } catch {
+      } finally {
+        filtersRestored.current = true;
+      }
+    }
+    restoreFilters();
+  }, []);
+
+  // Debounce the search text so the catalog only refetches after typing
+  // pauses, rather than on every keystroke.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  useEffect(() => {
+    async function persistFilters() {
+      if (!filtersRestored.current) return;
+      const data: PersistedFilters = { search, verification, resourceType, minPrice, maxPrice };
+      try {
+        await AsyncStorage.setItem(CATALOG_FILTERS_KEY, JSON.stringify(data));
+      } catch {
+      }
+    }
+    persistFilters();
+  }, [search, verification, resourceType, minPrice, maxPrice]);
+
+  const loadData = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
+    const filters: CatalogFilters = {};
+    if (debouncedSearch.trim()) filters.search = debouncedSearch.trim();
+    if (verification !== DEFAULT_VERIFICATION) {
+      filters.verificationStatus = verification;
+    }
+    if (resourceType !== DEFAULT_RESOURCE_TYPE) {
+      filters.resourceType = resourceType;
+    }
+
+    try {
+      let registryResult: { resourceCount: number } | null = null;
+      try {
+        registryResult = await fetchRegistryStatus();
+        setRegistryFailed(false);
+      } catch {
+        setRegistryFailed(true);
+        registryResult = null;
+      }
+      const [catalog] = await Promise.all([
+        fetchCatalog(Object.keys(filters).length > 0 ? filters : undefined),
+      ]);
+      setResources(catalog);
+      setRegistryCount(registryResult?.resourceCount ?? null);
+      setLastUpdatedAt(new Date());
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Something went wrong loading the catalog.";
+      setError(message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [debouncedSearch, verification, resourceType]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const hasActiveFilters =
+    search.trim() !== "" ||
+    verification !== DEFAULT_VERIFICATION ||
+    resourceType !== DEFAULT_RESOURCE_TYPE ||
+    minPrice.trim() !== "" ||
+    maxPrice.trim() !== "";
+
+  const clearFilters = useCallback(() => {
+    setSearch("");
+    setDebouncedSearch("");
+    setVerification(DEFAULT_VERIFICATION);
+    setResourceType(DEFAULT_RESOURCE_TYPE);
+    setMinPrice("");
+    setMaxPrice("");
+    setSortBy("newest");
+  }, []);
+
+  const filteredResources = useMemo(() => {
+    const min = Number.parseFloat(minPrice);
+    const max = Number.parseFloat(maxPrice);
+    const hasMin = !Number.isNaN(min);
+    const hasMax = !Number.isNaN(max);
+
+    let result: Resource[];
+    if (!hasMin && !hasMax) {
+      result = [...resources];
+    } else {
+      result = resources.filter((resource) => {
+        const price = Number.parseFloat(resource.price);
+        if (Number.isNaN(price)) return false;
+        if (hasMin && price < min) return false;
+        if (hasMax && price > max) return false;
+        return true;
+      });
+    }
+
+    if (sortBy === "title") {
+      result.sort((a, b) => a.title.localeCompare(b.title));
+    } else if (sortBy === "price") {
+      result.sort((a, b) => {
+        const pa = Number.parseFloat(a.price);
+        const pb = Number.parseFloat(b.price);
+        if (Number.isNaN(pa) && Number.isNaN(pb)) return 0;
+        if (Number.isNaN(pa)) return 1;
+        if (Number.isNaN(pb)) return -1;
+        return pa - pb;
+      });
+    }
+
+    return result;
+  }, [resources, minPrice, maxPrice, sortBy]);
+
+  function renderEmpty() {
+    if (loading) return null;
+
+    return (
+      <View style={styles.emptyState}>
+        <Text style={styles.emptyTitle}>
+          {resources.length > 0 ? "No matches" : "The catalog is empty"}
+        </Text>
+        <Text style={styles.emptyBody}>
+          {resources.length > 0
+            ? "Try adjusting or clearing your filters."
+            : "No resources have been published yet. Connect to a running MindVault server to browse the vault."}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
+      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+      <FlatList
+        data={loading ? null : filteredResources}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void loadData(true)}
+          />
+        }
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <View style={styles.headerRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={typography.title}>MindVault</Text>
+                <Text style={typography.subtitle}>
+                  Payment-protected digital resources on Stellar
+                </Text>
+                {registryCount !== null ? (
+                  <Text style={styles.registry}>
+                    {registryCount} resource{registryCount === 1 ? "" : "s"}{" "}
+                    on-chain
+                  </Text>
+                ) : registryFailed ? (
+                  <Text style={styles.registry}>
+                    On-chain count unavailable
+                  </Text>
+                ) : null}
+                {lastUpdatedAt ? (
+                  <Text style={styles.lastUpdated}>
+                    Last updated {formatLastUpdated(lastUpdatedAt)}
+                  </Text>
+                ) : null}
+              </View>
+              <Pressable
+                style={styles.settingsButton}
+                onPress={() => navigation.navigate("Settings")}
+                accessibilityRole="button"
+                accessibilityLabel="Open settings"
+              >
+                <Ionicons
+                  name="settings-outline"
+                  size={24}
+                  color={colors.textMuted}
+                />
+              </Pressable>
+            </View>
+
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search resources…"
+              placeholderTextColor={colors.textSubtle}
+              style={styles.searchInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="while-editing"
+              accessibilityLabel="Search resources"
+            />
+
+            <View style={styles.filters}>
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterLabel}>Verification</Text>
+                <View
+                  style={styles.chipRow}
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Verification filter"
+                >
+                  {VERIFICATION_OPTIONS.map((option) => {
+                    const active = verification === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => setVerification(option.value)}
+                        style={[styles.chip, active && styles.chipActive]}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: active }}
+                        accessibilityLabel={option.label}
+                        accessibilityHint={
+                          active
+                            ? "Currently selected"
+                            : "Tap to filter by this status"
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            active && styles.chipTextActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterLabel}>Type</Text>
+                <View
+                  style={styles.chipRow}
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Resource type filter"
+                >
+                  {RESOURCE_TYPE_OPTIONS.map((option) => {
+                    const active = resourceType === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => setResourceType(option.value)}
+                        style={[styles.chip, active && styles.chipActive]}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: active }}
+                        accessibilityLabel={option.label}
+                        accessibilityHint={
+                          active
+                            ? "Currently selected"
+                            : "Tap to filter by this type"
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            active && styles.chipTextActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterLabel}>Price (USDC)</Text>
+                <View style={styles.priceRow}>
+                  <View style={styles.priceField}>
+                    <TextInput
+                      value={minPrice}
+                      onChangeText={setMinPrice}
+                      placeholder="Min"
+                      placeholderTextColor={colors.textSubtle}
+                      style={styles.priceInput}
+                      keyboardType="decimal-pad"
+                      inputMode="decimal"
+                      accessibilityLabel="Minimum price"
+                    />
+                  </View>
+                  <View style={styles.priceField}>
+                    <TextInput
+                      value={maxPrice}
+                      onChangeText={setMaxPrice}
+                      placeholder="Max"
+                      placeholderTextColor={colors.textSubtle}
+                      style={styles.priceInput}
+                      keyboardType="decimal-pad"
+                      inputMode="decimal"
+                      accessibilityLabel="Maximum price"
+                    />
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterLabel}>Sort by</Text>
+                <View
+                  style={styles.chipRow}
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Sort order"
+                >
+                  {SORT_OPTIONS.map((option) => {
+                    const active = sortBy === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => setSortBy(option.value)}
+                        style={[styles.chip, active && styles.chipActive]}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: active }}
+                        accessibilityLabel={option.label}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            active && styles.chipTextActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {!loading && resources.length > 0 ? (
+                <View style={styles.resultsRow}>
+                  <Text style={styles.resultsCount}>
+                    Showing {filteredResources.length} of {resources.length}{" "}
+                    resource
+                    {resources.length === 1 ? "" : "s"}
+                  </Text>
+                  <Pressable
+                    onPress={clearFilters}
+                    disabled={!hasActiveFilters}
+                    style={[
+                      styles.clearButton,
+                      !hasActiveFilters && styles.clearButtonDisabled,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: !hasActiveFilters }}
+                    accessibilityLabel="Clear filters"
+                  >
+                    <Text style={styles.clearButtonText}>Clear filters</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+
+            <Text style={styles.apiHint}>API: {getApiBaseUrl()}</Text>
+
+            {error ? (
+              <ErrorBanner message={error} onRetry={() => void loadData()} />
+            ) : null}
+
+            {loading ? (
+              <View style={styles.skeletons}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </View>
+            ) : null}
+          </View>
+        }
+        renderItem={({ item }) => (
+          <ResourceCard
+            resource={item}
+            onCopyUrl={setToast}
+            onPress={() =>
+              navigation.navigate("ResourceDetail", { resourceId: item.id })
+            }
+          />
+        )}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ListEmptyComponent={renderEmpty}
+      />
+
+      <Pressable
+        style={styles.fab}
+        onPress={() => navigation.navigate("Scanner")}
+        accessibilityRole="button"
+        accessibilityLabel="Scan QR code"
+      >
+        <Text style={styles.fabText}>Scan QR</Text>
+      </Pressable>
+
+      {toast ? (
+        <View style={styles.toast}>
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
+      ) : null}
+    </SafeAreaView>
+  );
+}
+
