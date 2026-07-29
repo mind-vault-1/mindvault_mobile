@@ -2,7 +2,7 @@ import { loadApiBaseUrl, saveApiBaseUrl } from "./apiSettings";
 import Constants from "expo-constants";
 import { Keypair, Transaction } from "@stellar/stellar-sdk";
 
-import { getApiKey } from "../services/secureStorage";
+import { getApiKey, storeApiKey, clearApiKey } from "../services/secureStorage";
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
 import { logError } from "../utils/errorLogger";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
@@ -234,3 +234,7 @@ export async function fetchPublisherResources(
 
   return res.json();
 }
+
+export { storeApiKey };
+export const getStoredApiKey = getApiKey;
+export const deleteStoredApiKey = clearApiKey;
