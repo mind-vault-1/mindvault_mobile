@@ -21,7 +21,7 @@ import {
   getStoredApiKey,
   storeApiKey,
 } from "../api/resources";
-import type { PublisherResource } from "../types";
+import type { Resource } from "../types";
 import type { RootStackParamList } from "../navigation";
 import { spacing } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
@@ -43,7 +43,7 @@ export function PublisherResourcesScreen() {
 
   const [apiKey, setApiKey] = useState("");
   const [storedApiKey, setStoredApiKey] = useState<string | null>(null);
-  const [resources, setResources] = useState<PublisherResource[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
