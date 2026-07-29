@@ -1,4 +1,11 @@
-import { buildQuery } from './resources';
+import { buildQuery, fetchPublisherResources, getApiBaseUrl } from './resources';
+import { getApiKey } from '../services/secureStorage';
+
+jest.mock('../services/secureStorage', () => ({
+  getApiKey: jest.fn(),
+}));
+
+const mockedGetApiKey = getApiKey as jest.MockedFunction<typeof getApiKey>;
 
 describe('buildQuery', () => {
   it('returns empty string for empty filters or undefined', () => {
@@ -45,5 +52,78 @@ describe('buildQuery', () => {
 
   it('omits search when it is empty string', () => {
     expect(buildQuery({ search: '' })).toBe('');
+  });
+});
+
+describe('fetchPublisherResources', () => {
+  const originalFetch = global.fetch;
+
+  function mockFetchOk(body: unknown = []) {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => body,
+    });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+    return fetchMock;
+  }
+
+  beforeEach(() => {
+    mockedGetApiKey.mockReset();
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('requests the configured API base URL', async () => {
+    const fetchMock = mockFetchOk();
+
+    await fetchPublisherResources('publisher-key');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getApiBaseUrl()}/publishers/me/resources`,
+      { headers: { 'x-api-key': 'publisher-key' } }
+    );
+  });
+
+  it('falls back to the stored API key when none is passed', async () => {
+    const fetchMock = mockFetchOk();
+    mockedGetApiKey.mockResolvedValue('stored-key');
+
+    await fetchPublisherResources();
+
+    expect(fetchMock.mock.calls[0][1]).toEqual({
+      headers: { 'x-api-key': 'stored-key' },
+    });
+  });
+
+  it('appends the search term as a query parameter', async () => {
+    const fetchMock = mockFetchOk();
+
+    await fetchPublisherResources('publisher-key', ' ai ');
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `${getApiBaseUrl()}/publishers/me/resources?search=ai`
+    );
+  });
+
+  it('throws when no API key is available', async () => {
+    mockFetchOk();
+    mockedGetApiKey.mockResolvedValue(null);
+
+    await expect(fetchPublisherResources()).rejects.toThrow('No API key configured');
+  });
+
+  it('surfaces authentication failures', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({}),
+    }) as unknown as typeof global.fetch;
+
+    await expect(fetchPublisherResources('bad-key')).rejects.toThrow(
+      'Unauthorized: Invalid API key'
+    );
   });
 });
