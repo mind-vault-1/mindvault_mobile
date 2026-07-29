@@ -18,6 +18,7 @@ import {
   getDefaultApiBaseUrl,
   loadApiBaseUrl,
   saveApiBaseUrl,
+  validateApiBaseUrl,
 } from "../api/apiSettings";
 import { initializeApiBaseUrl } from "../api/resources";
 
@@ -42,10 +43,15 @@ export function SettingsScreen() {
 
   const handleSave = async () => {
     const trimmed = apiUrl.trim();
-    if (!trimmed) {
-      Alert.alert("Invalid URL", "API base URL cannot be empty.");
+    const validation = validateApiBaseUrl(trimmed);
+    if (!validation.isValid) {
+      Alert.alert(
+        "Invalid URL",
+        validation.errorMessage ?? "Invalid API base URL."
+      );
       return;
     }
+
     setIsSaving(true);
     try {
       await saveApiBaseUrl(trimmed);
