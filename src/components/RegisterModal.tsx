@@ -149,7 +149,7 @@ export function RegisterModal({
     }
   }
 
-  async function signXdr(unsignedXdr: string, networkPassphrase: string): Promise<string> {
+  async function signXdr(unsignedXdr: string, networkPassphrase?: string): Promise<string> {
     // TODO: Implement actual signing logic based on chosen approach:
     // Option 1: Use stellar-sdk with local keypair
     // Option 2: Use WalletConnect for external wallet signing

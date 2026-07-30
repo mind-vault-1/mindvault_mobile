@@ -153,6 +153,42 @@ export function signTransactionXdr(
   return transaction.toEnvelope().toXDR("base64");
 }
 
+export interface PrepareRegisterResponse {
+  xdr: string;
+  networkPassphrase?: string;
+}
+
+export interface SubmitRegisterResponse {
+  txHash: string;
+}
+
+export async function prepareRegister(resourceId: string): Promise<PrepareRegisterResponse> {
+  const res = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(resourceId)}/register/prepare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "Failed to prepare registration");
+  }
+  return res.json();
+}
+
+export async function submitRegister(
+  resourceId: string,
+  signedXdr: string
+): Promise<SubmitRegisterResponse> {
+  const res = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(resourceId)}/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ xdr: signedXdr }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "Failed to submit registration");
+  }
+  return res.json();
+}
 
 export interface PrepareOwnershipResponse {
   xdr: string;
