@@ -1,4 +1,3 @@
-// @ts-nocheck
 import * as Clipboard from "expo-clipboard";
 import { useMemo, useState } from "react";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
@@ -14,7 +13,7 @@ import {
 
 import type { Resource } from "../types";
 import { getResourceTypeLabel } from "../types";
-import { useEditPrice } from "../hooks/useEditPrice";
+import { useEditPrice, validatePrice } from "../hooks/useEditPrice";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 
@@ -24,6 +23,10 @@ interface ResourceCardProps {
   onRegister?: (resource: Resource) => void;
   onPress?: () => void;
   editablePrice?: boolean;
+  /** Called with the new price string after a successful price edit */
+  onPriceUpdated?: (resourceId: string, newPrice: string) => void;
+  /** Called when the user taps "Transfer Ownership" */
+  onTransferOwnership?: (resource: Resource) => void;
 }
 
 function shortenAddress(address: string): string {
@@ -55,13 +58,22 @@ function onchainStyle(status: Resource["onchainStatus"], colors: ThemeColors) {
   }
 }
 
-export function ResourceCard({ resource, onCopyUrl, onRegister, onPress, editablePrice = false }: ResourceCardProps) {
+export function ResourceCard({
+  resource,
+  onCopyUrl,
+  onRegister,
+  onPress,
+  editablePrice = false,
+  onPriceUpdated,
+  onTransferOwnership,
+}: ResourceCardProps) {
   const { colors, shared, typography } = useAppTheme();
   const verification = verificationStyle(resource.verificationStatus, colors);
   const onchain = onchainStyle(resource.onchainStatus, colors);
   const { status, error, editPrice, resetError } = useEditPrice();
   const [editing, setEditing] = useState(false);
   const [newPrice, setNewPrice] = useState(resource.price);
+  const [priceTouched, setPriceTouched] = useState(false);
   const [secretKey, setSecretKey] = useState("");
   const [secretKeyTouched, setSecretKeyTouched] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -82,6 +94,9 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress, editabl
           color: colors.text,
           fontSize: 14,
         },
+        inputError: {
+          borderColor: colors.danger,
+        },
         primaryButton: {
           backgroundColor: colors.primary,
         },
@@ -99,6 +114,10 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress, editabl
         },
         secondaryButton: {
           backgroundColor: colors.neutralBg,
+        },
+        transferButton: {
+          backgroundColor: colors.neutralBg,
+          marginTop: 8,
         },
       }),
     [colors]
@@ -119,9 +138,18 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress, editabl
 
   const secretKeyValidation = useMemo(() => validateStellarSecret(secretKey), [secretKey]);
 
+  // Inline price validation error (shown after the field has been touched)
+  const priceValidationError = priceTouched ? validatePrice(newPrice) : null;
+
   async function handleSavePrice() {
     resetError();
     setSuccessMessage(null);
+    setPriceTouched(true);
+
+    // Show price validation errors immediately without calling the API
+    if (validatePrice(newPrice) !== null) {
+      return;
+    }
 
     if (!secretKeyValidation.isValid) {
       setSecretKeyTouched(true);
@@ -130,19 +158,26 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress, editabl
 
     const ok = await editPrice(resource.id, newPrice, secretKey);
     if (ok) {
-      setSuccessMessage("Price edit submitted.");
+      setSuccessMessage("Price updated successfully.");
       setEditing(false);
       setSecretKey("");
       setSecretKeyTouched(false);
+      setPriceTouched(false);
+      // Notify parent so it can update its local state (issue #65)
+      onPriceUpdated?.(resource.id, newPrice);
     }
   }
 
   const isBusy = status !== "idle";
-  const isSaveDisabled = isBusy || !newPrice || !secretKeyValidation.isValid;
+  const isSaveDisabled =
+    isBusy ||
+    validatePrice(newPrice) !== null ||
+    !secretKeyValidation.isValid;
 
-  const secretKeyFieldError = secretKeyTouched && secretKey.length > 0 && !secretKeyValidation.isValid
-    ? secretKeyValidation.errorMessage
-    : null;
+  const secretKeyFieldError =
+    secretKeyTouched && secretKey.length > 0 && !secretKeyValidation.isValid
+      ? secretKeyValidation.errorMessage
+      : null;
 
   const statusLabel =
     status === "preparing"
@@ -212,15 +247,31 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress, editabl
           <View style={styles.editor}>
             <TextInput
               value={newPrice}
-              onChangeText={setNewPrice}
+              onChangeText={(text) => {
+                setNewPrice(text);
+                if (!priceTouched) setPriceTouched(true);
+              }}
+              onBlur={() => setPriceTouched(true)}
               placeholder="New price"
               placeholderTextColor={colors.textSubtle}
               keyboardType="numeric"
-              style={dynamicStyles.input}
+              style={[
+                dynamicStyles.input,
+                priceValidationError ? dynamicStyles.inputError : null,
+              ]}
               editable={!isBusy}
               accessibilityLabel="New price in USDC"
               accessibilityHint="Enter the updated price for this resource"
             />
+            {priceValidationError ? (
+              <Text
+                style={dynamicStyles.errorText}
+                accessibilityLiveRegion="assertive"
+                accessibilityRole="alert"
+              >
+                {priceValidationError}
+              </Text>
+            ) : null}
             <TextInput
               value={secretKey}
               onChangeText={(text) => {
@@ -238,7 +289,14 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress, editabl
             />
             <View style={styles.actionRow}>
               <Pressable
-                onPress={() => setEditing(false)}
+                onPress={() => {
+                  setEditing(false);
+                  setPriceTouched(false);
+                  setNewPrice(resource.price);
+                  setSecretKey("");
+                  setSecretKeyTouched(false);
+                  resetError();
+                }}
                 style={[shared.button, dynamicStyles.secondaryButton]}
                 disabled={isBusy}
                 accessibilityRole="button"
@@ -276,7 +334,7 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress, editabl
               <Text
                 style={dynamicStyles.statusText}
                 accessibilityLiveRegion="polite"
-                accessibilityRole="status"
+                accessibilityRole="none"
               >
                 {statusLabel}
               </Text>
@@ -303,23 +361,51 @@ export function ResourceCard({ resource, onCopyUrl, onRegister, onPress, editabl
               <Text
                 style={dynamicStyles.successText}
                 accessibilityLiveRegion="polite"
-                accessibilityRole="status"
+                accessibilityRole="none"
               >
                 {successMessage}
               </Text>
             ) : null}
           </View>
         ) : (
-          <Pressable
-            onPress={() => setEditing(true)}
-            style={[shared.button, styles.editButton]}
-            accessibilityRole="button"
-            accessibilityLabel={`Edit price for ${resource.title}`}
-            accessibilityHint="Opens the price editor for this resource"
-          >
-            <Text style={shared.buttonText}>Edit price</Text>
-          </Pressable>
+          <View style={styles.publisherActions}>
+            <Pressable
+              onPress={() => {
+                setNewPrice(resource.price);
+                setPriceTouched(false);
+                setEditing(true);
+              }}
+              style={[shared.button, styles.editButton]}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit price for ${resource.title}`}
+              accessibilityHint="Opens the price editor for this resource"
+            >
+              <Text style={shared.buttonText}>Edit price</Text>
+            </Pressable>
+
+            {onTransferOwnership ? (
+              <Pressable
+                onPress={() => onTransferOwnership(resource)}
+                style={[shared.button, dynamicStyles.transferButton]}
+                accessibilityRole="button"
+                accessibilityLabel={`Transfer ownership of ${resource.title}`}
+                accessibilityHint="Opens the ownership transfer flow for this resource"
+              >
+                <Text style={shared.buttonText}>Transfer Ownership</Text>
+              </Pressable>
+            ) : null}
+          </View>
         )
+      ) : null}
+
+      {successMessage && !editing ? (
+        <Text
+          style={dynamicStyles.successText}
+          accessibilityLiveRegion="polite"
+          accessibilityRole="none"
+        >
+          {successMessage}
+        </Text>
       ) : null}
     </View>
   );
@@ -356,7 +442,11 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.6,
   },
-  editButton: {
+  publisherActions: {
     marginTop: 12,
+    gap: 8,
+  },
+  editButton: {
+    // no extra margin needed — publisherActions gap handles it
   },
 });

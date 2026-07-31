@@ -26,6 +26,7 @@ import { spacing } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
+import { TransferOwnershipModal } from "../components/TransferOwnershipModal";
 
 type PublisherResourcesNavigation = NativeStackNavigationProp<
   RootStackParamList,
@@ -50,6 +51,8 @@ export function PublisherResourcesScreen() {
   const [toast, setToast] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  /** Issue #66: the resource currently open in the TransferOwnershipModal, or null */
+  const [transferResource, setTransferResource] = useState<Resource | null>(null);
 
   const styles = useMemo(() => {
     return StyleSheet.create({
@@ -356,6 +359,40 @@ export function PublisherResourcesScreen() {
     }
   };
 
+  /**
+   * Issue #65: When a price edit succeeds, update the resource in local state
+   * immediately so the displayed price does not remain stale. The next pull-to-
+   * refresh will re-fetch the authoritative value from the server.
+   */
+  const handlePriceUpdated = useCallback((resourceId: string, newPrice: string) => {
+    setResources((prev) =>
+      prev.map((r) => (r.id === resourceId ? { ...r, price: newPrice } : r))
+    );
+    setToast("Price updated successfully");
+  }, []);
+
+  /**
+   * Issue #66: Open the TransferOwnershipModal for the given resource.
+   */
+  const handleOpenTransfer = useCallback((resource: Resource) => {
+    setTransferResource(resource);
+  }, []);
+
+  /**
+   * Issue #66: Called when ownership transfer completes successfully.
+   * Removes the resource from the local list (the publisher no longer owns it)
+   * and shows a confirmation toast.
+   */
+  const handleTransferSuccess = useCallback((_txHash: string | null) => {
+    setTransferResource((current) => {
+      if (current) {
+        setResources((prev) => prev.filter((r) => r.id !== current.id));
+        setToast("Ownership transferred successfully");
+      }
+      return null;
+    });
+  }, []);
+
   const filteredResources = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return resources;
@@ -502,7 +539,15 @@ export function PublisherResourcesScreen() {
             </Pressable>
           </View>
         }
-        renderItem={({ item }) => <ResourceCard resource={item} onCopyUrl={setToast} editablePrice={true} />}
+        renderItem={({ item }) => (
+          <ResourceCard
+            resource={item}
+            onCopyUrl={setToast}
+            editablePrice={true}
+            onPriceUpdated={handlePriceUpdated}
+            onTransferOwnership={handleOpenTransfer}
+          />
+        )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={() =>
           !loading ? (
@@ -524,6 +569,15 @@ export function PublisherResourcesScreen() {
         <View style={styles.toast}>
           <Text style={styles.toastText}>{toast}</Text>
         </View>
+      ) : null}
+
+      {transferResource ? (
+        <TransferOwnershipModal
+          resource={transferResource}
+          visible={true}
+          onClose={() => setTransferResource(null)}
+          onSuccess={handleTransferSuccess}
+        />
       ) : null}
     </SafeAreaView>
   );
