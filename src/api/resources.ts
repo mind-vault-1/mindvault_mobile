@@ -4,7 +4,7 @@ import { Keypair, Transaction } from "@stellar/stellar-sdk";
 
 import { getApiKey, storeApiKey, clearApiKey } from "../services/secureStorage";
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
-import { logError } from "../utils/errorLogger";
+import { extractApiErrorMessage } from "../utils/errorLogger";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
 
 const DEFAULT_API_BASE_URL =
@@ -60,7 +60,7 @@ export function getDefaultApiBaseUrl(): string {
 export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]> {
   const res = await fetch(`${apiBaseUrl}/resources${buildQuery(filters)}`);
   if (!res.ok) {
-    throw new Error("Failed to fetch catalog");
+    throw new Error(await extractApiErrorMessage(res, "Failed to fetch catalog"));
   }
   return res.json();
 }
@@ -84,15 +84,24 @@ export async function fetchResource(id: string): Promise<Resource> {
   }
 
   if (res.status === 404) {
-    throw new ResourceFetchError("Resource not found.", false);
+    throw new ResourceFetchError(
+      await extractApiErrorMessage(res, "Resource not found."),
+      false
+    );
   }
 
   if (res.status >= 500) {
-    throw new ResourceFetchError("Server error. Please try again.", true);
+    throw new ResourceFetchError(
+      await extractApiErrorMessage(res, "Server error. Please try again."),
+      true
+    );
   }
 
   if (!res.ok) {
-    throw new ResourceFetchError("Failed to load resource.", false);
+    throw new ResourceFetchError(
+      await extractApiErrorMessage(res, "Failed to load resource."),
+      false
+    );
   }
 
   return res.json();
@@ -101,7 +110,7 @@ export async function fetchResource(id: string): Promise<Resource> {
 export async function fetchRegistryStatus(): Promise<RegistryStatus> {
   const res = await fetch(`${apiBaseUrl}/registry/status`);
   if (!res.ok) {
-    throw new Error("Failed to fetch registry status");
+    throw new Error(await extractApiErrorMessage(res, "Failed to fetch registry status"));
   }
   return res.json();
 }
@@ -117,8 +126,9 @@ export async function prepareEditPrice(
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || "Failed to prepare price edit transaction.");
+    throw new Error(
+      await extractApiErrorMessage(response, "Failed to prepare price edit transaction.")
+    );
   }
 
   return response.json();
@@ -132,8 +142,9 @@ export async function submitPriceEdit(resourceId: string, signedXdr: string): Pr
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || "Failed to submit signed price edit transaction.");
+    throw new Error(
+      await extractApiErrorMessage(response, "Failed to submit signed price edit transaction.")
+    );
   }
 }
 
@@ -208,7 +219,7 @@ export async function prepareOwnershipTransfer(
     headers: { "Content-Type": "application/json" },
   });
   if (!res.ok) {
-    throw new Error("Failed to prepare ownership transfer");
+    throw new Error(await extractApiErrorMessage(res, "Failed to prepare ownership transfer"));
   }
   return res.json();
 }
@@ -224,7 +235,7 @@ export async function submitOwnershipTransfer(
     body: JSON.stringify({ signedXdr, destinationAddress }),
   });
   if (!res.ok) {
-    throw new Error("Failed to submit ownership transfer");
+    throw new Error(await extractApiErrorMessage(res, "Failed to submit ownership transfer"));
   }
   return res.json();
 }
@@ -265,7 +276,7 @@ export async function fetchPublisherResources(
   }
 
   if (!res.ok) {
-    throw new Error("Failed to fetch publisher resources");
+    throw new Error(await extractApiErrorMessage(res, "Failed to fetch publisher resources"));
   }
 
   return res.json();
