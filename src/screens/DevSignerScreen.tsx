@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from "react";
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Account, Keypair, TransactionBuilder, Networks, Asset, Operation } from "@stellar/stellar-sdk";
-import { useTheme } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
 
 export function DevSignerScreen() {
-  const { colors, typography, shared, spacing } = useTheme();
+  const { colors, typography, shared, spacing } = useAppTheme();
   
   const [secretKey, setSecretKey] = useState("");
   const [signedXdr, setSignedXdr] = useState("");
