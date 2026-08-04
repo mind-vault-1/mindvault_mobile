@@ -13,7 +13,11 @@ export interface Resource {
   onchainTxHash?: string;
   listed: boolean;
   accessUrl: string;
+  publishedAt?: string;
+  updatedAt?: string;
 }
+
+export type PublisherResource = Resource;
 
 export interface CatalogFilters {
   search?: string;
@@ -46,4 +50,3 @@ export function getResourceTypeLabel(type: string): string {
 export type AccessResult =
   | { type: "text"; content: string }
   | { type: "external"; url: string };
-

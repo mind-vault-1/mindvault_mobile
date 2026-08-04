@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
@@ -21,12 +20,13 @@ import {
   getStoredApiKey,
   storeApiKey,
 } from "../api/resources";
-import type { PublisherResource } from "../types";
+import type { Resource } from "../types";
 import type { RootStackParamList } from "../navigation";
 import { spacing } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
+import { TransferOwnershipModal } from "../components/TransferOwnershipModal";
 
 type PublisherResourcesNavigation = NativeStackNavigationProp<
   RootStackParamList,
@@ -38,15 +38,12 @@ export function PublisherResourcesScreen() {
   const navigation = useNavigation<PublisherResourcesNavigation>();
 
   const goToPublicCatalog = useCallback(() => {
-    // Pop back to the root screen (the public Catalog). The Stack header's
-    // back button is sufficient for returning to Settings; the explicit
-    // "Back to Public Catalog" affordance skips past Settings to the root.
     navigation.popToTop();
   }, [navigation]);
 
   const [apiKey, setApiKey] = useState("");
   const [storedApiKey, setStoredApiKey] = useState<string | null>(null);
-  const [resources, setResources] = useState<PublisherResource[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -54,8 +51,222 @@ export function PublisherResourcesScreen() {
   const [toast, setToast] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  /** Issue #66: the resource currently open in the TransferOwnershipModal, or null */
+  const [transferResource, setTransferResource] = useState<Resource | null>(null);
 
-  // Load stored API key on mount
+  const styles = useMemo(() => {
+    return StyleSheet.create({
+      container: {
+        flex: 1,
+        padding: spacing.lg,
+      },
+      authSection: {
+        gap: spacing.md,
+        marginTop: spacing.lg,
+      },
+      formGroup: {
+        gap: spacing.sm,
+      },
+      label: {
+        fontSize: 14,
+        fontWeight: "600",
+        color: colors.text,
+      },
+      input: {
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        fontSize: 15,
+        color: colors.text,
+      },
+      errorBanner: {
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: "#fecaca",
+        backgroundColor: "#fef2f2",
+        padding: spacing.md,
+        gap: spacing.sm,
+      },
+      errorText: {
+        color: colors.danger,
+        fontSize: 14,
+      },
+      disabledButton: {
+        opacity: 0.6,
+      },
+      secondaryButton: {
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        backgroundColor: colors.neutralBg,
+        alignItems: "center",
+      },
+      secondaryButtonText: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: colors.text,
+      },
+      apiHint: {
+        fontSize: 11,
+        color: colors.textSubtle,
+        textAlign: "center",
+        marginTop: spacing.sm,
+      },
+      helpCard: {
+        marginTop: spacing.md,
+        padding: spacing.md,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        gap: spacing.xs,
+      },
+      helpHeaderRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+      },
+      helpTitle: {
+        fontSize: 13,
+        fontWeight: "600",
+        color: colors.text,
+        flex: 1,
+      },
+      helpToggleButton: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6,
+        backgroundColor: colors.primaryMuted,
+      },
+      helpToggleText: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: colors.primary,
+      },
+      helpBody: {
+        fontSize: 13,
+        color: colors.textMuted,
+        lineHeight: 18,
+      },
+      helpDetails: {
+        marginTop: spacing.xs,
+        paddingTop: spacing.xs,
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
+        gap: 4,
+      },
+      helpStep: {
+        fontSize: 12,
+        color: colors.textSubtle,
+        lineHeight: 16,
+      },
+      listContent: {
+        padding: spacing.lg,
+        paddingBottom: spacing.xxl,
+        gap: spacing.md,
+      },
+      header: {
+        gap: spacing.md,
+        marginBottom: spacing.lg,
+      },
+      titleRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+      },
+      backButton: {
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: colors.primaryMuted,
+      },
+      backButtonText: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: colors.primary,
+      },
+      searchInput: {
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        fontSize: 15,
+        color: colors.text,
+      },
+      retryButton: {
+        alignSelf: "flex-start",
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: colors.dangerBg,
+        borderRadius: 8,
+      },
+      retryText: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: colors.danger,
+      },
+      loadingRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: spacing.sm,
+      },
+      skeletons: {
+        gap: 12,
+      },
+      logoutButton: {
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        backgroundColor: colors.dangerBg,
+        alignItems: "center",
+      },
+      logoutButtonText: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: colors.danger,
+      },
+      separator: {
+        height: 0,
+      },
+      emptyState: {
+        gap: spacing.sm,
+        paddingVertical: spacing.xl,
+        alignItems: "center",
+      },
+      emptyTitle: {
+        fontSize: 16,
+        fontWeight: "600",
+        color: colors.text,
+      },
+      emptyBody: {
+        fontSize: 14,
+        color: colors.textMuted,
+        textAlign: "center",
+        paddingHorizontal: spacing.md,
+      },
+      toast: {
+        position: "absolute",
+        bottom: spacing.xl,
+        left: spacing.md,
+        right: spacing.md,
+        backgroundColor: colors.text,
+        borderRadius: 12,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+      },
+      toastText: {
+        color: colors.surface,
+        fontSize: 14,
+        fontWeight: "500",
+      },
+    });
+  }, [colors, shared, typography]);
+
   useEffect(() => {
     const loadStoredKey = async () => {
       try {
@@ -73,7 +284,6 @@ export function PublisherResourcesScreen() {
     void loadStoredKey();
   }, []);
 
-  // Toast auto-dismiss
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 2500);
@@ -114,9 +324,7 @@ export function PublisherResourcesScreen() {
     setError(null);
 
     try {
-      // Test the API key by fetching resources
       const testData = await fetchPublisherResources(apiKey.trim());
-      // If successful, store it
       await storeApiKey(apiKey.trim());
       setStoredApiKey(apiKey.trim());
       setAuthenticated(true);
@@ -150,6 +358,40 @@ export function PublisherResourcesScreen() {
       await loadResources(storedApiKey, true);
     }
   };
+
+  /**
+   * Issue #65: When a price edit succeeds, update the resource in local state
+   * immediately so the displayed price does not remain stale. The next pull-to-
+   * refresh will re-fetch the authoritative value from the server.
+   */
+  const handlePriceUpdated = useCallback((resourceId: string, newPrice: string) => {
+    setResources((prev) =>
+      prev.map((r) => (r.id === resourceId ? { ...r, price: newPrice } : r))
+    );
+    setToast("Price updated successfully");
+  }, []);
+
+  /**
+   * Issue #66: Open the TransferOwnershipModal for the given resource.
+   */
+  const handleOpenTransfer = useCallback((resource: Resource) => {
+    setTransferResource(resource);
+  }, []);
+
+  /**
+   * Issue #66: Called when ownership transfer completes successfully.
+   * Removes the resource from the local list (the publisher no longer owns it)
+   * and shows a confirmation toast.
+   */
+  const handleTransferSuccess = useCallback((_txHash: string | null) => {
+    setTransferResource((current) => {
+      if (current) {
+        setResources((prev) => prev.filter((r) => r.id !== current.id));
+        setToast("Ownership transferred successfully");
+      }
+      return null;
+    });
+  }, []);
 
   const filteredResources = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -297,7 +539,15 @@ export function PublisherResourcesScreen() {
             </Pressable>
           </View>
         }
-        renderItem={({ item }) => <ResourceCard resource={item} onCopyUrl={setToast} />}
+        renderItem={({ item }) => (
+          <ResourceCard
+            resource={item}
+            onCopyUrl={setToast}
+            editablePrice={true}
+            onPriceUpdated={handlePriceUpdated}
+            onTransferOwnership={handleOpenTransfer}
+          />
+        )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={() =>
           !loading ? (
@@ -320,219 +570,19 @@ export function PublisherResourcesScreen() {
           <Text style={styles.toastText}>{toast}</Text>
         </View>
       ) : null}
+
+      {transferResource ? (
+        <TransferOwnershipModal
+          resource={transferResource}
+          visible={true}
+          onClose={() => setTransferResource(null)}
+          onSuccess={handleTransferSuccess}
+        />
+      ) : null}
     </SafeAreaView>
   );
 
   return authenticated ? renderResourcesList() : renderAuthForm();
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: spacing.lg,
-  },
-  authSection: {
-    gap: spacing.md,
-    marginTop: spacing.lg,
-  },
-  formGroup: {
-    gap: spacing.sm,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: colors.text,
-  },
-  errorBanner: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#fecaca",
-    backgroundColor: "#fef2f2",
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 14,
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  secondaryButton: {
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: colors.neutralBg,
-    alignItems: "center",
-  },
-  secondaryButtonText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  apiHint: {
-    fontSize: 11,
-    color: colors.textSubtle,
-    textAlign: "center",
-    marginTop: spacing.sm,
-  },
-  helpCard: {
-    marginTop: spacing.md,
-    padding: spacing.md,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    gap: spacing.xs,
-  },
-  helpHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  helpTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.text,
-    flex: 1,
-  },
-  helpToggleButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: colors.primaryMuted,
-  },
-  helpToggleText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.primary,
-  },
-  helpBody: {
-    fontSize: 13,
-    color: colors.textMuted,
-    lineHeight: 18,
-  },
-  helpDetails: {
-    marginTop: spacing.xs,
-    paddingTop: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    gap: 4,
-  },
-  helpStep: {
-    fontSize: 12,
-    color: colors.textSubtle,
-    lineHeight: 16,
-  },
-  listContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-    gap: spacing.md,
-  },
-  header: {
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  titleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  backButton: {
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: colors.primaryMuted,
-  },
-  backButtonText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.primary,
-  },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: colors.text,
-  },
-  retryButton: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: colors.dangerBg,
-    borderRadius: 8,
-  },
-  retryText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.danger,
-  },
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  skeletons: {
-    gap: 12,
-  },
-  logoutButton: {
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: colors.dangerBg,
-    alignItems: "center",
-  },
-  logoutButtonText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.danger,
-  },
-  separator: {
-    height: 0,
-  },
-  emptyState: {
-    gap: spacing.sm,
-    paddingVertical: spacing.xl,
-    alignItems: "center",
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  emptyBody: {
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: "center",
-    paddingHorizontal: spacing.md,
-  },
-  toast: {
-    position: "absolute",
-    bottom: spacing.xl,
-    left: spacing.md,
-    right: spacing.md,
-    backgroundColor: colors.text,
-    borderRadius: 12,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  toastText: {
-    color: colors.surface,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-});
+// Styles are now generated dynamically in the component using useMemo to capture theme colors.

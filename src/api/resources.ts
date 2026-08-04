@@ -2,9 +2,9 @@ import { loadApiBaseUrl, saveApiBaseUrl } from "./apiSettings";
 import Constants from "expo-constants";
 import { Keypair, Transaction } from "@stellar/stellar-sdk";
 
-import { getApiKey } from "../services/secureStorage";
+import { getApiKey, storeApiKey, clearApiKey } from "../services/secureStorage";
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
-import { logError } from "../utils/errorLogger";
+import { extractApiErrorMessage } from "../utils/errorLogger";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
 
 const DEFAULT_API_BASE_URL =
@@ -60,7 +60,7 @@ export function getDefaultApiBaseUrl(): string {
 export async function fetchCatalog(filters?: CatalogFilters): Promise<Resource[]> {
   const res = await fetch(`${apiBaseUrl}/resources${buildQuery(filters)}`);
   if (!res.ok) {
-    throw new Error("Failed to fetch catalog");
+    throw new Error(await extractApiErrorMessage(res, "Failed to fetch catalog"));
   }
   return res.json();
 }
@@ -84,15 +84,24 @@ export async function fetchResource(id: string): Promise<Resource> {
   }
 
   if (res.status === 404) {
-    throw new ResourceFetchError("Resource not found.", false);
+    throw new ResourceFetchError(
+      await extractApiErrorMessage(res, "Resource not found."),
+      false
+    );
   }
 
   if (res.status >= 500) {
-    throw new ResourceFetchError("Server error. Please try again.", true);
+    throw new ResourceFetchError(
+      await extractApiErrorMessage(res, "Server error. Please try again."),
+      true
+    );
   }
 
   if (!res.ok) {
-    throw new ResourceFetchError("Failed to load resource.", false);
+    throw new ResourceFetchError(
+      await extractApiErrorMessage(res, "Failed to load resource."),
+      false
+    );
   }
 
   return res.json();
@@ -101,7 +110,7 @@ export async function fetchResource(id: string): Promise<Resource> {
 export async function fetchRegistryStatus(): Promise<RegistryStatus> {
   const res = await fetch(`${apiBaseUrl}/registry/status`);
   if (!res.ok) {
-    throw new Error("Failed to fetch registry status");
+    throw new Error(await extractApiErrorMessage(res, "Failed to fetch registry status"));
   }
   return res.json();
 }
@@ -117,8 +126,9 @@ export async function prepareEditPrice(
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || "Failed to prepare price edit transaction.");
+    throw new Error(
+      await extractApiErrorMessage(response, "Failed to prepare price edit transaction.")
+    );
   }
 
   return response.json();
@@ -132,8 +142,9 @@ export async function submitPriceEdit(resourceId: string, signedXdr: string): Pr
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || "Failed to submit signed price edit transaction.");
+    throw new Error(
+      await extractApiErrorMessage(response, "Failed to submit signed price edit transaction.")
+    );
   }
 }
 
@@ -153,6 +164,42 @@ export function signTransactionXdr(
   return transaction.toEnvelope().toXDR("base64");
 }
 
+export interface PrepareRegisterResponse {
+  xdr: string;
+  networkPassphrase?: string;
+}
+
+export interface SubmitRegisterResponse {
+  txHash: string;
+}
+
+export async function prepareRegister(resourceId: string): Promise<PrepareRegisterResponse> {
+  const res = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(resourceId)}/register/prepare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "Failed to prepare registration");
+  }
+  return res.json();
+}
+
+export async function submitRegister(
+  resourceId: string,
+  signedXdr: string
+): Promise<SubmitRegisterResponse> {
+  const res = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(resourceId)}/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ xdr: signedXdr }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "Failed to submit registration");
+  }
+  return res.json();
+}
 
 export interface PrepareOwnershipResponse {
   xdr: string;
@@ -172,7 +219,7 @@ export async function prepareOwnershipTransfer(
     headers: { "Content-Type": "application/json" },
   });
   if (!res.ok) {
-    throw new Error("Failed to prepare ownership transfer");
+    throw new Error(await extractApiErrorMessage(res, "Failed to prepare ownership transfer"));
   }
   return res.json();
 }
@@ -188,20 +235,35 @@ export async function submitOwnershipTransfer(
     body: JSON.stringify({ signedXdr, destinationAddress }),
   });
   if (!res.ok) {
-    throw new Error("Failed to submit ownership transfer");
+    throw new Error(await extractApiErrorMessage(res, "Failed to submit ownership transfer"));
   }
   return res.json();
 }
 
-export async function fetchPublisherResources(): Promise<Resource[]> {
-  const apiKey = await getApiKey();
-  if (!apiKey) {
+/**
+ * Fetches the resources owned by the authenticated publisher.
+ *
+ * The request always targets the API base URL configured for the rest of the
+ * API client (see {@link getApiBaseUrl}), so a base URL changed at runtime
+ * from Settings is picked up here too.
+ *
+ * @param apiKey Optional key to authenticate with. When omitted, the key
+ *   persisted in secure storage is used.
+ * @param search Optional search term forwarded to the API as a query param.
+ */
+export async function fetchPublisherResources(
+  apiKey?: string,
+  search?: string
+): Promise<Resource[]> {
+  const key = apiKey?.trim() || (await getApiKey());
+  if (!key) {
     throw new Error("No API key configured");
   }
 
-  const res = await fetch(`${apiBaseUrl}/publishers/me/resources`, {
+  const query = buildQuery(search?.trim() ? { search: search.trim() } : undefined);
+  const res = await fetch(`${getApiBaseUrl()}/publishers/me/resources${query}`, {
     headers: {
-      "x-api-key": apiKey,
+      "x-api-key": key,
     },
   });
 
@@ -214,8 +276,12 @@ export async function fetchPublisherResources(): Promise<Resource[]> {
   }
 
   if (!res.ok) {
-    throw new Error("Failed to fetch publisher resources");
+    throw new Error(await extractApiErrorMessage(res, "Failed to fetch publisher resources"));
   }
 
   return res.json();
 }
+
+export { storeApiKey };
+export const getStoredApiKey = getApiKey;
+export const deleteStoredApiKey = clearApiKey;

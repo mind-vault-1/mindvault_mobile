@@ -27,8 +27,14 @@ import type { CatalogFilters, Resource, VerificationStatus } from "../types";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
+import {
+  INVALID_PRICE_RANGE_MESSAGE,
+  filterByPriceRange,
+  parsePriceRange,
+} from "../utils/priceRange";
 
 const CATALOG_FILTERS_KEY = "@mindvault_catalog_filters";
+const SEARCH_DEBOUNCE_MS = 300;
 
 interface PersistedFilters {
   search: string;
@@ -176,6 +182,14 @@ function createStyles(colors: ThemeColors) {
       fontSize: 15,
       color: colors.text,
     },
+    priceInputInvalid: {
+      borderColor: colors.danger,
+    },
+    priceError: {
+      fontSize: 12,
+      lineHeight: 16,
+      color: colors.danger,
+    },
     resultsRow: {
       flexDirection: "row",
       justifyContent: "space-between",
@@ -266,6 +280,25 @@ function createStyles(colors: ThemeColors) {
   });
 }
 
+type VerificationFilter = "all" | VerificationStatus;
+type ResourceTypeFilter = "all" | "file" | "link";
+
+const DEFAULT_VERIFICATION: VerificationFilter = "all";
+const DEFAULT_RESOURCE_TYPE: ResourceTypeFilter = "all";
+
+const VERIFICATION_OPTIONS: { label: string; value: VerificationFilter }[] = [
+  { label: "All", value: "all" },
+  { label: "Verified", value: "verified" },
+  { label: "Pending", value: "pending" },
+  { label: "Rejected", value: "rejected" },
+];
+
+const RESOURCE_TYPE_OPTIONS: { label: string; value: ResourceTypeFilter }[] = [
+  { label: "All", value: "all" },
+  { label: "File", value: "file" },
+  { label: "Link", value: "link" },
+];
+
 export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const { colors, shared, typography, colorScheme } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -274,6 +307,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [resources, setResources] = useState<Resource[]>([]);
   const [registryCount, setRegistryCount] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [verification, setVerification] =
     useState<VerificationFilter>(DEFAULT_VERIFICATION);
   const [resourceType, setResourceType] = useState<ResourceTypeFilter>(
@@ -329,7 +363,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     setError(null);
 
     const filters: CatalogFilters = {};
-    if (search.trim()) filters.search = search.trim();
+    if (debouncedSearch.trim()) filters.search = debouncedSearch.trim();
     if (verification !== DEFAULT_VERIFICATION) {
       filters.verificationStatus = verification;
     }
@@ -362,7 +396,12 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [search, verification, resourceType]);
+  }, [debouncedSearch, verification, resourceType]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     void loadData();
@@ -389,22 +428,15 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     setMaxPrice("");
   }, []);
 
-  const filteredResources = useMemo(() => {
-    const min = Number.parseFloat(minPrice);
-    const max = Number.parseFloat(maxPrice);
-    const hasMin = !Number.isNaN(min);
-    const hasMax = !Number.isNaN(max);
+  const priceRange = useMemo(
+    () => parsePriceRange(minPrice, maxPrice),
+    [minPrice, maxPrice],
+  );
 
-    if (!hasMin && !hasMax) return resources;
-
-    return resources.filter((resource) => {
-      const price = Number.parseFloat(resource.price);
-      if (Number.isNaN(price)) return false;
-      if (hasMin && price < min) return false;
-      if (hasMax && price > max) return false;
-      return true;
-    });
-  }, [resources, minPrice, maxPrice]);
+  const filteredResources = useMemo(
+    () => filterByPriceRange(resources, priceRange),
+    [resources, priceRange],
+  );
 
   function renderEmpty() {
     if (loading) return null;
@@ -566,10 +598,17 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                       onChangeText={setMinPrice}
                       placeholder="Min"
                       placeholderTextColor={colors.textSubtle}
-                      style={styles.priceInput}
+                      style={[
+                        styles.priceInput,
+                        priceRange.isInvalid && styles.priceInputInvalid,
+                      ]}
                       keyboardType="decimal-pad"
                       inputMode="decimal"
                       accessibilityLabel="Minimum price"
+
+                      accessibilityHint={
+                        priceRange.isInvalid ? INVALID_PRICE_RANGE_MESSAGE : undefined
+                      }
                     />
                   </View>
                   <View style={styles.priceField}>
@@ -578,13 +617,29 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                       onChangeText={setMaxPrice}
                       placeholder="Max"
                       placeholderTextColor={colors.textSubtle}
-                      style={styles.priceInput}
+                      style={[
+                        styles.priceInput,
+                        priceRange.isInvalid && styles.priceInputInvalid,
+                      ]}
                       keyboardType="decimal-pad"
                       inputMode="decimal"
                       accessibilityLabel="Maximum price"
+
+                      accessibilityHint={
+                        priceRange.isInvalid ? INVALID_PRICE_RANGE_MESSAGE : undefined
+                      }
                     />
                   </View>
                 </View>
+                {priceRange.isInvalid ? (
+                  <Text
+                    style={styles.priceError}
+                    accessibilityRole="alert"
+                    accessibilityLiveRegion="polite"
+                  >
+                    {INVALID_PRICE_RANGE_MESSAGE}
+                  </Text>
+                ) : null}
               </View>
 
               {!loading && resources.length > 0 ? (

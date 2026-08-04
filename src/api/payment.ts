@@ -1,4 +1,5 @@
 import type { AccessResult, PaymentChallenge } from "../types";
+import { extractApiErrorMessage } from "../utils/errorLogger";
 
 /**
  * Parse HTTP 402 challenge headers into a PaymentChallenge.
@@ -64,14 +65,21 @@ export async function accessResource(url: string): Promise<AccessResult> {
     });
 
     if (!secondRes.ok) {
-      throw new Error(`Payment rejected: server responded ${secondRes.status}.`);
+      throw new Error(
+        await extractApiErrorMessage(
+          secondRes,
+          `Payment rejected: server responded ${secondRes.status}.`
+        )
+      );
     }
 
     return resolveResponse(secondRes, url);
   }
 
   if (!firstRes.ok) {
-    throw new Error(`Failed to access resource (${firstRes.status}).`);
+    throw new Error(
+      await extractApiErrorMessage(firstRes, `Failed to access resource (${firstRes.status}).`)
+    );
   }
 
   return resolveResponse(firstRes, url);

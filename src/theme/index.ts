@@ -15,12 +15,14 @@ export type ThemeColors = {
   border: string;
   primary: string;
   primaryMuted: string;
+  onPrimary: string;
   success: string;
   successBg: string;
   warning: string;
   warningBg: string;
   danger: string;
   dangerBg: string;
+  onDanger: string;
   neutralBg: string;
 };
 
@@ -36,12 +38,14 @@ export const lightColors: ThemeColors = {
   border: "#e5e7eb",
   primary: "#4f46e5",
   primaryMuted: "#eef2ff",
+  onPrimary: "#ffffff",
   success: "#15803d",
   successBg: "#dcfce7",
   warning: "#b45309",
   warningBg: "#fef3c7",
   danger: "#b91c1c",
   dangerBg: "#fee2e2",
+  onDanger: "#ffffff",
   neutralBg: "#f3f4f6",
 };
 
@@ -55,12 +59,14 @@ export const darkColors: ThemeColors = {
   border: "#4b5563",
   primary: "#6366f1",
   primaryMuted: "#3730a3",
+  onPrimary: "#ffffff",
   success: "#34d399",
   successBg: "#064e3b",
   warning: "#fbbf24",
   warningBg: "#78350f",
   danger: "#f87171",
   dangerBg: "#7f1d1d",
+  onDanger: "#ffffff",
   neutralBg: "#374151",
 };
 
