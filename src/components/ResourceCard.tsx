@@ -129,11 +129,15 @@ export function ResourceCard({
   }
 
   async function handleShare() {
-    await Share.share({
-      title: resource.title,
-      message: `${resource.title}\n${resource.accessUrl}`,
-      url: resource.accessUrl,
-    });
+    try {
+      await Share.share({
+        title: resource.title,
+        message: `${resource.title}\n${resource.accessUrl}`,
+        url: resource.accessUrl,
+      });
+    } catch {
+      onCopyUrl("Unable to share resource. Please try copying the URL instead.");
+    }
   }
 
   const secretKeyValidation = useMemo(() => validateStellarSecret(secretKey), [secretKey]);
