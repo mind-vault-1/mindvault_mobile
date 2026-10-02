@@ -118,6 +118,8 @@ export function DevSignerScreen() {
             onPress={() => {
               setSecretKey("");
               setTouched(false);
+              setSignedXdr("");
+              setError(null);
             }}
           >
             <Text style={{ color: colors.text, fontWeight: "600" }}>Clear Key</Text>

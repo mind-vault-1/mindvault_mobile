@@ -302,6 +302,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [registryFailed, setRegistryFailed] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [isRestoring, setIsRestoring] = useState(true);
 
   useEffect(() => {
     async function restoreFilters() {
@@ -310,6 +311,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         if (raw) {
           const saved: PersistedFilters = JSON.parse(raw);
           setSearch(saved.search);
+          setDebouncedSearch(saved.search);
           setVerification(saved.verification);
           setResourceType(saved.resourceType);
           setMinPrice(saved.minPrice);
@@ -318,6 +320,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       } catch {
       } finally {
         filtersRestored.current = true;
+        setIsRestoring(false);
       }
     }
     restoreFilters();
@@ -336,6 +339,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   }, [search, verification, resourceType, minPrice, maxPrice]);
 
   const loadData = useCallback(async (isRefresh = false) => {
+    if (isRestoring) return;
+    
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -377,7 +382,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [debouncedSearch, verification, resourceType]);
+  }, [debouncedSearch, verification, resourceType, isRestoring]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
