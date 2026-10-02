@@ -1,5 +1,5 @@
 import * as Clipboard from "expo-clipboard";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
 import {
   ActivityIndicator,
@@ -77,6 +77,13 @@ export function ResourceCard({
   const [secretKey, setSecretKey] = useState("");
   const [secretKeyTouched, setSecretKeyTouched] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Sync newPrice from resource.price when it changes and not actively editing
+  useEffect(() => {
+    if (!editing) {
+      setNewPrice(resource.price);
+    }
+  }, [resource.price, editing]);
 
   const dynamicStyles = useMemo(
     () =>
