@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# release-please only needs the default GITHUB_TOKEN. No extra secrets.
+# It opens a "release PR" that accumulates conventional-commit entries,
+# then creates a GitHub Release + tag when that PR is merged.
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          release-type: node
+          # Bootstrap from the current HEAD so only new conventional commits
+          # from this PR forward produce a release.
+          bootstrap-sha: 84d11f2d54feaa85dab14b05c2652f1a7354d908
+          # Keep the last release PR open until the next release cycle.
+          include-component-in-tag: false
+          # Bump package.json and app.json in the same release PR.
+          extra-files: |
+            app.json

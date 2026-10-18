@@ -1,0 +1,11 @@
+{
+  "release-type": "node",
+  "include-component-in-tag": false,
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "include-component-in-tag": false,
+      "extra-files": ["app.json"]
+    }
+  }
+}
