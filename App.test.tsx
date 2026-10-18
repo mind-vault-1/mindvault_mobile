@@ -6,6 +6,21 @@ import App from "./App";
 
 const SAVED_URL = "http://192.168.1.20:4021";
 
+// Captures the props App hands to NavigationContainer so the deep-linking
+// config can be asserted.
+let mockLinkingProps: any;
+jest.mock("@react-navigation/native", () => {
+  const actual = jest.requireActual("@react-navigation/native");
+  const React = require("react");
+  return {
+    ...actual,
+    NavigationContainer: (props: any) => {
+      mockLinkingProps = props;
+      return React.createElement(actual.NavigationContainer, props);
+    },
+  };
+});
+
 jest.mock("react-native-safe-area-context", () => {
   const inset = { top: 0, bottom: 0, left: 0, right: 0 };
   return {
@@ -22,6 +37,7 @@ let fetchMock: jest.Mock;
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  mockLinkingProps = undefined;
   fetchMock = jest.fn().mockResolvedValue({
     ok: true,
     status: 200,
@@ -53,5 +69,23 @@ describe("App boot", () => {
     for (const [url] of fetchMock.mock.calls) {
       expect(String(url).startsWith(SAVED_URL)).toBe(true);
     }
+  });
+
+  it("passes a deep-linking config that resolves mindvault://resources/abc", async () => {
+    const { findByText } = render(<App />);
+
+    await findByText("MindVault");
+
+    const linking = mockLinkingProps?.linking;
+    expect(linking).toBeDefined();
+    expect(linking.prefixes).toContain("mindvault://");
+
+    // React Navigation strips the prefix before calling getStateFromPath.
+    const state = linking.getStateFromPath("resources/abc");
+    expect(state).toBeDefined();
+
+    const route = state.routes[state.routes.length - 1];
+    expect(route.name).toBe("ResourceDetail");
+    expect(route.params).toEqual({ resourceId: "abc" });
   });
 });

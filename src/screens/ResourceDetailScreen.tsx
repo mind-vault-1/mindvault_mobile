@@ -9,7 +9,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
-import * as Sharing from "expo-sharing";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { fetchResource, ResourceFetchError } from "../api/resources";
@@ -20,6 +19,7 @@ import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { openExternalUrl, stellarExpertAccountUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
+import { shareResource } from "../utils/shareResource";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ResourceDetail">;
 
@@ -130,6 +130,12 @@ function createStyles(colors: ThemeColors) {
     linkText: {
       color: colors.primary,
     },
+    linkTarget: {
+      minHeight: 44,
+      minWidth: 44,
+      justifyContent: "center",
+      paddingHorizontal: 8,
+    },
     mono: {
       fontFamily: "monospace",
       fontSize: 12,
@@ -204,9 +210,8 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
 
   async function handleShare() {
     if (!resource) return;
-    try {
-      await Sharing.shareAsync(resource.accessUrl);
-    } catch {
+    const outcome = await shareResource(resource.title, resource.accessUrl);
+    if (outcome === "error") {
       setToast("Unable to share URL");
     }
   }
@@ -268,6 +273,8 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
 
   const verification = verificationStyle(resource.verificationStatus, colors);
   const onchain = onchainStyle(resource.onchainStatus, colors);
+  const onchainLabel =
+    resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus;
   const timestamp = getResourceTimestamp(resource);
 
   return (
@@ -287,16 +294,22 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         ) : null}
 
         <View style={styles.badges}>
-          <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
+          <View
+            style={[shared.badge, { backgroundColor: verification.backgroundColor }]}
+            accessibilityRole="text"
+            accessibilityLabel={`Verification: ${resource.verificationStatus}`}
+          >
             <Text style={[shared.badgeText, { color: verification.color }]}>
               {resource.verificationStatus}
             </Text>
           </View>
-          <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
+          <View
+            style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}
+            accessibilityRole="text"
+            accessibilityLabel={`On-chain: ${onchainLabel}`}
+          >
             <Text style={[shared.badgeText, { color: onchain.color }]}>
-              {resource.onchainStatus === "none"
-                ? "not on-chain"
-                : resource.onchainStatus}
+              {onchainLabel}
             </Text>
           </View>
         </View>
@@ -307,7 +320,13 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
 
         <View style={styles.infoRow}>
           <Text style={styles.label}>Owner</Text>
-          <Pressable onPress={handleOpenOwner}>
+          <Pressable
+            onPress={handleOpenOwner}
+            style={styles.linkTarget}
+            accessibilityRole="link"
+            accessibilityLabel={`Owner: ${resource.walletAddress}`}
+            accessibilityHint="Opens the owner's account in Stellar Explorer"
+          >
             <Text style={[typography.body, styles.linkText]}>
               {shortenAddress(resource.walletAddress)}
             </Text>
@@ -317,7 +336,13 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         {resource.onchainTxHash ? (
           <View style={styles.infoRow}>
             <Text style={styles.label}>Tx</Text>
-            <Pressable onPress={handleOpenTx}>
+            <Pressable
+              onPress={handleOpenTx}
+              style={styles.linkTarget}
+              accessibilityRole="link"
+              accessibilityLabel={`Transaction: ${resource.onchainTxHash}`}
+              accessibilityHint="Opens the transaction in Stellar Explorer"
+            >
               <Text
                 style={[typography.body, styles.linkText, styles.mono]}
                 numberOfLines={1}

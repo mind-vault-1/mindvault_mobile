@@ -73,6 +73,45 @@ function formatLastUpdated(value: Date): string {
   });
 }
 
+const DEFAULT_PERSISTED_FILTERS: PersistedFilters = {
+  search: "",
+  verification: DEFAULT_VERIFICATION,
+  resourceType: DEFAULT_RESOURCE_TYPE,
+  minPrice: "",
+  maxPrice: "",
+};
+
+/**
+ * Validates a persisted filter blob field by field so an old or corrupted
+ * value can never break the screen. Any invalid (or missing) field falls
+ * back to its default.
+ */
+function sanitizePersistedFilters(raw: unknown): PersistedFilters {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { ...DEFAULT_PERSISTED_FILTERS };
+  }
+
+  const saved = raw as Record<string, unknown>;
+  const isVerification = VERIFICATION_OPTIONS.some(
+    (option) => option.value === saved.verification,
+  );
+  const isResourceType = RESOURCE_TYPE_OPTIONS.some(
+    (option) => option.value === saved.resourceType,
+  );
+
+  return {
+    search: typeof saved.search === "string" ? saved.search : "",
+    verification: isVerification
+      ? (saved.verification as VerificationFilter)
+      : DEFAULT_VERIFICATION,
+    resourceType: isResourceType
+      ? (saved.resourceType as ResourceTypeFilter)
+      : DEFAULT_RESOURCE_TYPE,
+    minPrice: typeof saved.minPrice === "string" ? saved.minPrice : "",
+    maxPrice: typeof saved.maxPrice === "string" ? saved.maxPrice : "",
+  };
+}
+
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     listContent: {
@@ -305,19 +344,21 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
 
   useEffect(() => {
     async function restoreFilters() {
+      let restored = { ...DEFAULT_PERSISTED_FILTERS };
       try {
         const raw = await AsyncStorage.getItem(CATALOG_FILTERS_KEY);
         if (raw) {
-          const saved: PersistedFilters = JSON.parse(raw);
-          setSearch(saved.search);
-          setDebouncedSearch(saved.search);
-          setVerification(saved.verification);
-          setResourceType(saved.resourceType);
-          setMinPrice(saved.minPrice);
-          setMaxPrice(saved.maxPrice);
+          restored = sanitizePersistedFilters(JSON.parse(raw));
         }
       } catch {
+        // Invalid JSON or a storage failure — keep the defaults.
       } finally {
+        setSearch(restored.search);
+        setDebouncedSearch(restored.search);
+        setVerification(restored.verification);
+        setResourceType(restored.resourceType);
+        setMinPrice(restored.minPrice);
+        setMaxPrice(restored.maxPrice);
         filtersRestored.current = true;
         setIsRestoring(false);
       }
@@ -337,9 +378,15 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     persistFilters();
   }, [search, verification, resourceType, minPrice, maxPrice]);
 
+  const requestIdRef = useRef(0);
+
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRestoring) return;
-    
+
+    // Only the latest request may update state; older, slower responses
+    // (or their errors) are discarded.
+    const requestId = ++requestIdRef.current;
+
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -357,29 +404,32 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     }
 
     try {
-      let registryResult: { resourceCount: number } | null = null;
-      try {
-        registryResult = await fetchRegistryStatus();
-        setRegistryFailed(false);
-      } catch {
-        setRegistryFailed(true);
-        registryResult = null;
-      }
-      const [catalog] = await Promise.all([
+      const [catalog, registryResult] = await Promise.all([
         fetchCatalog(Object.keys(filters).length > 0 ? filters : undefined),
+        // The registry count is supplementary: a failure must not fail the
+        // catalog load, it only hides the count.
+        fetchRegistryStatus().catch(() => null),
       ]);
+
+      if (requestId !== requestIdRef.current) return;
+
       setResources(catalog);
+      setRegistryFailed(registryResult === null);
       setRegistryCount(registryResult?.resourceCount ?? null);
       setLastUpdatedAt(new Date());
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+
       const message =
         err instanceof Error
           ? err.message
           : "Something went wrong loading the catalog.";
       setError(message);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [debouncedSearch, verification, resourceType, isRestoring]);
 

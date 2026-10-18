@@ -13,6 +13,8 @@ export interface Resource {
   onchainTxHash?: string;
   listed: boolean;
   accessUrl: string;
+  mimeType?: string;
+  thumbnailUrl?: string;
   publishedAt?: string;
   updatedAt?: string;
 }

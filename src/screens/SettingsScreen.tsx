@@ -199,20 +199,24 @@ export function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.infoCard, { backgroundColor: colors.warningBg, marginTop: 16 }]}>
-          <Text style={[styles.title, { fontSize: 16, color: colors.warning, marginBottom: 8 }]}>
-            Developer Options
-          </Text>
-          <Text style={[styles.infoText, { color: colors.warning, marginBottom: 16 }]}>
-            These tools are for testing purposes only.
-          </Text>
-          <TouchableOpacity
-            style={[shared.button, { backgroundColor: colors.warning }]}
-            onPress={() => navigation.navigate("DevSigner")}
-          >
-            <Text style={[shared.buttonText, { color: "#ffffff" }]}>Open Dev Signer PoC</Text>
-          </TouchableOpacity>
-        </View>
+        {__DEV__ ? (
+          <View style={[styles.infoCard, { backgroundColor: colors.warningBg, marginTop: 16 }]}>
+            <Text style={[styles.title, { fontSize: 16, color: colors.warning, marginBottom: 8 }]}>
+              Developer Options
+            </Text>
+            <Text style={[styles.infoText, { color: colors.warning, marginBottom: 16 }]}>
+              These tools are for testing purposes only.
+            </Text>
+            <TouchableOpacity
+              style={[shared.button, { backgroundColor: colors.warning }]}
+              onPress={() => navigation.navigate("DevSigner")}
+              accessibilityRole="button"
+              accessibilityLabel="Open Dev Signer PoC"
+            >
+              <Text style={[shared.buttonText, { color: "#ffffff" }]}>Open Dev Signer PoC</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );

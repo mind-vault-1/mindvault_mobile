@@ -28,6 +28,7 @@ import { useAppTheme } from "../theme/ThemeProvider";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import { TransferOwnershipModal } from "../components/TransferOwnershipModal";
+import { logError } from "../utils/errorLogger";
 
 type PublisherResourcesNavigation = NativeStackNavigationProp<
   RootStackParamList,
@@ -313,7 +314,7 @@ export function PublisherResourcesScreen() {
           }
         }
       } catch (err) {
-        console.error("Failed to load stored API key:", err);
+        logError("Failed to load stored API key", err);
       } finally {
         setCheckingStoredKey(false);
       }
@@ -394,17 +395,21 @@ export function PublisherResourcesScreen() {
   /**
    * Issue #66: Called when ownership transfer completes successfully.
    * Removes the resource from the local list (the publisher no longer owns it)
-   * and shows a confirmation toast.
+   * and shows a confirmation toast. All state updaters are pure — the
+   * transferred resource is read from the closure, not from inside an
+   * updater function.
    */
-  const handleTransferSuccess = useCallback((_txHash: string | null) => {
-    setTransferResource((current) => {
-      if (current) {
-        setResources((prev) => prev.filter((r) => r.id !== current.id));
-        setToast("Ownership transferred successfully");
+  const handleTransferSuccess = useCallback(
+    (_txHash: string | null) => {
+      const transferredId = transferResource?.id;
+      if (transferredId) {
+        setResources((prev) => prev.filter((r) => r.id !== transferredId));
       }
-      return null;
-    });
-  }, []);
+      setTransferResource(null);
+      setToast("Ownership transferred successfully");
+    },
+    [transferResource]
+  );
 
   const filteredResources = useMemo(() => {
     const query = search.trim().toLowerCase();

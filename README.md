@@ -41,6 +41,22 @@ Find your LAN IP with:
 - **Windows**: `ipconfig` (look for "IPv4 Address" under your active network adapter)
 - **macOS/Linux**: `ifconfig` or `ip a` (look for "inet" address under your active network interface)
 
+## Deep links
+
+The app registers the `mindvault://` scheme (declared in `app.json`) and routes resource links to the detail screen — for example `mindvault://resources/abc` or `https://<your-api-host>/resources/abc`.
+
+Try it from a terminal against a running simulator/emulator:
+
+```bash
+# iOS
+npx uri-scheme open "mindvault://resources/abc" --ios
+
+# Android
+npx uri-scheme open "mindvault://resources/abc" --android
+```
+
+The linking config lives in `src/linking.ts` and reuses the same `parseResourceId` parser as the QR scanner.
+
 ## Publisher Authentication
 
 Publisher resources require an API key for authentication:
@@ -64,14 +80,6 @@ The app defaults to the Stellar **Testnet**. The passphrase `Test SDF Network ; 
 **One important exception:** for transactions built through the register and price-edit flows (`prepareRegister` / `prepareEditPrice` in `src/api/resources.ts`), the passphrase used to sign is whatever the **backend API returns** in its response — the client's `app.json` value is only a fallback if the backend omits it. In practice, this means the network for those specific flows is ultimately a backend decision, not purely a client config one.
 
 `src/screens/DevSignerScreen.tsx` is a developer-only debug screen and intentionally hardcodes `Networks.TESTNET` regardless of any config — it's not affected by the `app.json` value and always targets testnet.
-
-## Publisher Authentication
-
-Publisher resources require an API key for authentication:
-
-- **API Key Origin:** Publisher API keys are issued by your MindVault backend server.
-- **Server Configuration:** On self-hosted servers, configure your keys using the `PUBLISHER_API_KEYS` environment variable or generate one through your server's admin interface.
-- **App Usage:** Enter the key in the **Publisher Resources** tab or Publisher Settings modal to view and manage your resources.
 
 ## Theme Preferences
 

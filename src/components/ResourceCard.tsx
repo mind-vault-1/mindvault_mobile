@@ -4,7 +4,6 @@ import { validateStellarSecret } from "../utils/validateStellarSecret";
 import {
   ActivityIndicator,
   Pressable,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -14,6 +13,7 @@ import {
 import type { Resource } from "../types";
 import { getResourceTypeLabel } from "../types";
 import { useEditPrice, validatePrice } from "../hooks/useEditPrice";
+import { shareResource } from "../utils/shareResource";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 
@@ -136,13 +136,8 @@ export function ResourceCard({
   }
 
   async function handleShare() {
-    try {
-      await Share.share({
-        title: resource.title,
-        message: `${resource.title}\n${resource.accessUrl}`,
-        url: resource.accessUrl,
-      });
-    } catch {
+    const outcome = await shareResource(resource.title, resource.accessUrl);
+    if (outcome === "error") {
       onCopyUrl("Unable to share resource. Please try copying the URL instead.");
     }
   }
@@ -217,12 +212,20 @@ export function ResourceCard({
             {getResourceTypeLabel(resource.resourceType)}
           </Text>
         </View>
-        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
+        <View
+          style={[shared.badge, { backgroundColor: verification.backgroundColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`Verification: ${resource.verificationStatus}`}
+        >
           <Text style={[shared.badgeText, { color: verification.color }]}>
             {resource.verificationStatus}
           </Text>
         </View>
-        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
+        <View
+          style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`On-chain: ${resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}`}
+        >
           <Text style={[shared.badgeText, { color: onchain.color }]}>
             {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
           </Text>

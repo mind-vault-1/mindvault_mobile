@@ -4,6 +4,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 import { initializeApiBaseUrl } from "./src/api/resources";
+import { createLinkingOptions } from "./src/linking";
 import { RootNavigator } from "./src/navigation";
 import { getNavigationTheme } from "./src/theme";
 import { ThemeProvider, useAppTheme } from "./src/theme/ThemeProvider";
@@ -27,7 +28,10 @@ function AppContent() {
   return (
     <>
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-      <NavigationContainer theme={getNavigationTheme(colors, colorScheme)}>
+      <NavigationContainer
+        theme={getNavigationTheme(colors, colorScheme)}
+        linking={createLinkingOptions()}
+      >
         <RootNavigator />
       </NavigationContainer>
     </>

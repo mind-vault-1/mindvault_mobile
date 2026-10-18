@@ -33,11 +33,13 @@ export function RootNavigator() {
         options={{ title: "Scan QR Code" }}
       />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: "Settings" }} />
-      <Stack.Screen
-        name="DevSigner"
-        component={DevSignerScreen}
-        options={{ title: "Dev Signer PoC" }}
-      />
+      {__DEV__ ? (
+        <Stack.Screen
+          name="DevSigner"
+          component={DevSignerScreen}
+          options={{ title: "Dev Signer PoC" }}
+        />
+      ) : null}
       <Stack.Screen
         name="PublisherResources"
         component={PublisherResourcesScreen}

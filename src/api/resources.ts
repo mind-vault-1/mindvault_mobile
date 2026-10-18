@@ -72,7 +72,8 @@ export class ResourceFetchError extends Error {
 export async function fetchResource(id: string): Promise<Resource> {
   let res: Response;
   try {
-    res = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(id)}`);
+    // Public metadata endpoint — GET /resources/:id is x402-paywalled.
+    res = await fetch(`${apiBaseUrl}/resources/${encodeURIComponent(id)}/meta`);
   } catch {
     throw new ResourceFetchError("Network error. Please check your connection.", true);
   }
