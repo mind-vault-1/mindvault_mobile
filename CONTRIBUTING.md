@@ -102,8 +102,10 @@ Every pull request (and every push to `main`) runs the `CI` workflow (`.github/w
 
 - **`typecheck`**: `npm ci`, `npm run validate-deps`, `npm run typecheck`
 - **`ci`**: `npm ci`, `npm run lint`, `npm test -- --ci`
+- **`bundle`**: `npm ci`, then `npx expo export --platform android --platform ios --platform web` to verify the JS bundle builds for Android, iOS, and web. This catches Metro bundling regressions that typecheck alone cannot detect. Metro and npm are cached across runs.
 
-Both jobs are required checks on `main`: a PR can only merge when both are green and the branch is up to date with `main`.
+All three jobs are required checks on `main`: a PR can only merge when all are green and the branch is up to date with `main`.
+
 
 ## Submitting a PR
 
