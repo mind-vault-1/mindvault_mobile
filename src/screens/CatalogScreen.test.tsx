@@ -73,11 +73,15 @@ describe("CatalogScreen search debounce", () => {
     fireEvent.changeText(input, "stella");
 
     // Still within the debounce window — no fetch yet.
-    jest.advanceTimersByTime(200);
+    act(() => {
+      jest.advanceTimersByTime(200);
+    });
     expect(mockedFetchCatalog).not.toHaveBeenCalled();
 
     // Past the debounce window — exactly one fetch, with the final value.
-    jest.advanceTimersByTime(200);
+    act(() => {
+      jest.advanceTimersByTime(200);
+    });
     await waitFor(() => expect(mockedFetchCatalog).toHaveBeenCalledTimes(1));
     expect(mockedFetchCatalog).toHaveBeenCalledWith(
       expect.objectContaining({ search: "stella" }),
