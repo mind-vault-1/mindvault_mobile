@@ -7,6 +7,10 @@ import { fetchCatalog, fetchRegistryStatus, getApiBaseUrl } from "../api/resourc
 import { ThemeProvider } from "../theme/ThemeProvider";
 
 jest.mock("../api/resources");
+// The skeleton's looping animation keeps scheduling frames under fake timers,
+// which slows waitFor down enough to time out on CI. These tests only check
+// data flow, so render it as nothing.
+jest.mock("../components/SkeletonCard", () => ({ SkeletonCard: () => null }));
 jest.mock("@react-native-async-storage/async-storage", () => ({
   getItem: jest.fn().mockResolvedValue(null),
   setItem: jest.fn().mockResolvedValue(undefined),
