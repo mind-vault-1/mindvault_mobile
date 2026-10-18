@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { Account, Keypair, TransactionBuilder, Networks, Asset, Operation } from "@stellar/stellar-sdk";
 import * as Clipboard from "expo-clipboard";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
 
@@ -14,25 +15,16 @@ export function DevSignerScreen() {
   const [isSigning, setIsSigning] = useState(false);
   const [touched, setTouched] = useState(false);
 
-  // Mirror of the secret so it can be scrubbed from memory on unmount too,
-  // not just from React state.
-  const secretRef = useRef("");
-  useEffect(() => {
-    secretRef.current = secretKey;
-  }, [secretKey]);
-  useEffect(() => {
-    return () => {
-      secretRef.current = "";
-    };
-  }, []);
+  // Clear the secret whenever the screen loses focus. Unmounting already
+  // discards state, so this covers navigating away while it stays mounted.
+  useFocusEffect(
+    useCallback(() => {
+      return () => setSecretKey("");
+    }, [])
+  );
 
   const validation = useMemo(() => validateStellarSecret(secretKey), [secretKey]);
   const fieldError = touched && secretKey.length > 0 && !validation.isValid ? validation.errorMessage : null;
-
-  const clearSecret = () => {
-    setSecretKey("");
-    secretRef.current = "";
-  };
 
   const handleCopyXdr = async () => {
     if (!signedXdr) return;
@@ -113,11 +105,7 @@ export function DevSignerScreen() {
           setSecretKey(text);
           if (!touched) setTouched(true);
         }}
-        onBlur={() => {
-          setTouched(true);
-          // Never keep the secret in state after the field loses focus.
-          clearSecret();
-        }}
+        onBlur={() => setTouched(true)}
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -152,7 +140,7 @@ export function DevSignerScreen() {
               { flex: 1, backgroundColor: colors.neutralBg, borderColor: colors.border, borderWidth: 1 }
             ]}
             onPress={() => {
-              clearSecret();
+              setSecretKey("");
               setTouched(false);
               setSignedXdr("");
               setError(null);
