@@ -105,6 +105,11 @@ npm start
 
 Then press `i` for iOS simulator, `a` for Android emulator, or scan the QR code with Expo Go.
 
+## Build and Release
+
+See the [release guide](docs/RELEASE.md) for EAS build profiles, store submission,
+and secret-handling guidance.
+
 ## Available npm scripts
 
 | Script              | Description                                                                 |

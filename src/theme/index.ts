@@ -3,6 +3,7 @@ import { DarkTheme, DefaultTheme, type Theme } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useColorScheme } from "react-native";
 import { useState, useEffect } from "react";
+import { logError } from "../utils/errorLogger";
 
 // Theme type definitions
 export type ThemeMode = "light" | "dark" | "system";
@@ -160,7 +161,7 @@ export function useTheme() {
           setThemeMode(savedMode as ThemeMode);
         }
       } catch (error) {
-        console.error("Failed to load theme preference:", error);
+        logError("theme.loadPreference", error);
       } finally {
         setIsLoading(false);
       }
@@ -174,7 +175,7 @@ export function useTheme() {
       await AsyncStorage.setItem(THEME_STORAGE_KEY, mode);
       setThemeMode(mode);
     } catch (error) {
-      console.error("Failed to save theme preference:", error);
+      logError("theme.savePreference", error);
     }
   }
 
@@ -182,36 +183,47 @@ export function useTheme() {
   const colorScheme = resolveColorScheme(themeMode, systemColorScheme);
 
   // Create typography styles with current colors
+  // React Native already multiplies lineHeight by the system font scale, so
+  // this stays unscaled; multiplying by fontScale here would scale it twice.
+  const lineHeightFor = (fontSize: number) => Math.ceil(fontSize * 1.4);
+
   const typography = StyleSheet.create({
     heading: {
       fontSize: 20,
+      lineHeight: lineHeightFor(20),
       fontWeight: "700",
       color: colors.text,
     },
     title: {
       fontSize: 28,
+      lineHeight: lineHeightFor(28),
       fontWeight: "700",
       color: colors.text,
     },
     subtitle: {
       fontSize: 14,
+      lineHeight: lineHeightFor(14),
       color: colors.textMuted,
     },
     cardTitle: {
       fontSize: 16,
+      lineHeight: lineHeightFor(16),
       fontWeight: "600",
       color: colors.text,
     },
     body: {
       fontSize: 14,
+      lineHeight: lineHeightFor(14),
       color: colors.textMuted,
     },
     caption: {
       fontSize: 12,
+      lineHeight: lineHeightFor(12),
       color: colors.textSubtle,
     },
     price: {
       fontSize: 15,
+      lineHeight: lineHeightFor(15),
       fontWeight: "600",
       color: colors.primary,
     },

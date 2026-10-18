@@ -6,11 +6,16 @@ module.exports = {
   rules: {
     "react-hooks/rules-of-hooks": "error",
     "react-hooks/exhaustive-deps": "warn",
+    "no-console": "error",
   },
   overrides: [
     {
       files: ["jest.setup.js", "**/*.test.ts", "**/*.test.tsx"],
       env: { jest: true },
+    },
+    {
+      files: ["src/utils/errorLogger.ts"],
+      rules: { "no-console": "off" },
     },
   ],
 };

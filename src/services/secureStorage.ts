@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+import { logError } from "../utils/errorLogger";
 
 const API_KEY_KEY = "x-api-key";
 
@@ -14,14 +15,9 @@ export class SecureStorageError extends Error {
   }
 }
 
-/**
- * Logs a storage failure safely. Only ever logs the operation name and the
- * underlying error's message/name — never the API key value, which is not
- * in scope here and must never be passed into this function.
- */
+/** Routes storage failures through the centralized redacting logger. */
 function logStorageFailure(operation: string, err: unknown): void {
-  const detail = err instanceof Error ? err.message : "unknown error";
-  console.error(`[secureStorage] ${operation} failed: ${detail}`);
+  logError(`secureStorage.${operation}`, err);
 }
 
 export async function storeApiKey(apiKey: string): Promise<void> {

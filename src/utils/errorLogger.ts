@@ -11,16 +11,22 @@ export interface NormalizedError {
 }
 
 const SENSITIVE_KEY_PATTERN =
-  /(api[-_ ]?key|authorization|bearer|password|private[-_ ]?key|secret|token|xdr)/i;
+  /(api[-_ ]?key|authorization|bearer|password|private[-_ ]?key|secret(?:[-_ ]?seed)?|seed|token|xdr|hmac|signature)/i;
 
 const MESSAGE_KEYS = new Set(["message", "error", "detail", "title", "description"]);
 
 function redactSensitiveValues(message: string): string {
-  return message
+  const authorizationRedacted = message.replace(
+    /\b(authorization\s*[:=]\s*)(?:(?:basic|bearer)\s+)?(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+    "$1[redacted]"
+  );
+
+  return authorizationRedacted
     .replace(/\bS[A-Z2-7]{55}\b/g, "[redacted]")
+    .replace(/\b(?:pk|sk)_(?:live|test)_[A-Za-z0-9._~-]+\b/gi, "[redacted]")
     .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi, "Bearer [redacted]")
     .replace(
-      /\b(api[-_ ]?key|authorization|password|private[-_ ]?key|secret|token|xdr)\s*[:=]\s*([^\s,;]+)/gi,
+      /\b(api[-_ ]?key|authorization|password|private[-_ ]?key|secret(?:[-_ ]?seed)?|seed|token|xdr|hmac(?:[-_ ]?signature)?|(?:x-[\w-]+-)?signature)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
       "$1: [redacted]"
     );
 }
@@ -122,17 +128,23 @@ export async function extractApiErrorMessage(
 /** Reduce any thrown value (Error, string, object, …) to a message + stack. */
 export function normalizeError(error: unknown): NormalizedError {
   if (error instanceof Error) {
-    return { message: error.message, stack: error.stack };
+    return {
+      message: redactSensitiveValues(error.message),
+      stack: error.stack ? redactSensitiveValues(error.stack) : undefined,
+    };
   }
 
   if (typeof error === "string") {
-    return { message: error };
+    return { message: redactSensitiveValues(error) };
   }
 
   try {
-    return { message: JSON.stringify(error) };
+    const serialized = JSON.stringify(error, (key, value: unknown) =>
+      SENSITIVE_KEY_PATTERN.test(key) ? "[redacted]" : value
+    );
+    return { message: redactSensitiveValues(serialized ?? String(error)) };
   } catch {
-    return { message: String(error) };
+    return { message: redactSensitiveValues(String(error)) };
   }
 }
 
@@ -143,9 +155,10 @@ export function normalizeError(error: unknown): NormalizedError {
  */
 export function logError(context: string, error: unknown): NormalizedError {
   const normalized = normalizeError(error);
+  const safeContext = redactSensitiveValues(context);
 
   if (__DEV__) {
-    console.error(`[MindVault] ${context}: ${normalized.message}`);
+    console.error(`[MindVault] ${safeContext}: ${normalized.message}`);
     if (normalized.stack) {
       console.error(normalized.stack);
     }

@@ -38,6 +38,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xxl,
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
+    width: "100%",
   },
   icon: {
     fontSize: 40,
@@ -51,8 +52,9 @@ const styles = StyleSheet.create({
   body: {
     textAlign: "center",
     fontSize: 14,
-    maxWidth: 320,
+    maxWidth: 480,
     lineHeight: 20,
+    flexShrink: 1,
   },
   action: {
     marginTop: spacing.sm,

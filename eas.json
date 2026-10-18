@@ -1,0 +1,36 @@
+{
+  "cli": {
+    "version": ">= 13.2.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://localhost:4021",
+        "EXPO_PUBLIC_NETWORK": "testnet"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.example.invalid",
+        "EXPO_PUBLIC_NETWORK": "testnet"
+      }
+    },
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.example.invalid",
+        "EXPO_PUBLIC_NETWORK": "mainnet"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

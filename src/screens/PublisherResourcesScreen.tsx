@@ -314,7 +314,7 @@ export function PublisherResourcesScreen() {
           }
         }
       } catch (err) {
-        logError("Failed to load stored API key", err);
+        logError("publisherResources.loadStoredApiKey", err);
       } finally {
         setCheckingStoredKey(false);
       }

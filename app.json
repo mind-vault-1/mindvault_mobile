@@ -1,5 +1,6 @@
 {
-  "expo": { "scheme": "mindvault",
+  "expo": {
+    "scheme": "mindvault",
     "name": "MindVault",
     "slug": "mindvault-mobile",
     "version": "1.0.0",
@@ -8,17 +9,29 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/adaptive-icon.png",
+      "imageWidth": 220,
       "resizeMode": "contain",
-      "backgroundColor": "#4f46e5"
+      "backgroundColor": "#4f46e5",
+      "dark": {
+        "image": "./assets/adaptive-icon.png",
+        "imageWidth": 220,
+        "backgroundColor": "#1f2937"
+      }
     },
     "ios": {
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/splash-icon.png",
+        "tinted": "./assets/adaptive-icon.png"
+      },
       "supportsTablet": true,
       "bundleIdentifier": "app.mindvault.mobile"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#4f46e5"
       },
       "package": "app.mindvault.mobile"
@@ -38,4 +51,3 @@
     }
   }
 }
-
