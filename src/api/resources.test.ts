@@ -1,10 +1,12 @@
 import {
   buildQuery,
   fetchPublisherResources,
+  fetchResource,
   getApiBaseUrl,
   prepareEditPrice,
   prepareOwnershipTransfer,
   prepareRegister,
+  ResourceFetchError,
   submitOwnershipTransfer,
   submitPriceEdit,
   submitRegister,
@@ -270,5 +272,66 @@ describe('publisher transaction endpoints', () => {
     mockFetch({ error: `bad key ${API_KEY}`, apiKey: API_KEY }, 500);
 
     await expect(submitPriceEdit('r1', 'SIGNED', '1')).rejects.not.toThrow(API_KEY);
+  });
+});
+
+describe('fetchResource', () => {
+  const originalFetch = global.fetch;
+
+  function mockFetch(body: unknown, status = 200) {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+      text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
+      headers: { get: () => 'application/json' },
+    });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+    return fetchMock;
+  }
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('requests the public /meta endpoint, not the paywalled resource', async () => {
+    const fetchMock = mockFetch({ id: 'a b', title: 'Doc' });
+
+    await expect(fetchResource('a b')).resolves.toMatchObject({ title: 'Doc' });
+    expect(fetchMock).toHaveBeenCalledWith(`${getApiBaseUrl()}/resources/a%20b/meta`);
+  });
+
+  it('maps 404 to a permanent error with the server message', async () => {
+    mockFetch({ error: 'Resource not found' }, 404);
+
+    const error = await fetchResource('missing').catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(ResourceFetchError);
+    expect(error).toMatchObject({ message: 'Resource not found', isTransient: false });
+  });
+
+  it('maps 5xx to a transient error', async () => {
+    mockFetch('', 503);
+
+    const error = await fetchResource('r1').catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(ResourceFetchError);
+    expect(error).toMatchObject({ message: 'Server error. Please try again.', isTransient: true });
+  });
+
+  it('maps other failures to a permanent error', async () => {
+    mockFetch('', 400);
+
+    await expect(fetchResource('r1')).rejects.toMatchObject({
+      message: 'Failed to load resource.',
+      isTransient: false,
+    });
+  });
+
+  it('maps a network failure to a transient error', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new TypeError('Network request failed'));
+
+    await expect(fetchResource('r1')).rejects.toMatchObject({
+      message: 'Network error. Please check your connection.',
+      isTransient: true,
+    });
   });
 });
