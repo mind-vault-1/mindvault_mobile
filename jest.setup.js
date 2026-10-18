@@ -1,3 +1,8 @@
+// The first screen test in each file pays the one-time cost of loading React
+// Native and navigation modules (~3s with a cold cache). On 2-core CI runners
+// running several files in parallel that exceeds Jest's 5s default.
+jest.setTimeout(15000);
+
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );
