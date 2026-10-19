@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { StrKey } from "@stellar/stellar-sdk";
 import {
   ActivityIndicator,
   Linking,
@@ -8,12 +7,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
 import {
   prepareResourceAccess,
+  signPaymentTransaction,
   submitSignedPayment,
   type PaymentChallenge,
 } from "../api/payment";
@@ -74,25 +73,9 @@ function createStyles(colors: ThemeColors) {
       alignItems: "center",
       paddingVertical: 12,
     },
-    input: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 12,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      color: colors.text,
-      fontFamily: "monospace",
-    },
-    invalidInput: {
-      borderColor: colors.danger,
-    },
     hint: {
       fontSize: 12,
       color: colors.textMuted,
-    },
-    errorText: {
-      fontSize: 12,
-      color: colors.danger,
     },
     scrollArea: {
       flexGrow: 0,
@@ -121,13 +104,7 @@ export function PaywallModal({
   const [phase, setPhase] = useState<Phase>("confirm");
   const [result, setResult] = useState<AccessResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [payerPublicKey, setPayerPublicKey] = useState("");
-  const [publicKeyTouched, setPublicKeyTouched] = useState(false);
   const [challenge, setChallenge] = useState<PaymentChallenge | null>(null);
-  const publicKeyError =
-    publicKeyTouched && !StrKey.isValidEd25519PublicKey(payerPublicKey.trim())
-      ? "Enter a valid Stellar public key."
-      : null;
 
   useEffect(() => {
     if (visible) {
@@ -135,19 +112,13 @@ export function PaywallModal({
       setResult(null);
       setErrorMsg(null);
       setChallenge(null);
-      setPublicKeyTouched(false);
     }
   }, [visible]);
 
   async function handlePay() {
-    setPublicKeyTouched(true);
-    if (!StrKey.isValidEd25519PublicKey(payerPublicKey.trim())) {
-      return;
-    }
-
     setPhase("loading");
     try {
-      const access = await prepareResourceAccess(accessUrl, price, payerPublicKey.trim());
+      const access = await prepareResourceAccess(accessUrl, price);
       if (access.type === "payment") {
         setChallenge(access.challenge);
         setPhase("signing");
@@ -167,7 +138,7 @@ export function PaywallModal({
     }
   }
 
-  async function handleSigned(signedXdr: string) {
+  async function handleSigned(transaction: string) {
     if (!challenge) {
       setErrorMsg("Payment request expired. Please try again.");
       setPhase("error");
@@ -176,7 +147,7 @@ export function PaywallModal({
 
     setPhase("loading");
     try {
-      const res = await submitSignedPayment(accessUrl, challenge, signedXdr);
+      const res = await submitSignedPayment(accessUrl, challenge, transaction);
       setChallenge(null);
       if (res.type === "external") {
         await Linking.openURL(res.url);
@@ -220,19 +191,9 @@ export function PaywallModal({
                   </Text>{" "}
                   on Stellar to access.
                 </Text>
-                <Text style={styles.hint}>Enter the Stellar public key that will pay for this request.</Text>
-                <TextInput
-                  value={payerPublicKey}
-                  onChangeText={setPayerPublicKey}
-                  onBlur={() => setPublicKeyTouched(true)}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  placeholder="G..."
-                  placeholderTextColor={colors.textSubtle}
-                  accessibilityLabel="Stellar public key"
-                  style={[styles.input, publicKeyError ? styles.invalidInput : null]}
-                />
-                {publicKeyError ? <Text style={styles.errorText}>{publicKeyError}</Text> : null}
+                <Text style={styles.hint}>
+                  You'll sign the payment with your Stellar key; the server pays the network fee.
+                </Text>
                 <Pressable
                   onPress={handlePay}
                   style={[shared.button, shared.primaryButton, styles.actionBtn]}
@@ -272,9 +233,13 @@ export function PaywallModal({
         </View>
       </Modal>
       <SignTransactionSheet
-        visible={visible && phase === "signing"}
-        unsignedXdr={challenge?.unsignedXdr ?? ""}
-        networkPassphrase={challenge?.networkPassphrase}
+        visible={visible && phase === "signing" && challenge !== null}
+        unsignedXdr=""
+        sign={(secret) =>
+          challenge
+            ? signPaymentTransaction(challenge, secret)
+            : Promise.reject(new Error("Payment request expired. Please try again."))
+        }
         onCancel={() => {
           setChallenge(null);
           setPhase("confirm");

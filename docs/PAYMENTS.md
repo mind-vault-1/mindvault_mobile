@@ -1,59 +1,58 @@
-# Payments
+# Payments (x402)
 
-Paywalled resources are unlocked over [x402](https://www.x402.org/). The app
-talks to the API directly; there is no payment backend of its own.
+Paid resources are served behind the backend's x402 paywall:
+`@x402/express` with the `@x402/stellar` **exact** scheme, protocol **v2**,
+paid in Stellar USDC. The app's client lives in `src/api/payment.ts` and mirrors
+`ExactStellarScheme` from `@x402/stellar/exact/client`.
 
-## The flow
+## Flow
 
-Everything lives in [`src/api/payment.ts`](../src/api/payment.ts).
+1. **Request.** `GET` the resource. A `200` is returned as-is (free or already
+   paid content).
+2. **Challenge.** A `402` carries a base64 JSON `PaymentRequired` in the
+   `PAYMENT-REQUIRED` response header:
+   `{ x402Version: 2, resource, accepts: [{ scheme, network, asset, amount, payTo, maxTimeoutSeconds, extra }] }`.
+   `parsePaymentRequired` picks the `exact` option on the app's network
+   (`stellar:testnet` or `stellar:pubnet`) and refuses:
+   - other schemes or networks
+   - an asset that isn't a contract (`C…`) or a `payTo` that isn't an account (`G…`)
+   - `extra.areFeesSponsored !== true` (the scheme requires the facilitator to pay fees)
+   - an `amount` (USDC base units, 7 decimals) above the price the user was shown
+3. **Sign.** The user enters their secret in the shared `SignTransactionSheet`,
+   which calls `signPaymentTransaction` for this one operation. It:
+   - builds the USDC contract `transfer(payer, payTo, amount)` with
+     `contract.AssembledTransaction` and simulates it through Soroban RPC
+   - checks the payer is the only account whose authorization is needed
+   - signs **only the payer's authorization entry**, valid until
+     `latestLedger + ceil(maxTimeoutSeconds / 5)`
+   - re-simulates and returns the transaction XDR
 
-1. **Request the resource.** `prepareResourceAccess(url, displayedPrice, payerPublicKey)`
-   does a plain `GET` on the resource URL.
-2. **HTTP 200.** Nothing is paywalled — the response is returned as an
-   `AccessResult` (`text` for text/JSON, `external` for anything else).
-3. **HTTP 402.** The body is an x402 challenge:
+   The secret never leaves the sheet and is cleared after the call.
+4. **Pay.** Retry the request with a `PAYMENT-SIGNATURE` header: base64 JSON
+   `{ x402Version, payload: { transaction }, extensions, resource, accepted }`.
+   `accepted` is the requirement object exactly as the server sent it, because
+   the server matches it by deep equality. The facilitator verifies, adds fees,
+   submits and settles, then the server returns the content.
 
-   ```json
-   {
-     "x402Version": 1,
-     "accepts": [
-       {
-         "scheme": "exact",
-         "network": "stellar:testnet",
-         "maxAmountRequired": "10000000",
-         "payTo": "GBHEGW3KWOY2OFH767EDALFGCUTBOEVBDQMCKU4APMDLQNBW5QV3W3KO",
-         "asset": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
-         "maxTimeoutSeconds": 60
-       }
-     ]
-   }
-   ```
+## Configuration
 
-   `parsePaymentChallenge` picks the `exact` option for the app's own network,
-   then `buildUnsignedPaymentTransaction` builds an unsigned Soroban
-   `transfer(from, to, amount)` call on the USDC token contract.
-4. **Sign.** [`PaywallModal`](../src/components/PaywallModal.tsx) hands the
-   unsigned XDR and the network passphrase to the shared
-   `SignTransactionSheet`, so payment signing behaves exactly like the other
-   on-chain flows.
-5. **Retry.** `submitSignedPayment` re-sends the request with the signed
-   transaction in a base64 `X-PAYMENT` header and returns the unlocked content.
+- The network comes from `app.json` `extra.network` (`testnet` or `mainnet`).
+- Testnet uses `https://soroban-testnet.stellar.org`. Mainnet needs a Soroban RPC
+  provider; set it via `sorobanRpcUrl()` once a provider is chosen (see the
+  [RPC provider list](https://developers.stellar.org/docs/data/apis/rpc/providers)).
+- The payer needs a USDC trustline and balance. Without one, simulation fails with
+  the USDC contract's `Error(Contract, #13)` (trustline missing), which the sheet shows.
 
-## Safety rules
+## Testing
 
-A 402 is only ever accepted when all of these hold; otherwise the challenge is
-rejected with a message the user can act on:
+`src/api/payment.test.ts` covers challenge parsing and every rejection, the
+`PAYMENT-SIGNATURE` encoding, the 200, 402 and retry paths, and auth-entry
+signing with Soroban RPC mocked. The header format was also checked against
+`@x402/core` 2.9's own decoder and the server's requirement matching, and the
+build/simulate path was run against Soroban testnet's USDC contract.
 
-- The scheme is `exact` and the network matches the app's. `stellar:testnet`
-  maps to `testnet`, `stellar:pubnet` to `mainnet` (see `app.config.js`); a
-  challenge on another network is never signed.
-- `maxAmountRequired` is a whole number of atomic token units (USDC has 7
-  decimals) and is not **greater** than the price shown in the paywall. Paying
-  less than displayed is fine; paying more is not.
-- `payTo`, `asset` and `maxAmountRequired` are all present.
+## Follow-ups
 
-## Following up
-
-Signing and submitting are done with `@stellar/stellar-sdk` directly. The
-official `@x402/stellar` client package would replace the hand-rolled
-challenge parsing and the `X-PAYMENT` payload, but it is a separate change.
+- Replace this hand-written client with the `@x402/stellar` client package once it
+  can be added (it needs a newer `@stellar/stellar-sdk` than the app's 12.x).
+- Wallet signing (WalletConnect / SEP-43) instead of entering a secret.

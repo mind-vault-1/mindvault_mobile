@@ -1,242 +1,257 @@
+import { Buffer } from "buffer";
+
 import {
-  buildUnsignedPaymentTransaction,
-  parsePaymentChallenge,
+  encodePaymentSignature,
+  parsePaymentRequired,
   prepareResourceAccess,
+  priceToAtomicUnits,
+  signPaymentTransaction,
   submitSignedPayment,
   type PaymentChallenge,
 } from "./payment";
 
-const PAYER = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7";
-const PAY_TO = "GBHEGW3KWOY2OFH767EDALFGCUTBOEVBDQMCKU4APMDLQNBW5QV3W3KO";
-const ASSET = "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
-const URL = "https://api.example.com/resources/abc/content";
-
+// jest.setup.js stubs the SDK; this suite needs the real one, with only the
+// network-facing pieces (Soroban RPC and contract assembly) mocked.
+const mockGetLatestLedger = jest.fn();
+const mockBuild = jest.fn();
 jest.mock("@stellar/stellar-sdk", () => {
-  const VALID_PUBLIC_KEY = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7";
-  const builder: any = {};
-  builder.addOperation = jest.fn(() => builder);
-  builder.setTimeout = jest.fn(() => builder);
-  builder.build = jest.fn(() => ({ toXDR: () => "unsigned-xdr" }));
+  const actual = jest.requireActual("@stellar/stellar-sdk");
   return {
-    Account: jest.fn(),
-    Address: { fromString: jest.fn(() => ({ toScVal: () => "address" })) },
-    Contract: jest.fn(() => ({ call: jest.fn(() => "transfer-operation") })),
-    TransactionBuilder: jest.fn(() => builder),
-    nativeToScVal: jest.fn(() => "amount"),
-    StrKey: { isValidEd25519PublicKey: (key: string) => key === VALID_PUBLIC_KEY },
+    ...actual,
+    rpc: { ...actual.rpc, Server: jest.fn(() => ({ getLatestLedger: mockGetLatestLedger })) },
+    contract: { ...actual.contract, AssembledTransaction: { build: (...args: unknown[]) => mockBuild(...args) } },
   };
 });
 
-function challengeBody(requirementOverrides: Record<string, unknown> = {}) {
+const { Keypair, StrKey } = jest.requireActual("@stellar/stellar-sdk");
+
+const PAY_TO: string = Keypair.random().publicKey();
+const ASSET: string = StrKey.encodeContract(Buffer.alloc(32, 7));
+const URL = "https://api.example.com/resources/abc";
+const RESOURCE = { url: URL, description: "A resource", mimeType: "text/plain" };
+
+function requirement(overrides: Record<string, unknown> = {}) {
   return {
-    x402Version: 1,
-    accepts: [
-      {
-        scheme: "exact",
-        network: "stellar:testnet",
-        maxAmountRequired: "10000000",
-        payTo: PAY_TO,
-        asset: ASSET,
-        maxTimeoutSeconds: 60,
-        ...requirementOverrides,
-      },
-    ],
+    scheme: "exact",
+    network: "stellar:testnet",
+    asset: ASSET,
+    amount: "10000000",
+    payTo: PAY_TO,
+    maxTimeoutSeconds: 60,
+    extra: { areFeesSponsored: true },
+    ...overrides,
   };
 }
 
-function mockResponse(status: number, body: unknown, contentType = "application/json") {
-  const text = typeof body === "string" ? body : JSON.stringify(body);
+function paymentRequiredHeader(body: Record<string, unknown> = {}) {
+  return Buffer.from(
+    JSON.stringify({ x402Version: 2, resource: RESOURCE, accepts: [requirement()], ...body }),
+    "utf8"
+  ).toString("base64");
+}
+
+function mockResponse(status: number, body: string, headers: Record<string, string> = {}) {
+  const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: {
-      get: (name: string) => (name.toLowerCase() === "content-type" ? contentType : null),
-    },
-    text: async () => text,
-    json: async () => body,
+    headers: { get: (name: string) => lower[name.toLowerCase()] ?? null },
+    text: async () => body,
+    json: async () => JSON.parse(body),
   };
 }
 
-function mockFetchQueue(...responses: unknown[]) {
-  const fetchMock = jest.fn();
-  for (const response of responses) {
-    fetchMock.mockResolvedValueOnce(response);
-  }
+const originalFetch = global.fetch;
+let fetchMock: jest.Mock;
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  fetchMock = jest.fn();
   global.fetch = fetchMock as unknown as typeof global.fetch;
-  return fetchMock;
-}
+});
 
-describe("parsePaymentChallenge", () => {
-  it("accepts a testnet exact challenge at the displayed price", () => {
-    expect(parsePaymentChallenge(JSON.stringify(challengeBody()), "1.00")).toEqual({
-      x402Version: 1,
-      accepted: expect.objectContaining({
-        scheme: "exact",
-        network: "stellar:testnet",
-        maxAmountRequired: "10000000",
-        payTo: PAY_TO,
-        asset: ASSET,
-      }),
-    });
+afterEach(() => {
+  global.fetch = originalFetch;
+});
+
+describe("priceToAtomicUnits", () => {
+  it("converts a displayed USDC price to 7-decimal base units", () => {
+    expect(priceToAtomicUnits("1")).toBe(BigInt("10000000"));
+    expect(priceToAtomicUnits("1.5")).toBe(BigInt("15000000"));
+    expect(priceToAtomicUnits("0.1234567")).toBe(BigInt("1234567"));
   });
 
-  it("accepts a challenge priced below what is displayed", () => {
-    const challenge = parsePaymentChallenge(
-      JSON.stringify(challengeBody({ maxAmountRequired: "5000000" })),
-      "1.00"
-    );
-    expect(challenge.accepted.maxAmountRequired).toBe("5000000");
-  });
-
-  it("rejects a body that is not JSON", () => {
-    expect(() => parsePaymentChallenge("<html>402</html>", "1.00")).toThrow(
-      "402 received but the x402 challenge body was invalid."
-    );
-  });
-
-  it("rejects an unsupported x402 version", () => {
-    expect(() =>
-      parsePaymentChallenge(JSON.stringify({ ...challengeBody(), x402Version: 3 }), "1.00")
-    ).toThrow("402 received but the x402 challenge version is unsupported.");
-  });
-
-  it("rejects a challenge without any payment options", () => {
-    expect(() =>
-      parsePaymentChallenge(JSON.stringify({ x402Version: 1, accepts: [] }), "1.00")
-    ).toThrow("402 received but the x402 challenge did not include any payment options.");
-  });
-
-  it("rejects an unsupported payment scheme", () => {
-    expect(() =>
-      parsePaymentChallenge(JSON.stringify(challengeBody({ scheme: "upto" })), "1.00")
-    ).toThrow("This resource uses an unsupported payment scheme.");
-  });
-
-  it("rejects a challenge on a network the app is not on", () => {
-    expect(() =>
-      parsePaymentChallenge(JSON.stringify(challengeBody({ network: "stellar:pubnet" })), "1.00")
-    ).toThrow("This resource requires stellar:pubnet, but the app is on stellar:testnet.");
-  });
-
-  it("rejects incomplete payment requirements", () => {
-    expect(() =>
-      parsePaymentChallenge(JSON.stringify(challengeBody({ payTo: "" })), "1.00")
-    ).toThrow("402 received but the x402 payment requirements were incomplete.");
-  });
-
-  it("rejects a non-numeric amount", () => {
-    expect(() =>
-      parsePaymentChallenge(JSON.stringify(challengeBody({ maxAmountRequired: "1.5" })), "1.00")
-    ).toThrow("402 received but the x402 payment requirements were incomplete.");
-  });
-
-  it("rejects a payment above the displayed price", () => {
-    expect(() =>
-      parsePaymentChallenge(JSON.stringify(challengeBody({ maxAmountRequired: "20000000" })), "1.00")
-    ).toThrow("The requested payment is higher than the displayed price.");
-  });
-
-  it("rejects an unparseable displayed price", () => {
-    expect(() => parsePaymentChallenge(JSON.stringify(challengeBody()), "free")).toThrow(
-      "The displayed price is invalid."
-    );
+  it("rejects malformed prices", () => {
+    expect(() => priceToAtomicUnits("1,50")).toThrow("The displayed price is invalid.");
   });
 });
 
-describe("buildUnsignedPaymentTransaction", () => {
-  const accepted = parsePaymentChallenge(JSON.stringify(challengeBody()), "1.00");
+describe("parsePaymentRequired", () => {
+  it("picks the exact option on the app's network and keeps it byte-for-byte", () => {
+    const challenge = parsePaymentRequired(paymentRequiredHeader(), "1.00");
 
-  it("builds the transfer transaction for a valid payer", () => {
-    expect(buildUnsignedPaymentTransaction(accepted, PAYER)).toBe("unsigned-xdr");
+    expect(challenge).toEqual({ x402Version: 2, accepted: requirement(), resource: RESOURCE });
   });
 
-  it("rejects a payer that is not a Stellar public key", () => {
-    expect(() => buildUnsignedPaymentTransaction(accepted, "not-a-key")).toThrow(
-      "Enter a valid Stellar public key."
+  it("accepts an amount equal to the displayed price", () => {
+    expect(() => parsePaymentRequired(paymentRequiredHeader(), "1")).not.toThrow();
+  });
+
+  it.each([
+    ["no header", null, "402 received without a PAYMENT-REQUIRED header."],
+    ["an unreadable header", "%%%", "402 received but the payment challenge couldn't be read."],
+    ["x402 v1", paymentRequiredHeader({ x402Version: 1 }), "Unsupported x402 version 1."],
+    ["no options", paymentRequiredHeader({ accepts: [] }), "offered no payment options"],
+    [
+      "an unsupported scheme",
+      paymentRequiredHeader({ accepts: [requirement({ scheme: "upto" })] }),
+      "This resource uses an unsupported payment scheme.",
+    ],
+    [
+      "another network",
+      paymentRequiredHeader({ accepts: [requirement({ network: "stellar:pubnet" })] }),
+      "This resource requires stellar:pubnet, but the app is on stellar:testnet.",
+    ],
+    [
+      "a non-contract asset",
+      paymentRequiredHeader({ accepts: [requirement({ asset: "USDC" })] }),
+      "the payment requirements were incomplete",
+    ],
+    [
+      "unsponsored fees",
+      paymentRequiredHeader({ accepts: [requirement({ extra: {} })] }),
+      "fee sponsorship",
+    ],
+    [
+      "a price above the displayed one",
+      paymentRequiredHeader({ accepts: [requirement({ amount: "10000001" })] }),
+      "The requested payment is higher than the displayed price.",
+    ],
+  ])("rejects %s", (_label, header, message) => {
+    expect(() => parsePaymentRequired(header, "1.00")).toThrow(message);
+  });
+});
+
+describe("encodePaymentSignature", () => {
+  it("matches the @x402/core PaymentPayload shape", () => {
+    const challenge = parsePaymentRequired(paymentRequiredHeader(), "1.00");
+    const decoded = JSON.parse(
+      Buffer.from(encodePaymentSignature(challenge, "signed-tx-xdr"), "base64").toString("utf8")
     );
+
+    expect(decoded).toEqual({
+      x402Version: 2,
+      payload: { transaction: "signed-tx-xdr" },
+      resource: RESOURCE,
+      accepted: requirement(),
+    });
   });
 });
 
 describe("prepareResourceAccess", () => {
-  it("returns the resource when the server responds 200 without payment", async () => {
-    mockFetchQueue(mockResponse(200, "<h1>free</h1>", "text/html"));
+  it("returns the content directly when the server answers 200", async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, "free content", { "content-type": "text/plain" }));
 
-    await expect(prepareResourceAccess(URL, "1.00", PAYER)).resolves.toEqual({
+    await expect(prepareResourceAccess(URL, "1.00")).resolves.toEqual({
       type: "ready",
-      result: { type: "text", content: "<h1>free</h1>" },
+      result: { type: "text", content: "free content" },
     });
   });
 
-  it("hands off binary content to the external browser", async () => {
-    mockFetchQueue(mockResponse(200, "", "application/pdf"));
+  it("returns the challenge from the PAYMENT-REQUIRED header on 402", async () => {
+    fetchMock.mockResolvedValue(
+      mockResponse(402, "{}", { "PAYMENT-REQUIRED": paymentRequiredHeader() })
+    );
 
-    await expect(prepareResourceAccess(URL, "1.00", PAYER)).resolves.toEqual({
-      type: "ready",
-      result: { type: "external", url: URL },
-    });
-  });
-
-  it("returns a signable challenge when the server responds 402", async () => {
-    mockFetchQueue(mockResponse(402, challengeBody(), "application/json"));
-
-    const access = await prepareResourceAccess(URL, "1.00", PAYER);
+    const access = await prepareResourceAccess(URL, "1.00");
     expect(access).toEqual({
       type: "payment",
-      challenge: expect.objectContaining({
-        x402Version: 1,
-        networkPassphrase: "Test SDF Network ; September 2015",
-        unsignedXdr: "unsigned-xdr",
-      }),
+      challenge: { x402Version: 2, accepted: requirement(), resource: RESOURCE },
     });
   });
 
-  it("propagates a rejection from the challenge parser", async () => {
-    mockFetchQueue(mockResponse(402, challengeBody({ scheme: "upto" }), "application/json"));
-
-    await expect(prepareResourceAccess(URL, "1.00", PAYER)).rejects.toThrow(
-      "This resource uses an unsupported payment scheme."
-    );
-  });
-
-  it("surfaces other HTTP failures", async () => {
-    mockFetchQueue(mockResponse(500, { error: "Upstream unavailable" }));
-
-    await expect(prepareResourceAccess(URL, "1.00", PAYER)).rejects.toThrow(
-      "Upstream unavailable"
-    );
+  it("surfaces other errors", async () => {
+    fetchMock.mockResolvedValue(mockResponse(500, JSON.stringify({ error: "Storage offline" })));
+    await expect(prepareResourceAccess(URL, "1.00")).rejects.toThrow("Storage offline");
   });
 });
 
 describe("submitSignedPayment", () => {
-  const challenge: PaymentChallenge = {
-    ...parsePaymentChallenge(JSON.stringify(challengeBody()), "1.00"),
-    networkPassphrase: "Test SDF Network ; September 2015",
-    unsignedXdr: "unsigned-xdr",
-  };
+  const challenge: PaymentChallenge = { x402Version: 2, accepted: requirement(), resource: RESOURCE };
 
-  it("retries with a base64 X-PAYMENT header carrying the signed transaction", async () => {
-    const fetchMock = mockFetchQueue(mockResponse(200, "unlocked", "text/plain"));
+  it("retries with the PAYMENT-SIGNATURE header and returns the content", async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, "paid content", { "content-type": "text/plain" }));
 
-    await expect(submitSignedPayment(URL, challenge, "signed-xdr")).resolves.toEqual({
+    await expect(submitSignedPayment(URL, challenge, "signed-tx")).resolves.toEqual({
       type: "text",
-      content: "unlocked",
+      content: "paid content",
     });
-
-    const [, init] = fetchMock.mock.calls[0];
-    const header = JSON.parse(Buffer.from(init.headers["X-PAYMENT"], "base64").toString("utf8"));
-    expect(header.payload.transaction).toBe("signed-xdr");
-    expect(header).toMatchObject({
-      x402Version: 1,
-      scheme: "exact",
-      network: "stellar:testnet",
+    expect(fetchMock).toHaveBeenCalledWith(URL, {
+      headers: { "PAYMENT-SIGNATURE": encodePaymentSignature(challenge, "signed-tx") },
     });
   });
 
-  it("surfaces a payment the server rejects", async () => {
-    mockFetchQueue(mockResponse(402, { error: "Payment verification failed" }));
+  it("explains a rejected payment", async () => {
+    fetchMock.mockResolvedValue(mockResponse(402, ""));
+    await expect(submitSignedPayment(URL, challenge, "signed-tx")).rejects.toThrow(
+      "The payment was not accepted."
+    );
+  });
+});
 
-    await expect(submitSignedPayment(URL, challenge, "signed-xdr")).rejects.toThrow(
-      "Payment verification failed"
+describe("signPaymentTransaction", () => {
+  const challenge: PaymentChallenge = { x402Version: 2, accepted: requirement(), resource: RESOURCE };
+  const payer = Keypair.random();
+
+  function assembled(missingSigners: string[][], simulation: object = { result: {} }) {
+    const needs = jest.fn();
+    missingSigners.forEach((value) => needs.mockReturnValueOnce(value));
+    return {
+      simulation,
+      needsNonInvokerSigningBy: needs,
+      signAuthEntries: jest.fn(),
+      simulate: jest.fn(),
+      built: { toXDR: () => "signed-tx-xdr" },
+    };
+  }
+
+  beforeEach(() => {
+    mockGetLatestLedger.mockResolvedValue({ sequence: 1000 });
+  });
+
+  it("simulates the USDC transfer, signs only the payer's auth entry and returns the XDR", async () => {
+    const tx = assembled([[payer.publicKey()], []]);
+    mockBuild.mockResolvedValue(tx);
+
+    await expect(signPaymentTransaction(challenge, payer.secret())).resolves.toBe("signed-tx-xdr");
+
+    expect(mockBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contractId: ASSET,
+        method: "transfer",
+        networkPassphrase: "Test SDF Network ; September 2015",
+        rpcUrl: "https://soroban-testnet.stellar.org",
+      })
+    );
+    expect(tx.signAuthEntries).toHaveBeenCalledWith(
+      expect.objectContaining({ publicKey: payer.publicKey(), expiration: 1012 })
+    );
+    expect(tx.simulate).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops when the simulation fails", async () => {
+    mockBuild.mockResolvedValue(assembled([], { error: "insufficient balance" }));
+
+    await expect(signPaymentTransaction(challenge, payer.secret())).rejects.toThrow(
+      "The payment simulation failed: insufficient balance"
+    );
+  });
+
+  it("refuses a transfer that needs another account's signature", async () => {
+    mockBuild.mockResolvedValue(assembled([[payer.publicKey(), PAY_TO]]));
+
+    await expect(signPaymentTransaction(challenge, payer.secret())).rejects.toThrow(
+      "This payment needs a signature from a different account."
     );
   });
 });

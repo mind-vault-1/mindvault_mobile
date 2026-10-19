@@ -20,6 +20,12 @@ interface SignTransactionSheetProps {
   networkPassphrase?: string;
   onSigned: (signedXdr: string) => void | Promise<void>;
   onCancel: () => void;
+  /**
+   * Custom signer for payloads that aren't a plain envelope signature (e.g. an
+   * x402 payment that signs a Soroban auth entry). It gets the secret for this
+   * one call only. Defaults to signing `unsignedXdr`.
+   */
+  sign?: (secret: string) => Promise<string>;
 }
 
 function createStyles(colors: ThemeColors) {
@@ -60,6 +66,7 @@ export function SignTransactionSheet({
   networkPassphrase = DEFAULT_NETWORK_PASSPHRASE,
   onSigned,
   onCancel,
+  sign: customSign,
 }: SignTransactionSheetProps) {
   const { colors, shared, typography } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -87,16 +94,23 @@ export function SignTransactionSheet({
 
   async function sign() {
     setTouched(true);
-    if (!validation.isValid || !unsignedXdr) return;
+    if (!validation.isValid || (!customSign && !unsignedXdr)) return;
 
     setBusy(true);
     setSignError(null);
     let signedXdr: string;
     try {
-      signedXdr = signTransactionXdr(unsignedXdr, secret, networkPassphrase);
-    } catch {
-      // e.g. a malformed transaction or a passphrase that doesn't match it.
-      setSignError("Couldn't sign this transaction. Check the key and network, then try again.");
+      signedXdr = customSign
+        ? await customSign(secret)
+        : signTransactionXdr(unsignedXdr, secret, networkPassphrase);
+    } catch (err) {
+      // e.g. a malformed transaction, a passphrase that doesn't match it, or a
+      // failed payment simulation (whose message is safe and actionable).
+      setSignError(
+        customSign && err instanceof Error && err.message
+          ? err.message
+          : "Couldn't sign this transaction. Check the key and network, then try again."
+      );
       setSecret("");
       setBusy(false);
       return;

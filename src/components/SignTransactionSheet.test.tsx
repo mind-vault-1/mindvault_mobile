@@ -131,3 +131,24 @@ it("shows an error in the sheet and does not submit when signing fails", async (
   expect(screen.onSigned).not.toHaveBeenCalled();
   expect(screen.getByLabelText("Stellar secret key").props.value).toBe("");
 });
+
+it("uses a custom signer when given one and shows its error message", async () => {
+  const sign = jest
+    .fn()
+    .mockRejectedValueOnce(new Error("The payment simulation failed: insufficient balance"))
+    .mockResolvedValueOnce("signed-payment-xdr");
+  const screen = renderSheet({ unsignedXdr: "", sign });
+
+  fireEvent.changeText(screen.getByLabelText("Stellar secret key"), VALID_SECRET);
+  fireEvent.press(screen.getByText("Sign"));
+  expect(
+    await screen.findByText("The payment simulation failed: insufficient balance")
+  ).toBeTruthy();
+  expect(screen.onSigned).not.toHaveBeenCalled();
+
+  fireEvent.changeText(screen.getByLabelText("Stellar secret key"), VALID_SECRET);
+  fireEvent.press(screen.getByText("Sign"));
+  await waitFor(() => expect(screen.onSigned).toHaveBeenCalledWith("signed-payment-xdr"));
+  expect(sign).toHaveBeenCalledWith(VALID_SECRET);
+  expect(mockedSign).not.toHaveBeenCalled();
+});
