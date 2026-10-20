@@ -10,10 +10,13 @@ import { getNavigationTheme } from "./src/theme";
 import { ThemeProvider, useAppTheme } from "./src/theme/ThemeProvider";
 import { logError } from "./src/utils/errorLogger";
 import { ErrorBoundary } from "./src/components/ErrorBoundary";
+import { OfflineBanner } from "./src/components/OfflineBanner";
+import { useNetworkStatus } from "./src/hooks/useNetworkStatus";
 
 function AppContent() {
   const { colors, colorScheme, isLoading } = useAppTheme();
   const [apiUrlReady, setApiUrlReady] = useState(false);
+  const { isOffline } = useNetworkStatus();
 
   // Apply the API base URL saved in Settings before the first request goes out.
   useEffect(() => {
@@ -29,6 +32,7 @@ function AppContent() {
   return (
     <>
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+      <OfflineBanner isOffline={isOffline} />
       <NavigationContainer
         theme={getNavigationTheme(colors, colorScheme)}
         linking={createLinkingOptions()}
