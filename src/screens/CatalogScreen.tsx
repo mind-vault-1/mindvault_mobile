@@ -21,6 +21,7 @@ import {
   getApiBaseUrl,
 } from "../api/resources";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { HomeSections } from "../components/HomeSections";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import type { RootStackParamList } from "../navigation";
@@ -666,6 +667,18 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     void clearRecentResources();
   }, []);
 
+  const handleSeeAll = useCallback(
+    (sectionSort?: CatalogSort, sectionFilter?: { verificationStatus?: "verified" }) => {
+      if (sectionSort) {
+        setSort(sectionSort);
+      }
+      if (sectionFilter?.verificationStatus) {
+        setVerification(sectionFilter.verificationStatus);
+      }
+    },
+    []
+  );
+
   const priceRange = useMemo(
     () => parsePriceRange(minPrice, maxPrice),
     [minPrice, maxPrice],
@@ -813,6 +826,10 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                 </ScrollView>
               </View>
             ) : null}
+
+            {!hasActiveFilters && search.trim() === "" && (
+              <HomeSections onSeeAll={handleSeeAll} />
+            )}
 
             <View style={styles.filters}>
               <View style={styles.filterGroup}>

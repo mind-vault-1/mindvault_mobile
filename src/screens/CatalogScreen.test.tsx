@@ -488,3 +488,70 @@ describe("CatalogScreen recently viewed", () => {
   });
 });
 
+describe("CatalogScreen HomeSections", () => {
+  it("renders HomeSections when no filters are active", async () => {
+    const resources = [
+      makeResource("new-1", "Newest Resource"),
+      makeResource("cheap-1", "Cheapest Resource"),
+      makeResource("ver-1", "Verified Resource"),
+    ];
+    mockedFetchCatalog
+      .mockResolvedValueOnce({ items: resources.slice(0, 1), total: 10, nextOffset: null })
+      .mockResolvedValueOnce({ items: resources.slice(1, 2), total: 10, nextOffset: null })
+      .mockResolvedValueOnce({ items: resources.slice(2, 3), total: 10, nextOffset: null });
+
+    const screen = renderCatalog();
+    await waitFor(() => expect(screen.getByText("Newest Resource")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Cheapest Resource")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Verified Resource")).toBeTruthy());
+  });
+
+  it("hides HomeSections when searching", async () => {
+    const resources = [makeResource("r1", "Test Resource")];
+    mockedFetchCatalog.mockResolvedValue({ items: resources, total: 1, nextOffset: null });
+
+    const screen = renderCatalog();
+    await waitFor(() => expect(screen.getByText("Test Resource")).toBeTruthy());
+
+    fireEvent.changeText(screen.getByLabelText("Search resources"), "search");
+
+    expect(screen.queryByText("Newest")).toBeNull();
+    expect(screen.queryByText("Cheapest")).toBeNull();
+    expect(screen.queryByText("Verified")).toBeNull();
+  });
+
+  it("hides HomeSections when filter is active", async () => {
+    const resources = [makeResource("r1", "Test Resource")];
+    mockedFetchCatalog.mockResolvedValue({ items: resources, total: 1, nextOffset: null });
+
+    const screen = renderCatalog();
+    await waitFor(() => expect(screen.getByText("Test Resource")).toBeTruthy());
+
+    fireEvent.press(screen.getByText("Verified"));
+
+    expect(screen.queryByText("Newest")).toBeNull();
+    expect(screen.queryByText("Cheapest")).toBeNull();
+    expect(screen.queryByText("Verified")).toBeNull();
+  });
+
+  it("applies sort when 'See all' is pressed for Newest section", async () => {
+    const resources = [makeResource("new-1", "Newest Resource")];
+    mockedFetchCatalog
+      .mockResolvedValueOnce({ items: resources, total: 10, nextOffset: null })
+      .mockResolvedValueOnce({ items: resources, total: 10, nextOffset: null })
+      .mockResolvedValueOnce({ items: resources, total: 10, nextOffset: null });
+
+    const screen = renderCatalog();
+    await waitFor(() => expect(screen.getByText("Newest Resource")).toBeTruthy());
+
+    // Find and press "See all" for Newest section
+    fireEvent.press(screen.getByText("See all"));
+
+    await waitFor(() => {
+      expect(mockedFetchCatalog).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: "newest" })
+      );
+    });
+  });
+});
+
