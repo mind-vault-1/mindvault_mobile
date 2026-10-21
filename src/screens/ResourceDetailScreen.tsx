@@ -558,6 +558,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         accessUrl={resource.accessUrl}
         resourceTitle={resource.title}
         price={resource.price}
+        resourceId={resource.id}
         onClose={() => setPaywallVisible(false)}
       />
 

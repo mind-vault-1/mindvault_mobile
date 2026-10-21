@@ -26,12 +26,15 @@ import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import type { AccessResult } from "../types";
 import { SignTransactionSheet } from "./SignTransactionSheet";
+import { LeaseSheet } from "./LeaseSheet";
+import { getRegistryClient } from "../api/leases";
 
 interface PaywallModalProps {
   visible: boolean;
   accessUrl: string;
   resourceTitle: string;
   price: string;
+  resourceId: string;
   onClose: () => void;
 }
 
@@ -97,6 +100,14 @@ function createStyles(colors: ThemeColors) {
       color: colors.text,
       lineHeight: 22,
     },
+    secondaryAction: {
+      marginTop: spacing.sm,
+    },
+    secondaryActionText: {
+      fontSize: 14,
+      color: colors.primary,
+      textDecorationLine: "underline",
+    },
   });
 }
 
@@ -104,9 +115,25 @@ function paymentNetworkLabel(): string {
   try {
     return appNetworkId() === "stellar:pubnet" ? "Stellar mainnet" : "Stellar testnet";
   } catch {
-    // Unsupported configurations are reported by the payment request, not by
-    // rendering a resource detail screen with an unopened modal.
     return `Stellar ${DEFAULT_STELLAR_NETWORK}`;
+  }
+}
+
+function isMainnet(): boolean {
+  try {
+    return appNetworkId() === "stellar:pubnet";
+  } catch {
+    return false;
+  }
+}
+
+async function hasRegistryConfigured(): Promise<boolean> {
+  try {
+    const client = await getRegistryClient();
+    // If we can create a client, the registry is configured (testnet has a default)
+    return !!client;
+  } catch {
+    return false;
   }
 }
 
@@ -115,6 +142,7 @@ export function PaywallModal({
   accessUrl,
   resourceTitle,
   price,
+  resourceId,
   onClose,
 }: PaywallModalProps) {
   const { colors, shared, typography } = useAppTheme();
@@ -124,6 +152,8 @@ export function PaywallModal({
   const [result, setResult] = useState<AccessResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [challenge, setChallenge] = useState<PaymentChallenge | null>(null);
+  const [showLeaseSheet, setShowLeaseSheet] = useState(false);
+  const [registryAvailable, setRegistryAvailable] = useState<boolean | null>(null);
 
   const flow = useRef(0);
   const busy = useRef(false);
@@ -136,8 +166,17 @@ export function PaywallModal({
     setResult(null);
     setErrorMsg(null);
     setChallenge(null);
+    setShowLeaseSheet(false);
     return () => { flow.current += 1; };
   }, [visible, accessUrl, price, resourceTitle]);
+
+  useEffect(() => {
+    if (visible && !isMainnet()) {
+      hasRegistryConfigured().then(setRegistryAvailable);
+    } else {
+      setRegistryAvailable(false);
+    }
+  }, [visible]);
 
   function isActive(run: number) {
     return visible && flow.current === run;
@@ -147,6 +186,7 @@ export function PaywallModal({
     flow.current += 1;
     busy.current = false;
     setChallenge(null);
+    setShowLeaseSheet(false);
     setPhase("confirm");
     onClose();
   }
@@ -194,7 +234,6 @@ export function PaywallModal({
   }
 
   async function handleSigned(transaction: string, run: number, payment: PaymentChallenge) {
-    // A signature that finishes after Close/Cancel must never settle a payment.
     if (!isActive(run) || busy.current) return;
     busy.current = true;
     setChallenge(null);
@@ -209,12 +248,24 @@ export function PaywallModal({
     }
   }
 
+  function handleOpenLeaseSheet() {
+    setShowLeaseSheet(true);
+  }
+
+  function handleLeasePurchased(result: { tier: number; txHash: string }) {
+    setShowLeaseSheet(false);
+    setToast?.(`Lease purchased! Tx: ${result.txHash}`);
+    close();
+  }
+
   const signingRun = flow.current;
+
+  const showRentOption = registryAvailable === true && !isMainnet();
 
   return (
     <>
       <Modal
-        visible={visible && phase !== "signing"}
+        visible={visible && phase !== "signing" && !showLeaseSheet}
         animationType="slide"
         transparent
         onRequestClose={close}
@@ -249,9 +300,19 @@ export function PaywallModal({
                   style={[shared.button, shared.primaryButton, styles.actionBtn]}
                 >
                   <Text style={[shared.buttonText, shared.primaryButtonText]}>
-                    Pay &amp; Access
+                    Pay & Access
                   </Text>
                 </Pressable>
+
+                {showRentOption && (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={handleOpenLeaseSheet}
+                    style={styles.secondaryAction}
+                  >
+                    <Text style={styles.secondaryActionText}>Rent instead</Text>
+                  </Pressable>
+                )}
               </View>
             )}
 
@@ -293,14 +354,13 @@ export function PaywallModal({
           </View>
         </View>
       </Modal>
+
       {visible && phase === "signing" && challenge ? (
         <SignTransactionSheet
           visible
           unsignedXdr=""
           sign={async (secret) => {
             if (!isActive(signingRun)) throw new Error("Payment cancelled.");
-            // Show progress with a working Close action while simulation/signing
-            // is pending. Unmounting the key sheet also clears its local state.
             setPhase("authorizing");
             try {
               const transaction = await signPaymentTransaction(
@@ -317,6 +377,26 @@ export function PaywallModal({
           onSigned={(transaction) => handleSigned(transaction, signingRun, challenge)}
         />
       ) : null}
+
+      {showLeaseSheet && (
+        <LeaseSheet
+          visible={true}
+          resource={{
+            id: resourceId,
+            title: resourceTitle,
+            price,
+            resourceType: "file",
+            walletAddress: "",
+            verificationStatus: "verified",
+            onchainStatus: "none",
+            listed: true,
+            accessUrl,
+          } as any}
+          price={price}
+          onClose={() => setShowLeaseSheet(false)}
+          onLeasePurchased={handleLeasePurchased}
+        />
+      )}
     </>
   );
 }
