@@ -33,7 +33,10 @@
         "tinted": "./assets/adaptive-icon.png"
       },
       "supportsTablet": true,
-      "bundleIdentifier": "app.mindvault.mobile"
+      "bundleIdentifier": "app.mindvault.mobile",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Allow MindVault to use Face ID to unlock your publisher API key."
+      }
     },
     "android": {
       "adaptiveIcon": {

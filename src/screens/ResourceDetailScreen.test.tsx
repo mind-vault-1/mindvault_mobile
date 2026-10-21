@@ -1,7 +1,7 @@
 import * as Clipboard from "expo-clipboard";
 import React from "react";
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
-import { ActivityIndicator } from "react-native";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { ActivityIndicator, AppState, ScrollView, type AppStateStatus } from "react-native";
 
 import { fetchResource, ResourceFetchError } from "../api/resources";
 import { prepareResourceAccess } from "../api/payment";
@@ -317,3 +317,73 @@ describe("thumbnail", () => {
   });
 });
 
+
+describe("refreshing", () => {
+  beforeEach(() => {
+    mockedFetchResource.mockReset();
+    mockedFetchResource.mockResolvedValue(resource);
+  });
+
+  it("refetches on pull to refresh and shows the updated price", async () => {
+    const screen = renderScreen();
+    await waitFor(() => expect(screen.getByText("4.50 USDC")).toBeTruthy());
+
+    mockedFetchResource.mockResolvedValue({ ...resource, price: "9.00" });
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+    await act(async () => {
+      await scroll.props.refreshControl.props.onRefresh();
+    });
+
+    await waitFor(() => expect(screen.getByText("9.00 USDC")).toBeTruthy());
+    expect(mockedFetchResource).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps showing the resource when a refresh fails", async () => {
+    const screen = renderScreen();
+    await waitFor(() => expect(screen.getByText("4.50 USDC")).toBeTruthy());
+
+    mockedFetchResource.mockRejectedValue(new ResourceFetchError("offline", true));
+    await act(async () => {
+      await screen.UNSAFE_getByType(ScrollView).props.refreshControl.props.onRefresh();
+    });
+
+    expect(screen.getByText("4.50 USDC")).toBeTruthy();
+  });
+
+  it("refetches when the app returns to the foreground", async () => {
+    let emit: (s: AppStateStatus) => void = () => {};
+    jest.spyOn(AppState, "addEventListener").mockImplementation(((_: string, h: (s: AppStateStatus) => void) => {
+      emit = h;
+      return { remove: jest.fn() };
+    }) as unknown as typeof AppState.addEventListener);
+
+    const screen = renderScreen();
+    await waitFor(() => expect(screen.getByText("4.50 USDC")).toBeTruthy());
+
+    await act(async () => {
+      emit("background");
+      emit("active");
+    });
+    await waitFor(() => expect(mockedFetchResource).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not start a second request while one is in flight", async () => {
+    const screen = renderScreen();
+    await waitFor(() => expect(screen.getByText("4.50 USDC")).toBeTruthy());
+
+    let resolve: (r: typeof resource) => void = () => {};
+    mockedFetchResource.mockReturnValue(new Promise((r) => { resolve = r; }));
+    const onRefresh = screen.UNSAFE_getByType(ScrollView).props.refreshControl.props.onRefresh;
+
+    let first: Promise<void>;
+    act(() => {
+      first = onRefresh();
+      void onRefresh();
+    });
+    expect(mockedFetchResource).toHaveBeenCalledTimes(2); // initial + one refresh
+    await act(async () => {
+      resolve(resource);
+      await first;
+    });
+  });
+});

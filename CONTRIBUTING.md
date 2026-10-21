@@ -1,5 +1,7 @@
 # Contributing to MindVault Mobile
 
+Before diving into the code, read the [architecture guide](docs/ARCHITECTURE.md) for a map of the app.
+
 ## Prerequisites
 
 - Node.js 18+

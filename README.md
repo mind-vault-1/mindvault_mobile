@@ -10,6 +10,10 @@ React Native companion app for [MindVault](https://github.com/mindvault) — bro
 - Copy resource access URLs
 - On-chain registry count in the header
 
+## Architecture
+
+New here? Read the [architecture guide](docs/ARCHITECTURE.md) for the layers, data flow, storage keys and the signing and payment flows.
+
 ## Prerequisites
 
 - Node.js 18+

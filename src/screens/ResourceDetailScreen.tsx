@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +18,7 @@ import {
   formatConfidence,
   type VerificationDetails,
 } from "../api/verification";
+import { useAppForeground } from "../hooks/useAppForeground";
 import { ResourceThumbnail } from "../components/ResourceCard";
 import { StatusBadge } from "../components/StatusBadge";
 import { PaywallModal } from "../components/PaywallModal";
@@ -205,6 +207,8 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
   const { resourceId } = route.params;
   const [resource, setResource] = useState<Resource | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const inFlightRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [isTransientError, setIsTransientError] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -239,30 +243,55 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     }
   }
 
-  const loadResource = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setIsTransientError(false);
-    try {
-      const data = await fetchResource(resourceId);
-      setResource(data);
-      navigation.setOptions({ title: data.title });
-    } catch (err) {
-      if (err instanceof ResourceFetchError) {
-        setError(err.message);
-        setIsTransientError(err.isTransient);
-      } else {
-        setError("An unexpected error occurred.");
-        setIsTransientError(true);
+  // `background` reloads keep the current content on screen (pull to refresh,
+  // returning to the foreground) instead of swapping it for a spinner. Only one
+  // request runs at a time; overlapping triggers are dropped.
+  const loadResource = useCallback(
+    async (background = false) => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      if (!background) setLoading(true);
+      try {
+        const data = await fetchResource(resourceId);
+        setResource(data);
+        setError(null);
+        setIsTransientError(false);
+        navigation.setOptions({ title: data.title });
+      } catch (err) {
+        // A failed background reload leaves the last good data showing.
+        if (!background) {
+          if (err instanceof ResourceFetchError) {
+            setError(err.message);
+            setIsTransientError(err.isTransient);
+          } else {
+            setError("An unexpected error occurred.");
+            setIsTransientError(true);
+          }
+        }
+      } finally {
+        inFlightRef.current = false;
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [resourceId, navigation]);
+    },
+    [resourceId, navigation]
+  );
 
   useEffect(() => {
     void loadResource();
   }, [loadResource]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadResource(true);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadResource]);
+
+  useAppForeground(() => {
+    if (resource) void loadResource(true);
+  });
 
   useEffect(() => {
     if (!toast) return;
@@ -343,7 +372,16 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={shared.screen} edges={["bottom"]}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void handleRefresh()}
+            tintColor={colors.primary}
+          />
+        }
+      >
         {resource.thumbnailUrl ? (
           <ResourceThumbnail
             key={resource.thumbnailUrl}
