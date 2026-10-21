@@ -11,13 +11,15 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { ReceiptExportButton } from "../components/ReceiptExportButton";
 import { clearReceipts, listReceipts, type PaymentReceipt } from "../services/receipts";
 import { spacing, type ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
+import type { RootStackParamList } from "../navigation";
 
 /** Receipts store amounts in USDC base units (7 decimals): "12500000" is 1.25 USDC. */
 export function formatUsdc(atomic: string): string {
@@ -29,6 +31,7 @@ export function formatUsdc(atomic: string): string {
 
 export function PurchaseHistoryScreen() {
   const { colors, shared, typography } = useAppTheme();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [receipts, setReceipts] = useState<PaymentReceipt[]>([]);
   const [loading, setLoading] = useState(true);
@@ -172,6 +175,7 @@ export function PurchaseHistoryScreen() {
 
 function ReceiptRow({ receipt }: { receipt: PaymentReceipt }) {
   const { colors, typography } = useAppTheme();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const title = receipt.title.trim() || "Untitled resource";
   const paidOn = new Date(receipt.paidAt).toLocaleString([], {
     dateStyle: "medium",
@@ -183,13 +187,20 @@ function ReceiptRow({ receipt }: { receipt: PaymentReceipt }) {
     openExternalUrl(url).catch(() => Alert.alert("Unable to open explorer"));
   }
 
+  function handlePress() {
+    navigation.navigate("ReceiptDetail", { txHash: receipt.txHash });
+  }
+
   return (
-    <View style={[rowStyles.row, { borderColor: colors.border }]}>
+    <Pressable onPress={handlePress} style={[rowStyles.row, { borderColor: colors.border }]}>
       <Text style={typography.cardTitle}>{title}</Text>
       <Text style={typography.price}>{formatUsdc(receipt.amount)}</Text>
       <Text style={typography.body}>{paidOn}</Text>
       <Pressable
-        onPress={handleOpenExplorer}
+        onPress={(e) => {
+          e.stopPropagation();
+          handleOpenExplorer();
+        }}
         style={rowStyles.link}
         accessibilityRole="link"
         accessibilityLabel={`View transaction ${receipt.txHash} on Stellar Expert`}
@@ -199,7 +210,7 @@ function ReceiptRow({ receipt }: { receipt: PaymentReceipt }) {
           {receipt.txHash}
         </Text>
       </Pressable>
-    </View>
+    </Pressable>
   );
 }
 

@@ -314,3 +314,37 @@ async function resolveResponse(res: Response, fallbackUrl: string): Promise<Acce
   // Binary and unknown content types open in the external browser.
   return { type: "external", url: fallbackUrl };
 }
+
+/** Shape of a server receipt from `GET /payments/:id/receipt`. */
+export interface ServerReceipt {
+  id: string;
+  resourceId: string | null;
+  resourceTitle: string;
+  amount: string;
+  asset: string;
+  network: string;
+  txHash: string;
+  payer: string;
+  paidAt: string;
+  verified: boolean;
+  verificationDetails?: {
+    localTxHashMatch: boolean;
+    localAmountMatch: boolean;
+    localNetworkMatch: boolean;
+  };
+}
+
+/** Fetches a receipt from the server for verification. */
+export async function fetchReceipt(paymentId: string): Promise<ServerReceipt> {
+  const { getApiBaseUrl } = await import("./resources");
+  const { extractApiErrorMessage } = await import("../utils/errorLogger");
+
+  const res = await fetch(`${getApiBaseUrl()}/payments/${encodeURIComponent(paymentId)}/receipt`);
+
+  if (!res.ok) {
+    const message = await extractApiErrorMessage(res, "Failed to fetch receipt");
+    throw new Error(message);
+  }
+
+  return res.json();
+}
