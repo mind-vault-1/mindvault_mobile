@@ -1,4 +1,4 @@
-import { fetchAnalytics, fetchMe, type PublisherAnalytics } from "./publishers";
+import { fetchAnalytics, fetchMe, registerPublisher, type PublisherAnalytics, type RegisterPublisherResponse } from "./publishers";
 import { getApiBaseUrl } from "./resources";
 import { getApiKey } from "../services/secureStorage";
 
@@ -124,5 +124,89 @@ describe("fetchAnalytics", () => {
   it("uses an analytics-specific fallback", async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500, text: async () => "" });
     await expect(fetchAnalytics("key")).rejects.toThrow("Failed to load publisher analytics");
+  });
+});
+
+describe("registerPublisher", () => {
+  const registerResponse: RegisterPublisherResponse = {
+    id: "pub-456",
+    name: "New Publisher",
+    email: "new@example.com",
+    walletAddress: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    apiKey: "sk_live_abcdef123456",
+    createdAt: "2026-10-20T12:00:00Z",
+  };
+
+  it("sends POST /publishers with name, email, and walletAddress", async () => {
+    const fetchMock = mockFetch(registerResponse, 201);
+
+    await expect(
+      registerPublisher({
+        name: "New Publisher",
+        email: "new@example.com",
+        walletAddress: registerResponse.walletAddress,
+      })
+    ).resolves.toEqual(registerResponse);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getApiBaseUrl()}/publishers`,
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "New Publisher",
+          email: "new@example.com",
+          walletAddress: registerResponse.walletAddress,
+        }),
+      })
+    );
+  });
+
+  it("returns the API key in the response (only shown once)", async () => {
+    mockFetch(registerResponse, 201);
+
+    const result = await registerPublisher({
+      name: "Test",
+      email: "test@example.com",
+      walletAddress: profile.walletAddress,
+    });
+
+    expect(result.apiKey).toBe("sk_live_abcdef123456");
+  });
+
+  it("throws on 409 with server message for duplicate email", async () => {
+    mockFetch({ error: "Email already registered" }, 409);
+
+    await expect(
+      registerPublisher({
+        name: "Test",
+        email: "existing@example.com",
+        walletAddress: profile.walletAddress,
+      })
+    ).rejects.toThrow("Email already registered");
+  });
+
+  it("surfaces validation errors from the server", async () => {
+    mockFetch({ error: "Invalid wallet address format" }, 400);
+
+    await expect(
+      registerPublisher({
+        name: "Test",
+        email: "test@example.com",
+        walletAddress: "not-a-valid-address",
+      })
+    ).rejects.toThrow("Invalid wallet address format");
+  });
+
+  it("surfaces server errors for 5xx", async () => {
+    mockFetch({ error: "Internal server error" }, 500);
+
+    await expect(
+      registerPublisher({
+        name: "Test",
+        email: "test@example.com",
+        walletAddress: profile.walletAddress,
+      })
+    ).rejects.toThrow("Internal server error");
   });
 });

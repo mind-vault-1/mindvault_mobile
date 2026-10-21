@@ -65,6 +65,30 @@ jest.mock("../components/RegisterModal", () => {
   };
 });
 
+jest.mock("../components/PublisherSignupSheet", () => {
+  const { Text, Pressable, View } = require("react-native");
+  return {
+    PublisherSignupSheet: ({ visible, onClose, onSuccess }: any) => {
+      if (!visible) return null;
+      return (
+        <View testID="signup-modal">
+          <Text testID="signup-modal-title">Create Publisher Account</Text>
+          <Pressable
+            testID="mock-signup-success-btn"
+            accessibilityLabel="Trigger signup success"
+            onPress={() => onSuccess("sk_live_testkey123")}
+          />
+          <Pressable
+            testID="mock-signup-close-btn"
+            accessibilityLabel="Close signup modal"
+            onPress={onClose}
+          />
+        </View>
+      );
+    },
+  };
+});
+
 jest.mock("../theme/ThemeProvider", () => {
   const colors = {
     primary: "#6366f1",
@@ -347,5 +371,46 @@ describe("PublisherResourcesScreen - Delist", () => {
     expect(await screen.findByText("Forbidden: you do not own this resource")).toBeTruthy();
     expect(screen.getByTestId("delist-modal")).toBeTruthy();
     expect(screen.getByLabelText(`Delist ${res.title}`)).toBeTruthy();
+  });
+});
+
+describe("PublisherResourcesScreen - Publisher Signup", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedGetStoredApiKey.mockResolvedValue(null);
+  });
+
+  it("shows 'Create a publisher account' button when no API key is stored", async () => {
+    const screen = render(<PublisherResourcesScreen />);
+
+    expect(await screen.findByText("Create a publisher account")).toBeTruthy();
+  });
+
+  it("opens PublisherSignupSheet when 'Create a publisher account' is pressed", async () => {
+    const screen = render(<PublisherResourcesScreen />);
+
+    fireEvent.press(await screen.findByText("Create a publisher account"));
+
+    expect(await screen.findByTestId("signup-modal")).toBeTruthy();
+  });
+
+  it("stores API key and loads resources on signup success", async () => {
+    const { storeApiKey } = require("../api/resources");
+    const mockResources = [createResource({ id: "res-1", title: "My Resource" })];
+    mockedFetchPublisherResources.mockResolvedValue(mockResources);
+    storeApiKey.mockResolvedValue(undefined);
+
+    const screen = render(<PublisherResourcesScreen />);
+
+    fireEvent.press(await screen.findByText("Create a publisher account"));
+    fireEvent.press(await screen.findByTestId("mock-signup-success-btn"));
+
+    await waitFor(() => {
+      expect(storeApiKey).toHaveBeenCalledWith("sk_live_testkey123");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("My Resource")).toBeTruthy();
+    });
   });
 });

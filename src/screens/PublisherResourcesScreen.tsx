@@ -31,6 +31,7 @@ import { RegisterModal } from "../components/RegisterModal";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import { TransferOwnershipModal } from "../components/TransferOwnershipModal";
+import { PublisherSignupSheet } from "../components/PublisherSignupSheet";
 import { logError } from "../utils/errorLogger";
 
 type PublisherResourcesNavigation = NativeStackNavigationProp<
@@ -57,6 +58,7 @@ export function PublisherResourcesScreen() {
   const [toast, setToast] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showSignup, setShowSignup] = useState(false);
   /** Issue #66: the resource currently open in the TransferOwnershipModal, or null */
   const [transferResource, setTransferResource] = useState<Resource | null>(null);
   /** Issue #204: the resource currently open in the RegisterModal, or null */
@@ -410,6 +412,16 @@ export function PublisherResourcesScreen() {
     }
   };
 
+  const handleSignupSuccess = useCallback((newApiKey: string) => {
+    setStoredApiKey(newApiKey);
+    setAuthenticated(true);
+    setShowSignup(false);
+    // Load resources with the new key
+    void loadResources(newApiKey).then((loaded) => {
+      if (loaded) setToast("Publisher account created successfully");
+    });
+  }, [loadResources]);
+
   const handleRefresh = async () => {
     if (storedApiKey) {
       await loadResources(storedApiKey, true, search);
@@ -591,6 +603,14 @@ export function PublisherResourcesScreen() {
             </Text>
           </Pressable>
 
+          <Pressable
+            onPress={() => setShowSignup(true)}
+            disabled={loading}
+            style={[shared.button, styles.secondaryButton, loading && styles.disabledButton]}
+          >
+            <Text style={styles.secondaryButtonText}>Create a publisher account</Text>
+          </Pressable>
+
           <Pressable onPress={goToPublicCatalog} style={styles.secondaryButton}>
             <Text style={styles.secondaryButtonText}>Back to Public Catalog</Text>
           </Pressable>
@@ -634,6 +654,12 @@ export function PublisherResourcesScreen() {
           <Text style={styles.toastText}>{toast}</Text>
         </View>
       ) : null}
+
+      <PublisherSignupSheet
+        visible={showSignup}
+        onClose={() => setShowSignup(false)}
+        onSuccess={handleSignupSuccess}
+      />
     </SafeAreaView>
   );
 
