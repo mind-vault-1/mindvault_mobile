@@ -32,6 +32,7 @@ import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import { TransferOwnershipModal } from "../components/TransferOwnershipModal";
 import { PublisherSignupSheet } from "../components/PublisherSignupSheet";
+import { useToast } from "../components/ToastProvider";
 import { logError } from "../utils/errorLogger";
 
 type PublisherResourcesNavigation = NativeStackNavigationProp<
@@ -55,7 +56,7 @@ export function PublisherResourcesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [checkingStoredKey, setCheckingStoredKey] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
   const [authenticated, setAuthenticated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
@@ -232,6 +233,19 @@ export function PublisherResourcesScreen() {
       skeletons: {
         gap: 12,
       },
+      publishButton: {
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        marginBottom: spacing.sm,
+        backgroundColor: colors.primaryMuted,
+        alignItems: "center",
+      },
+      publishButtonText: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: colors.primary,
+      },
       logoutButton: {
         borderRadius: 10,
         paddingHorizontal: 12,
@@ -262,21 +276,6 @@ export function PublisherResourcesScreen() {
         color: colors.textMuted,
         textAlign: "center",
         paddingHorizontal: spacing.md,
-      },
-      toast: {
-        position: "absolute",
-        bottom: spacing.xl,
-        left: spacing.md,
-        right: spacing.md,
-        backgroundColor: colors.text,
-        borderRadius: 12,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
-      },
-      toastText: {
-        color: colors.surface,
-        fontSize: 14,
-        fontWeight: "500",
       },
       modalOverlay: {
         flex: 1,
@@ -314,12 +313,6 @@ export function PublisherResourcesScreen() {
       },
     });
   }, [colors]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 2500);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
   const loadResources = useCallback(
     async (key: string, isRefresh = false, searchTerm?: string) => {
@@ -384,7 +377,7 @@ export function PublisherResourcesScreen() {
       setAuthenticated(true);
       setResources(testData);
       setApiKey("");
-      setToast("API key saved successfully");
+      toast.success("API key saved successfully");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to authenticate";
       setError(message);
@@ -406,7 +399,7 @@ export function PublisherResourcesScreen() {
       setResources([]);
       setSearch("");
       setError(null);
-      setToast("Logged out successfully");
+      toast.success("Logged out successfully");
     } catch {
       setError("Failed to logout");
     }
@@ -420,12 +413,12 @@ export function PublisherResourcesScreen() {
       setAuthenticated(true);
       setShowSignup(false);
       const loaded = await loadResources(normalizedKey);
-      if (loaded) setToast("Publisher account created successfully");
+      if (loaded) toast.success("Publisher account created successfully");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save publisher API key";
       setError(message);
     }
-  }, [loadResources]);
+  }, [loadResources, toast]);
 
   const handleRefresh = async () => {
     if (storedApiKey) {
@@ -442,8 +435,8 @@ export function PublisherResourcesScreen() {
     setResources((prev) =>
       prev.map((r) => (r.id === resourceId ? { ...r, price: newPrice } : r))
     );
-    setToast("Price updated successfully");
-  }, []);
+    toast.success("Price updated successfully");
+  }, [toast]);
 
   /**
    * Issue #66: Open the TransferOwnershipModal for the given resource.
@@ -466,9 +459,9 @@ export function PublisherResourcesScreen() {
         setResources((prev) => prev.filter((r) => r.id !== transferredId));
       }
       setTransferResource(null);
-      setToast("Ownership transferred successfully");
+      toast.success("Ownership transferred successfully");
     },
-    [transferResource]
+    [transferResource, toast]
   );
 
   /**
@@ -499,14 +492,14 @@ export function PublisherResourcesScreen() {
           )
         );
       }
-      setToast(message);
+      toast.success(message);
     },
-    [registerResource]
+    [registerResource, toast]
   );
 
   const handleRegisterError = useCallback((message: string) => {
-    setToast(message);
-  }, []);
+    toast.error(message);
+  }, [toast]);
 
   /**
    * Issue #220: Open the delist confirmation for the given resource.
@@ -536,14 +529,14 @@ export function PublisherResourcesScreen() {
       await delistResource(target.id);
       setResources((prev) => prev.filter((r) => r.id !== target.id));
       setDelistTarget(null);
-      setToast("Resource delisted");
+      toast.success("Resource delisted");
     } catch (err) {
       logError("publisherResources.delist", err);
       setDelistError(err instanceof Error ? err.message : "Failed to delist resource");
     } finally {
       setDelisting(false);
     }
-  }, [delistTarget]);
+  }, [delistTarget, toast]);
 
   const filteredResources = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -654,11 +647,6 @@ export function PublisherResourcesScreen() {
         </View>
       </View>
 
-      {toast ? (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      ) : null}
 
       <PublisherSignupSheet
         visible={showSignup}
@@ -718,6 +706,15 @@ export function PublisherResourcesScreen() {
               </View>
             ) : null}
 
+            <Pressable
+              onPress={() => navigation.navigate("PublishResource")}
+              style={styles.publishButton}
+              accessibilityRole="button"
+              accessibilityLabel="Publish a link"
+            >
+              <Text style={styles.publishButtonText}>Publish a link</Text>
+            </Pressable>
+
             <Pressable onPress={handleLogout} style={styles.logoutButton}>
               <Text style={styles.logoutButtonText}>Logout</Text>
             </Pressable>
@@ -726,7 +723,7 @@ export function PublisherResourcesScreen() {
         renderItem={({ item }) => (
           <ResourceCard
             resource={item}
-            onCopyUrl={setToast}
+            onCopyUrl={toast.info}
             editablePrice={true}
             onPriceUpdated={handlePriceUpdated}
             onTransferOwnership={handleOpenTransfer}
@@ -751,11 +748,6 @@ export function PublisherResourcesScreen() {
         }
       />
 
-      {toast ? (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      ) : null}
 
       {transferResource ? (
         <TransferOwnershipModal

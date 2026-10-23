@@ -2,12 +2,21 @@ import React from "react";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 
 import { PublisherResourcesScreen } from "./PublisherResourcesScreen";
+import { ToastProvider } from "../components/ToastProvider";
 import {
   delistResource,
   fetchPublisherResources,
   getStoredApiKey,
 } from "../api/resources";
 import type { Resource } from "../types";
+
+function renderScreen() {
+  return render(
+    <ToastProvider>
+      <PublisherResourcesScreen />
+    </ToastProvider>
+  );
+}
 
 jest.mock("../api/resources", () => ({
   fetchPublisherResources: jest.fn(),
@@ -24,6 +33,7 @@ jest.mock("../components/SkeletonCard", () => ({
 
 jest.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
 const mockNavigation = {
@@ -209,7 +219,7 @@ describe("PublisherResourcesScreen - Register on-chain", () => {
       resRejectedNone,
     ]);
 
-    const screen = render(<PublisherResourcesScreen />);
+    const screen = renderScreen();
 
     // r1 and r2 must have register button
     const btnR1 = await screen.findByLabelText(`Register ${resVerifiedNone.title} on-chain`);
@@ -237,7 +247,7 @@ describe("PublisherResourcesScreen - Register on-chain", () => {
 
     mockedFetchPublisherResources.mockResolvedValue([res]);
 
-    const screen = render(<PublisherResourcesScreen />);
+    const screen = renderScreen();
 
     const registerBtn = await screen.findByLabelText(`Register ${res.title} on-chain`);
     expect(screen.getByLabelText("On-chain: not on-chain")).toBeTruthy();
@@ -277,7 +287,7 @@ describe("PublisherResourcesScreen - Register on-chain", () => {
 
     mockedFetchPublisherResources.mockResolvedValue([res]);
 
-    const screen = render(<PublisherResourcesScreen />);
+    const screen = renderScreen();
 
     const registerBtn = await screen.findByLabelText(`Register ${res.title} on-chain`);
     fireEvent.press(registerBtn);
@@ -301,7 +311,7 @@ describe("PublisherResourcesScreen - Register on-chain", () => {
 
     mockedFetchPublisherResources.mockResolvedValue([res]);
 
-    const screen = render(<PublisherResourcesScreen />);
+    const screen = renderScreen();
 
     const registerBtn = await screen.findByLabelText(`Register ${res.title} on-chain`);
     fireEvent.press(registerBtn);
@@ -325,7 +335,7 @@ describe("PublisherResourcesScreen - Delist", () => {
     const res = createResource({ id: "res-delist", title: "Old Whitepaper" });
     mockedFetchPublisherResources.mockResolvedValue([res]);
 
-    const screen = render(<PublisherResourcesScreen />);
+    const screen = renderScreen();
 
     fireEvent.press(await screen.findByLabelText(`Delist ${res.title}`));
 
@@ -344,7 +354,7 @@ describe("PublisherResourcesScreen - Delist", () => {
     mockedFetchPublisherResources.mockResolvedValue([res]);
     mockedDelistResource.mockResolvedValue(undefined);
 
-    const screen = render(<PublisherResourcesScreen />);
+    const screen = renderScreen();
 
     fireEvent.press(await screen.findByLabelText(`Delist ${res.title}`));
     fireEvent.press(screen.getByLabelText("Confirm delist"));
@@ -363,7 +373,7 @@ describe("PublisherResourcesScreen - Delist", () => {
       new Error("Forbidden: you do not own this resource")
     );
 
-    const screen = render(<PublisherResourcesScreen />);
+    const screen = renderScreen();
 
     fireEvent.press(await screen.findByLabelText(`Delist ${res.title}`));
     fireEvent.press(screen.getByLabelText("Confirm delist"));
@@ -381,13 +391,13 @@ describe("PublisherResourcesScreen - Publisher Signup", () => {
   });
 
   it("shows 'Create a publisher account' button when no API key is stored", async () => {
-    const screen = render(<PublisherResourcesScreen />);
+    const screen = renderScreen();
 
     expect(await screen.findByText("Create a publisher account")).toBeTruthy();
   });
 
   it("opens PublisherSignupSheet when 'Create a publisher account' is pressed", async () => {
-    const screen = render(<PublisherResourcesScreen />);
+    const screen = renderScreen();
 
     fireEvent.press(await screen.findByText("Create a publisher account"));
 
@@ -400,7 +410,7 @@ describe("PublisherResourcesScreen - Publisher Signup", () => {
     mockedFetchPublisherResources.mockResolvedValue(mockResources);
     storeApiKey.mockResolvedValue(undefined);
 
-    const screen = render(<PublisherResourcesScreen />);
+    const screen = renderScreen();
 
     fireEvent.press(await screen.findByText("Create a publisher account"));
     fireEvent.press(await screen.findByTestId("mock-signup-success-btn"));

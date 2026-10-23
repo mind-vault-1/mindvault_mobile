@@ -24,6 +24,7 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { HomeSections } from "../components/HomeSections";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
+import { useToast } from "../components/ToastProvider";
 import type { RootStackParamList } from "../navigation";
 import {
   clearRecentResources,
@@ -349,22 +350,6 @@ function createStyles(colors: ThemeColors) {
       fontWeight: "700",
       fontSize: 15,
     },
-    toast: {
-      position: "absolute",
-      bottom: spacing.xl,
-      left: spacing.lg,
-      right: spacing.lg,
-      backgroundColor: colors.text,
-      borderRadius: 12,
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-    },
-    toastText: {
-      color: colors.background,
-      textAlign: "center",
-      fontSize: 14,
-      fontWeight: "500",
-    },
     footerContainer: {
       paddingVertical: spacing.md,
       alignItems: "center",
@@ -422,7 +407,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registryFailed, setRegistryFailed] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
   const [recent, setRecent] = useState<RecentResource[]>([]);
@@ -619,12 +604,6 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   useEffect(() => {
     void loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 2500);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
   useEffect(() => {
     // Recently viewed is a shortcut, not data the screen depends on: a failed
@@ -1024,7 +1003,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
             accessibilityLabel={`Open ${item.title}`}
             accessibilityHint="Opens the resource detail"
           >
-            <ResourceCard resource={item} onCopyUrl={setToast} />
+            <ResourceCard resource={item} onCopyUrl={toast.info} />
           </Pressable>
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -1043,11 +1022,6 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         <Text style={styles.fabText}>Scan QR</Text>
       </Pressable>
 
-      {toast ? (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      ) : null}
     </SafeAreaView>
   );
 }

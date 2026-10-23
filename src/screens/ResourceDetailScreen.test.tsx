@@ -9,6 +9,7 @@ import { fetchVerification, type VerificationDetails } from "../api/verification
 import { shareResource } from "../utils/shareResource";
 import { openExternalUrl } from "../utils/stellarExpert";
 import { ResourceDetailScreen } from "./ResourceDetailScreen";
+import { ToastProvider } from "../components/ToastProvider";
 
 jest.mock("../api/resources", () => {
   const actual = jest.requireActual("../api/resources");
@@ -31,6 +32,7 @@ jest.mock("../utils/stellarExpert", () => ({
 }));
 jest.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 jest.mock("../theme/ThemeProvider", () => {
   const colors = new Proxy({}, { get: () => "#000000" });
@@ -71,7 +73,11 @@ const navigation = { setOptions: jest.fn(), goBack: jest.fn() } as any;
 const route = { params: { resourceId: resource.id } } as any;
 
 function renderScreen() {
-  return render(<ResourceDetailScreen route={route} navigation={navigation} />);
+  return render(
+    <ToastProvider>
+      <ResourceDetailScreen route={route} navigation={navigation} />
+    </ToastProvider>
+  );
 }
 
 /** A `GET /resources/:id/verification` response, as the server returns it. */

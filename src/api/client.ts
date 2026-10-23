@@ -19,7 +19,9 @@ export class ApiError extends Error {
   constructor(
     public readonly kind: ApiErrorKind,
     message: string,
-    public readonly status?: number
+    public readonly status?: number,
+    /** Response headers for `http` errors, e.g. a 402's payment challenge. */
+    public readonly headers?: Response["headers"]
   ) {
     super(message);
     this.name = "ApiError";
@@ -93,7 +95,7 @@ async function send<T>(url: string, method: HttpMethod, options: RequestOptions)
         res,
         resolveFallback(options.fallbackMessage, res.status)
       );
-      throw new ApiError("http", message, res.status);
+      throw new ApiError("http", message, res.status, res.headers);
     }
 
     // A 204 No Content response has no body to parse.

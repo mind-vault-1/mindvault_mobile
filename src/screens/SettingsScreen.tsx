@@ -8,7 +8,9 @@ import {
   Alert,
   Modal,
   Share,
+  ActivityIndicator,
 } from "react-native";
+import Constants from "expo-constants";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -22,7 +24,8 @@ import {
   saveApiBaseUrl,
   validateApiBaseUrl,
 } from "../api/apiSettings";
-import { initializeApiBaseUrl } from "../api/resources";
+import { DEFAULT_STELLAR_NETWORK, initializeApiBaseUrl } from "../api/resources";
+import { checkHealth, type ServerHealth } from "../api/health";
 import { collectDiagnostics, formatDiagnostics } from "../services/diagnostics";
 
 export function SettingsScreen() {
@@ -83,6 +86,34 @@ export function SettingsScreen() {
       setIsSaving(false);
     }
   };
+
+  const [health, setHealth] = useState<ServerHealth | null>(null);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+
+  const runHealthCheck = useCallback(async (baseUrl: string) => {
+    setIsCheckingHealth(true);
+    try {
+      setHealth(await checkHealth(baseUrl));
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  }, []);
+
+  // Re-check whenever the saved API URL changes, so About always describes the server in use.
+  useEffect(() => {
+    if (savedUrl) void runHealthCheck(savedUrl);
+  }, [savedUrl, runHealthCheck]);
+
+  const appVersion = Constants.expoConfig?.version ?? "unknown";
+  const serverStatus = isCheckingHealth
+    ? "Checking…"
+    : !health
+      ? "Unknown"
+      : health.status === "up"
+        ? `Up (${health.latencyMs} ms)`
+        : `Down — ${health.error}`;
+  const serverStatusColor =
+    health?.status === "up" ? colors.success : health?.status === "down" ? colors.danger : colors.textMuted;
 
   const isDirty = apiUrl.trim() !== savedUrl;
   const isDefault =
@@ -300,6 +331,54 @@ export function SettingsScreen() {
           </View>
         </Modal>
 
+        <View
+          style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}
+          accessibilityLabel="About"
+        >
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
+            About
+          </Text>
+          {[
+            { label: "App version", value: appVersion, color: colors.text },
+            { label: "Network", value: DEFAULT_STELLAR_NETWORK, color: colors.text },
+            { label: "API URL", value: savedUrl, color: colors.text },
+            { label: "Server status", value: serverStatus, color: serverStatusColor },
+          ].map((row) => (
+            <View
+              key={row.label}
+              style={styles.aboutRow}
+              accessible
+              accessibilityLabel={`${row.label}: ${row.value}`}
+            >
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>{row.label}</Text>
+              <Text
+                style={[styles.infoText, styles.aboutValue, { color: row.color }]}
+                selectable
+              >
+                {row.value}
+              </Text>
+            </View>
+          ))}
+          <TouchableOpacity
+            style={[
+              shared.button,
+              { backgroundColor: colors.primary, marginTop: 12 },
+              isCheckingHealth && styles.disabledButton,
+            ]}
+            onPress={() => void runHealthCheck(savedUrl)}
+            disabled={isCheckingHealth || !savedUrl}
+            accessibilityRole="button"
+            accessibilityLabel="Check server status again"
+            accessibilityState={{ disabled: isCheckingHealth || !savedUrl, busy: isCheckingHealth }}
+          >
+            {isCheckingHealth ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text style={[shared.buttonText, { color: "#ffffff" }]}>Check again</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
         {__DEV__ ? (
           <View style={[styles.infoCard, { backgroundColor: colors.warningBg, marginTop: 16 }]}>
             <Text style={[styles.title, { fontSize: 16, color: colors.warning, marginBottom: 8 }]}>
@@ -397,5 +476,16 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  aboutRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingVertical: 4,
+  },
+  aboutValue: {
+    flexShrink: 1,
+    textAlign: "right",
+    fontWeight: "600",
   },
 });

@@ -124,3 +124,36 @@ describe("diagnostics", () => {
     share.mockRestore();
   });
 });
+
+describe("about section", () => {
+  it("shows the app version, network, API URL and server status", async () => {
+    const fetchMock = setupFetchMock();
+    const screen = await renderSettings();
+
+    expect(screen.getByText("About")).toBeTruthy();
+    expect(screen.getByText("App version")).toBeTruthy();
+    expect(screen.getByText("Network")).toBeTruthy();
+    expect(screen.getByLabelText(`API URL: ${getDefaultApiBaseUrl()}`)).toBeTruthy();
+    expect(await screen.findByText(/^Up \(\d+ ms\)$/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getDefaultApiBaseUrl()}/health`,
+      expect.anything()
+    );
+  });
+
+  it("shows the server as down and re-checks on demand", async () => {
+    const fetchMock = setupFetchMock();
+    fetchMock.mockRejectedValue(new TypeError("Network request failed"));
+    const screen = await renderSettings();
+
+    expect(await screen.findByText("Down — The server could not be reached.")).toBeTruthy();
+
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    fireEvent.press(screen.getByRole("button", { name: "Check server status again" }));
+
+    expect(await screen.findByText(/^Up \(\d+ ms\)$/)).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/health"))
+    ).toHaveLength(2);
+  });
+});

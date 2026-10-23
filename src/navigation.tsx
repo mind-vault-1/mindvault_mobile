@@ -15,6 +15,7 @@ import { PublisherProfileScreen } from "./screens/PublisherProfileScreen";
 import { PublisherAnalyticsScreen } from "./screens/PublisherAnalyticsScreen";
 import { PurchaseHistoryScreen } from "./screens/PurchaseHistoryScreen";
 import { ReceiptDetailScreen } from "./screens/ReceiptDetailScreen";
+import { PublishResourceScreen } from "./screens/PublishResourceScreen";
 
 export type RootStackParamList = {
   Catalog: undefined;
@@ -27,6 +28,7 @@ export type RootStackParamList = {
   PublisherAnalytics: undefined;
   PurchaseHistory: undefined;
   ReceiptDetail: { txHash: string };
+  PublishResource: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -93,6 +95,11 @@ export function RootNavigator() {
         name="ReceiptDetail"
         component={ReceiptDetailScreen}
         options={{ title: "Receipt Detail" }}
+      />
+      <Stack.Screen
+        name="PublishResource"
+        component={PublishResourceScreen}
+        options={{ title: "Publish Link" }}
       />
     </Stack.Navigator>
   );

@@ -11,6 +11,7 @@ import { ThemeProvider, useAppTheme } from "./src/theme/ThemeProvider";
 import { logError } from "./src/utils/errorLogger";
 import { ErrorBoundary } from "./src/components/ErrorBoundary";
 import { OfflineBanner } from "./src/components/OfflineBanner";
+import { ToastProvider } from "./src/components/ToastProvider";
 import { useNetworkStatus } from "./src/hooks/useNetworkStatus";
 
 function AppContent() {
@@ -48,7 +49,9 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <ErrorBoundary>
-          <AppContent />
+          <ToastProvider>
+            <AppContent />
+          </ToastProvider>
         </ErrorBoundary>
       </ThemeProvider>
     </SafeAreaProvider>

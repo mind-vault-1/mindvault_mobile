@@ -22,6 +22,7 @@ import { useAppForeground } from "../hooks/useAppForeground";
 import { ResourceThumbnail } from "../components/ResourceCard";
 import { StatusBadge } from "../components/StatusBadge";
 import { PaywallModal } from "../components/PaywallModal";
+import { useToast } from "../components/ToastProvider";
 import type { RootStackParamList } from "../navigation";
 import type { Resource } from "../types";
 import { getResourceTypeLabel } from "../types";
@@ -127,22 +128,6 @@ function createStyles(colors: ThemeColors) {
       fontSize: 12,
       maxWidth: 220,
     },
-    toast: {
-      position: "absolute",
-      bottom: spacing.xl,
-      left: spacing.lg,
-      right: spacing.lg,
-      backgroundColor: colors.text,
-      borderRadius: 12,
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-    },
-    toastText: {
-      color: colors.background,
-      textAlign: "center",
-      fontSize: 14,
-      fontWeight: "500",
-    },
     verificationSection: {
       borderWidth: 1,
       borderColor: colors.border,
@@ -211,7 +196,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
   const inFlightRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [isTransientError, setIsTransientError] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
   const [paywallVisible, setPaywallVisible] = useState(false);
 
   const [verificationDetails, setVerificationDetails] = useState<VerificationDetails | null>(null);
@@ -293,36 +278,30 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     if (resource) void loadResource(true);
   });
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 2500);
-    return () => clearTimeout(timer);
-  }, [toast]);
-
   async function handleCopy() {
     if (!resource) return;
     await Clipboard.setStringAsync(resource.accessUrl);
-    setToast("Resource URL copied");
+    toast.success("Resource URL copied");
   }
 
   async function handleShare() {
     if (!resource) return;
     const outcome = await shareResource(resource.title, resource.accessUrl);
     if (outcome === "error") {
-      setToast("Unable to share URL");
+      toast.error("Unable to share URL");
     }
   }
 
   function handleOpenOwner() {
     if (!resource) return;
     const url = stellarExpertAccountUrl({ accountId: resource.walletAddress });
-    openExternalUrl(url).catch(() => setToast("Unable to open explorer"));
+    openExternalUrl(url).catch(() => toast.error("Unable to open explorer"));
   }
 
   function handleOpenTx() {
     if (!resource?.onchainTxHash) return;
     const url = stellarExpertTxUrl({ txHash: resource.onchainTxHash });
-    openExternalUrl(url).catch(() => setToast("Unable to open explorer"));
+    openExternalUrl(url).catch(() => toast.error("Unable to open explorer"));
   }
 
   if (loading) {
@@ -600,11 +579,6 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         onClose={() => setPaywallVisible(false)}
       />
 
-      {toast ? (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      ) : null}
     </SafeAreaView>
   );
 }

@@ -185,11 +185,12 @@ export async function fetchRegistryStatus(): Promise<RegistryStatus> {
  *
  * Reads the publisher API key from secure storage, sends it as `x-api-key`,
  * and turns a non-OK response into an `Error` with a user-safe message. The
- * key itself never appears in the thrown message.
+ * key itself never appears in the thrown message. A 402 is rethrown as the
+ * original `ApiError` so the caller can read the x402 challenge headers.
  */
-async function publisherFetch<T>(
+export async function publisherFetch<T>(
   path: string,
-  init: { method: "GET" | "POST" | "DELETE"; body?: unknown },
+  init: { method: "GET" | "POST" | "DELETE"; body?: unknown; headers?: Record<string, string> },
   fallbackMessage: string
 ): Promise<T> {
   const apiKey = await getApiKey();
@@ -203,6 +204,7 @@ async function publisherFetch<T>(
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
+        ...init.headers,
       },
       body: init.body,
       fallbackMessage: (status) =>
@@ -214,6 +216,8 @@ async function publisherFetch<T>(
     if (error.status === 401) {
       throw new Error("Unauthorized: Invalid API key");
     }
+    // A 402 is a payment challenge the caller handles, so keep its headers.
+    if (error.status === 402) throw error;
     // Never let a server that echoes the key leak it into the UI.
     throw new Error(error.message.split(apiKey).join("[redacted]"));
   }
