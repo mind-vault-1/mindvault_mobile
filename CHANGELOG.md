@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/mind-vault-1/mindvault_mobile/compare/v1.1.0...v1.2.0) (2026-10-23)
+
+
+### Features
+
+* detail refresh, biometric API key unlock and architecture docs ([#242](https://github.com/mind-vault-1/mindvault_mobile/issues/242), [#243](https://github.com/mind-vault-1/mindvault_mobile/issues/243), [#244](https://github.com/mind-vault-1/mindvault_mobile/issues/244)) ([#247](https://github.com/mind-vault-1/mindvault_mobile/issues/247)) ([05744b3](https://github.com/mind-vault-1/mindvault_mobile/commit/05744b3301d0c3604dbb9ed1b11ae287de7ccfd3))
+* network status tracking and universal links (iOS/Android) ([#240](https://github.com/mind-vault-1/mindvault_mobile/issues/240)) ([fb2a1e3](https://github.com/mind-vault-1/mindvault_mobile/commit/fb2a1e38f2ef7aa44c936a46784b66099abd504d))
+* publisher analytics, unlock and pay from detail, payment receipts, theme memoisation ([#231](https://github.com/mind-vault-1/mindvault_mobile/issues/231)) ([21a02a4](https://github.com/mind-vault-1/mindvault_mobile/commit/21a02a413385078cc3d3a1cf4fc0d64e220001ae)), closes [#224](https://github.com/mind-vault-1/mindvault_mobile/issues/224) [#225](https://github.com/mind-vault-1/mindvault_mobile/issues/225) [#229](https://github.com/mind-vault-1/mindvault_mobile/issues/229) [#230](https://github.com/mind-vault-1/mindvault_mobile/issues/230)
+* publisher delist, recently viewed resources, shared status badge ([#226](https://github.com/mind-vault-1/mindvault_mobile/issues/226)) ([41a3c05](https://github.com/mind-vault-1/mindvault_mobile/commit/41a3c05c061f27446110ef5c9d1603e4d0349474)), closes [#220](https://github.com/mind-vault-1/mindvault_mobile/issues/220) [#221](https://github.com/mind-vault-1/mindvault_mobile/issues/221) [#222](https://github.com/mind-vault-1/mindvault_mobile/issues/222)
+* purchase history, receipt export, API client and thumbnails ([#239](https://github.com/mind-vault-1/mindvault_mobile/issues/239)) ([646631b](https://github.com/mind-vault-1/mindvault_mobile/commit/646631bc8b68b9e79c4a9d6b9d6e81813ddeba29))
+* real x402 v2 payment client ([#228](https://github.com/mind-vault-1/mindvault_mobile/issues/228)) ([3980780](https://github.com/mind-vault-1/mindvault_mobile/commit/3980780f89a0d48983b5be1feef56c0da6c5d7b2)), closes [#219](https://github.com/mind-vault-1/mindvault_mobile/issues/219)
+
 ## [1.1.0](https://github.com/mind-vault-1/mindvault_mobile/compare/v1.0.0...v1.1.0) (2026-10-19)
 
 
