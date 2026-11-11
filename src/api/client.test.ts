@@ -1,4 +1,5 @@
 import { ApiError, request } from './client';
+import { z } from 'zod';
 
 const URL = 'https://api.example.test/resources';
 
@@ -145,5 +146,23 @@ describe('request', () => {
     controller.abort();
 
     await expect(pending).resolves.toMatchObject({ kind: 'aborted' });
+  });
+
+  it('validates response against schema when provided', async () => {
+    const schema = z.object({ id: z.string(), count: z.number() });
+    useFetch(jest.fn().mockResolvedValue(response({ id: '123', count: 10 })));
+
+    const res = await request(URL, { schema });
+    expect(res.data).toEqual({ id: '123', count: 10 });
+  });
+
+  it('throws a typed validation ApiError when response does not match schema', async () => {
+    const schema = z.object({ id: z.string(), count: z.number() });
+    useFetch(jest.fn().mockResolvedValue(response({ id: '123', count: 'not-a-number' })));
+
+    await expect(request(URL, { schema })).rejects.toMatchObject({
+      kind: 'validation',
+      name: 'ApiError',
+    });
   });
 });
