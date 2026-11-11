@@ -1,4 +1,5 @@
-import { extractApiErrorMessage } from "../utils/errorLogger";
+import { extractApiErrorMessage, logError } from "../utils/errorLogger";
+import type { ZodType, ZodError } from "zod";
 
 /** Requests that take longer than this are aborted and reported as timeouts. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
@@ -12,7 +13,7 @@ const CANCELLED_MESSAGE = "The request was cancelled.";
 
 export type HttpMethod = "GET" | "POST" | "DELETE";
 
-export type ApiErrorKind = "network" | "timeout" | "aborted" | "http";
+export type ApiErrorKind = "network" | "timeout" | "aborted" | "http" | "validation";
 
 /** Every failed request throws this. `status` is only set for `http` errors. */
 export class ApiError extends Error {
@@ -21,7 +22,9 @@ export class ApiError extends Error {
     message: string,
     public readonly status?: number,
     /** Response headers for `http` errors, e.g. a 402's payment challenge. */
-    public readonly headers?: Response["headers"]
+    public readonly headers?: Response["headers"],
+    /** Detailed Zod parsing error if kind is 'validation' */
+    public readonly validationError?: ZodError
   ) {
     super(message);
     this.name = "ApiError";
@@ -31,7 +34,7 @@ export class ApiError extends Error {
 /** A fixed message, or one picked by the HTTP status when the server sends no message. */
 export type FallbackMessage = string | ((status: number) => string);
 
-export interface RequestOptions {
+export interface RequestOptions<T = unknown> {
   method?: HttpMethod;
   headers?: Record<string, string>;
   body?: unknown;
@@ -39,6 +42,8 @@ export interface RequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   fallbackMessage?: FallbackMessage;
+  /** Optional Zod schema used to validate response data at runtime. */
+  schema?: ZodType<T>;
 }
 
 export interface ApiResponse<T> {
@@ -61,7 +66,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function send<T>(url: string, method: HttpMethod, options: RequestOptions): Promise<ApiResponse<T>> {
+async function send<T>(url: string, method: HttpMethod, options: RequestOptions<T>): Promise<ApiResponse<T>> {
   const controller = new AbortController();
   const callerSignal = options.signal;
   let timedOut = false;
@@ -99,12 +104,34 @@ async function send<T>(url: string, method: HttpMethod, options: RequestOptions)
     }
 
     // A 204 No Content response has no body to parse.
-    const data = res.status === 204
+    const rawData = res.status === 204
       ? undefined
       : await res.json().catch((error: unknown) => {
           throw interruption() ?? error;
         });
-    return { data: data as T, status: res.status, headers: res.headers };
+
+    let data: T;
+    if (options.schema && rawData !== undefined) {
+      const parsed = options.schema.safeParse(rawData);
+      if (!parsed.success) {
+        logError("API Validation", parsed.error);
+        const issuesMessage = parsed.error.issues
+          .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+          .join(", ");
+        throw new ApiError(
+          "validation",
+          `Response validation failed: ${issuesMessage}`,
+          res.status,
+          res.headers,
+          parsed.error
+        );
+      }
+      data = parsed.data;
+    } else {
+      data = rawData as T;
+    }
+
+    return { data, status: res.status, headers: res.headers };
   } finally {
     clearTimeout(timer);
     callerSignal?.removeEventListener("abort", cancelFromCaller);
@@ -114,13 +141,13 @@ async function send<T>(url: string, method: HttpMethod, options: RequestOptions)
 /**
  * Sends a request to the MindVault API.
  *
- * Throws an {@link ApiError} for network failures, timeouts, cancellation and
- * non-2xx responses, so callers can branch on `kind` and `status`. GET requests
- * retry network errors and 5xx responses with exponential backoff. Mutations
+ * Throws an {@link ApiError} for network failures, timeouts, cancellation,
+ * non-2xx responses and schema validation errors, so callers can branch on `kind` and `status`.
+ * GET requests retry network errors and 5xx responses with exponential backoff. Mutations
  * (POST, DELETE) are never retried automatically, because a retry could repeat
  * a side effect such as a payment.
  */
-export async function request<T>(url: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
+export async function request<T>(url: string, options: RequestOptions<T> = {}): Promise<ApiResponse<T>> {
   const method = options.method ?? "GET";
   const retries = method === "GET" ? GET_RETRY_LIMIT : 0;
 
