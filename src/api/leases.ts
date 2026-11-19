@@ -34,6 +34,47 @@ export interface LeasePurchaseResult {
   txHash: string;
 }
 
+/** Status of a user's lease for a resource. */
+export interface LeaseStatus {
+  hasActiveLease: boolean;
+  state: "Active" | "Expired" | "None";
+  expiresAt: string | null;
+  tier?: LeaseTier;
+}
+
+/**
+ * Fetches the active lease status for a resource and optional holder address.
+ */
+export async function fetchLeaseStatus(
+  resourceId: string,
+  holder?: string
+): Promise<LeaseStatus> {
+  try {
+    const url = holder
+      ? `${getApiBaseUrl()}/resources/${encodeURIComponent(resourceId)}/lease/status?holder=${encodeURIComponent(holder)}`
+      : `${getApiBaseUrl()}/resources/${encodeURIComponent(resourceId)}/lease/status`;
+    const res = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) {
+      return { hasActiveLease: false, state: "None", expiresAt: null };
+    }
+    const data = (await res.json()) as Partial<LeaseStatus>;
+    const expiresAt = data.expiresAt ?? null;
+    const isExpired = expiresAt ? new Date(expiresAt).getTime() <= Date.now() : false;
+    const state = data.state ?? (expiresAt ? (isExpired ? "Expired" : "Active") : "None");
+    const hasActiveLease = state === "Active";
+    return {
+      hasActiveLease,
+      state,
+      expiresAt,
+      tier: data.tier,
+    };
+  } catch {
+    return { hasActiveLease: false, state: "None", expiresAt: null };
+  }
+}
+
 /** Creates a Soroban contract client for the vault registry. */
 export async function getRegistryClient() {
   const registryContractId =
