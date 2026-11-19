@@ -212,13 +212,17 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
   const [leaseStatus, setLeaseStatus] = useState<LeaseStatus | null>(null);
   const [countdown, setCountdown] = useState<string>("");
 
+  const leaseExpiresAt = leaseStatus?.expiresAt;
+  const leaseState = leaseStatus?.state;
+
   useEffect(() => {
-    if (!leaseStatus?.expiresAt || leaseStatus.state !== "Active") {
+    if (!leaseExpiresAt || leaseState !== "Active") {
       setCountdown("");
       return;
     }
+    const expiresAt = leaseExpiresAt;
     function updateCountdown() {
-      const remainingMs = new Date(leaseStatus!.expiresAt!).getTime() - Date.now();
+      const remainingMs = new Date(expiresAt).getTime() - Date.now();
       if (remainingMs <= 0) {
         setCountdown("Expired");
         setLeaseStatus((prev) => (prev ? { ...prev, hasActiveLease: false, state: "Expired" } : null));
@@ -233,7 +237,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     updateCountdown();
     const timer = setInterval(updateCountdown, 1000);
     return () => clearInterval(timer);
-  }, [leaseStatus?.expiresAt, leaseStatus?.state]);
+  }, [leaseExpiresAt, leaseState]);
 
   const [verificationDetails, setVerificationDetails] = useState<VerificationDetails | null>(null);
   const [verificationLoading, setVerificationLoading] = useState(false);
@@ -424,7 +428,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
           <StatusBadge kind="onchain" status={resource.onchainStatus} />
           {leaseStatus?.state === "Active" && leaseStatus.expiresAt ? (
             <View
-              style={[styles.leaseBadge, { backgroundColor: colors.surfaceHover ?? "#e0f2fe" }]}
+              style={[styles.leaseBadge, { backgroundColor: colors.primaryMuted }]}
               accessibilityRole="text"
               accessibilityLabel={`Active lease. Access until ${new Date(leaseStatus.expiresAt).toLocaleTimeString()}`}
             >

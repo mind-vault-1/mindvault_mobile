@@ -415,7 +415,12 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
       />
       <View style={styles.overlay}>
-        <View style={styles.viewfinder} accessible={true} accessibilityLabel="Camera viewfinder frame" />
+        <View style={styles.viewfinder} accessible={true} accessibilityLabel="Camera viewfinder frame">
+          <View style={[styles.corner, styles.cornerTopLeft]} />
+          <View style={[styles.corner, styles.cornerTopRight]} />
+          <View style={[styles.corner, styles.cornerBottomLeft]} />
+          <View style={[styles.corner, styles.cornerBottomRight]} />
+        </View>
         <Text style={styles.hint} accessibilityLiveRegion="polite">
           {scanError ? "" : "Point at a QR code"}
         </Text>

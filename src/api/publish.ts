@@ -151,20 +151,20 @@ export async function fetchPublishStatus(resourceId: string): Promise<PublishSta
   try {
     const resource = await publisherFetch<Resource>(
       `/resources/${encodeURIComponent(resourceId)}`,
-      {},
+      { method: "GET" },
       "Failed to check resource publish status"
     );
 
-    if (resource.onchainStatus === "confirmed" || resource.onchainTxHash) {
+    if (resource.onchainStatus === "registered" || resource.onchainTxHash) {
       return { status: "on-chain", verified: true, txHash: resource.onchainTxHash };
     }
-    if (resource.verificationStatus === "failed" || resource.onchainStatus === "failed") {
+    if (resource.verificationStatus === "rejected" || resource.onchainStatus === "failed") {
       return { status: "rejected", verified: false, error: "Verification or sync rejected" };
     }
     if (resource.verificationStatus === "verified") {
       return { status: "verified", verified: true };
     }
-    if (resource.verificationStatus === "in_progress") {
+    if (resource.verificationStatus === "pending" || resource.onchainStatus === "pending") {
       return { status: "verifying" };
     }
     return { status: "submitted" };
@@ -191,7 +191,7 @@ export async function pollPublishStatus(
     if (isCancelled()) break;
     onStatus(current);
 
-    if (current.status === "on-chain" || current.status === "rejected") {
+    if (current.status === "on-chain" || current.status === "rejected" || isCancelled()) {
       break;
     }
 

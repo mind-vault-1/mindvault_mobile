@@ -213,7 +213,7 @@ describe("publishLink", () => {
 describe("fetchPublishStatus and pollPublishStatus", () => {
   it("fetches resource publish status across states", async () => {
     fetchMock.mockResolvedValueOnce(
-      mockResponse(200, { ...createdResource, verificationStatus: "verified", onchainStatus: "confirmed" })
+      mockResponse(200, { ...createdResource, verificationStatus: "verified", onchainStatus: "registered" })
     );
     const status = await fetchPublishStatus("res-1");
     expect(status.status).toBe("on-chain");
@@ -222,8 +222,8 @@ describe("fetchPublishStatus and pollPublishStatus", () => {
   it("polls with backoff until on-chain terminal state", async () => {
     jest.useFakeTimers();
     fetchMock
-      .mockResolvedValueOnce(mockResponse(200, { ...createdResource, verificationStatus: "in_progress" }))
-      .mockResolvedValueOnce(mockResponse(200, { ...createdResource, verificationStatus: "verified", onchainStatus: "confirmed" }));
+      .mockResolvedValueOnce(mockResponse(200, { ...createdResource, verificationStatus: "pending" }))
+      .mockResolvedValueOnce(mockResponse(200, { ...createdResource, verificationStatus: "verified", onchainStatus: "registered" }));
 
     const statuses: string[] = [];
     let cancelled = false;
@@ -235,13 +235,31 @@ describe("fetchPublishStatus and pollPublishStatus", () => {
       100
     );
 
-    // Run pending promises and advance timers
-    await Promise.resolve();
-    jest.advanceTimersByTime(150);
-    await Promise.resolve();
+    await jest.advanceTimersByTimeAsync(150);
     await pollPromise;
 
     expect(statuses).toEqual(["verifying", "on-chain"]);
     jest.useRealTimers();
+  });
+
+  it("stops polling when cancelled", async () => {
+    fetchMock.mockResolvedValue(
+      mockResponse(200, { ...createdResource, verificationStatus: "pending" })
+    );
+    let cancelled = false;
+    const statuses: string[] = [];
+
+    await pollPublishStatus(
+      "res-1",
+      (s) => {
+        statuses.push(s.status);
+        cancelled = true;
+      },
+      () => cancelled,
+      100
+    );
+
+    expect(statuses).toEqual(["verifying"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
