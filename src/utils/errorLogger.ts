@@ -3,38 +3,23 @@
  *
  * Normalizes any thrown value into a `{ message, stack }` shape and logs it to
  * the console in development only. No third-party services are contacted.
+ * Every message, stack, context and object passes through the shared
+ * `redact()` helper before it is persisted or displayed.
  */
+
+import { isSensitiveKey, redact } from "./redact";
 
 export interface NormalizedError {
   message: string;
   stack?: string;
 }
 
-const SENSITIVE_KEY_PATTERN =
-  /(api[-_ ]?key|authorization|bearer|password|private[-_ ]?key|secret(?:[-_ ]?seed)?|seed|token|xdr|hmac|signature)/i;
-
 const MESSAGE_KEYS = new Set(["message", "error", "detail", "title", "description"]);
-
-function redactSensitiveValues(message: string): string {
-  const authorizationRedacted = message.replace(
-    /\b(authorization\s*[:=]\s*)(?:(?:basic|bearer)\s+)?(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
-    "$1[redacted]"
-  );
-
-  return authorizationRedacted
-    .replace(/\bS[A-Z2-7]{55}\b/g, "[redacted]")
-    .replace(/\b(?:pk|sk)_(?:live|test)_[A-Za-z0-9._~-]+\b/gi, "[redacted]")
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi, "Bearer [redacted]")
-    .replace(
-      /\b(api[-_ ]?key|authorization|password|private[-_ ]?key|secret(?:[-_ ]?seed)?|seed|token|xdr|hmac(?:[-_ ]?signature)?|(?:x-[\w-]+-)?signature)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
-      "$1: [redacted]"
-    );
-}
 
 function cleanMessage(message: string): string | null {
   const trimmed = message.trim();
   if (!trimmed) return null;
-  return redactSensitiveValues(trimmed);
+  return redact(trimmed);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -57,7 +42,7 @@ function collectMessages(value: unknown, parentKey?: string): string[] {
   const nestedMessages: string[] = [];
 
   for (const [key, nestedValue] of Object.entries(value)) {
-    if (SENSITIVE_KEY_PATTERN.test(key)) {
+    if (isSensitiveKey(key)) {
       continue;
     }
 
@@ -129,22 +114,20 @@ export async function extractApiErrorMessage(
 export function normalizeError(error: unknown): NormalizedError {
   if (error instanceof Error) {
     return {
-      message: redactSensitiveValues(error.message),
-      stack: error.stack ? redactSensitiveValues(error.stack) : undefined,
+      message: redact(error.message),
+      stack: error.stack ? redact(error.stack) : undefined,
     };
   }
 
   if (typeof error === "string") {
-    return { message: redactSensitiveValues(error) };
+    return { message: redact(error) };
   }
 
   try {
-    const serialized = JSON.stringify(error, (key, value: unknown) =>
-      SENSITIVE_KEY_PATTERN.test(key) ? "[redacted]" : value
-    );
-    return { message: redactSensitiveValues(serialized ?? String(error)) };
+    const serialized = JSON.stringify(redact(error));
+    return { message: redact(serialized ?? String(error)) };
   } catch {
-    return { message: redactSensitiveValues(String(error)) };
+    return { message: redact(String(error)) };
   }
 }
 
@@ -162,7 +145,7 @@ const MAX_LOG_ENTRIES = 100;
 
 function addToErrorLog(context: string, error: NormalizedError): void {
   errorLog.push({
-    context: redactSensitiveValues(context),
+    context: redact(context),
     error,
     timestamp: new Date().toISOString(),
   });
@@ -179,7 +162,7 @@ function addToErrorLog(context: string, error: NormalizedError): void {
  */
 export function logError(context: string, error: unknown): NormalizedError {
   const normalized = normalizeError(error);
-  const safeContext = redactSensitiveValues(context);
+  const safeContext = redact(context);
 
   addToErrorLog(safeContext, normalized);
 
