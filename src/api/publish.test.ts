@@ -4,6 +4,8 @@ import { getApiKey } from "../services/secureStorage";
 import { PAYMENT_SIGNATURE_HEADER } from "./payment";
 import {
   atomicToDisplay,
+  fetchPublishStatus,
+  pollPublishStatus,
   publishLink,
   validatePublishLink,
   type PublishLinkInput,
@@ -205,5 +207,41 @@ describe("publishLink", () => {
   it("surfaces server validation errors", async () => {
     fetchMock.mockResolvedValue(mockResponse(400, { error: "URL is not reachable" }));
     await expect(publishLink(validInput)).rejects.toThrow("URL is not reachable");
+  });
+});
+
+describe("fetchPublishStatus and pollPublishStatus", () => {
+  it("fetches resource publish status across states", async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(200, { ...createdResource, verificationStatus: "verified", onchainStatus: "confirmed" })
+    );
+    const status = await fetchPublishStatus("res-1");
+    expect(status.status).toBe("on-chain");
+  });
+
+  it("polls with backoff until on-chain terminal state", async () => {
+    jest.useFakeTimers();
+    fetchMock
+      .mockResolvedValueOnce(mockResponse(200, { ...createdResource, verificationStatus: "in_progress" }))
+      .mockResolvedValueOnce(mockResponse(200, { ...createdResource, verificationStatus: "verified", onchainStatus: "confirmed" }));
+
+    const statuses: string[] = [];
+    let cancelled = false;
+
+    const pollPromise = pollPublishStatus(
+      "res-1",
+      (s) => statuses.push(s.status),
+      () => cancelled,
+      100
+    );
+
+    // Run pending promises and advance timers
+    await Promise.resolve();
+    jest.advanceTimersByTime(150);
+    await Promise.resolve();
+    await pollPromise;
+
+    expect(statuses).toEqual(["verifying", "on-chain"]);
+    jest.useRealTimers();
   });
 });
