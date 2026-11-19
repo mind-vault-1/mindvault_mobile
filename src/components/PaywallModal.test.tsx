@@ -69,7 +69,7 @@ it("shows challenge, signing and settlement progress and then text content", asy
   expect(mockPrepare).toHaveBeenCalledWith(props.accessUrl, props.price);
   await act(async () => { prepare.resolve({ type: "payment", challenge }); });
   fireEvent.changeText(screen.getByLabelText("Stellar secret key"), "S-test-secret");
-  fireEvent.press(screen.getByRole("button", { name: "Sign" }));
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Sign" })); });
   expect(screen.getByText("Signing payment…")).toBeTruthy();
   await act(async () => { sign.resolve("signed-payment-xdr"); });
   expect(screen.getByText("Settling payment…")).toBeTruthy();
@@ -158,7 +158,7 @@ it("closes the key sheet on cancel and never settles a signature completed after
   expect(screen.queryByLabelText("Stellar secret key")).toBeNull();
   fireEvent.press(screen.getByText("Pay & Access"));
   fireEvent.changeText(await screen.findByLabelText("Stellar secret key"), "S-test-secret");
-  fireEvent.press(screen.getByRole("button", { name: "Sign" }));
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Sign" })); });
   fireEvent.press(screen.getByLabelText("Close payment"));
   screen.rerender(<PaywallModal {...props} visible={false} />);
   await act(async () => { pending.resolve("late-signature"); });

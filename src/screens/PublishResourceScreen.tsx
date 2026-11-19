@@ -555,6 +555,7 @@ export function PublishResourceScreen() {
         <SignTransactionSheet
           visible
           unsignedXdr=""
+          action="publish this resource"
           sign={(secret) =>
             signPaymentTransaction(
               fee.challenge,

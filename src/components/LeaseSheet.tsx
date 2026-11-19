@@ -452,6 +452,7 @@ export function LeaseSheet({
           visible
           unsignedXdr=""
           networkPassphrase={DEFAULT_NETWORK_PASSPHRASE}
+          action="lease this resource"
           sign={async (secret) => {
             if (!isActive(signingRun)) throw new Error("Lease purchase cancelled.");
             try {

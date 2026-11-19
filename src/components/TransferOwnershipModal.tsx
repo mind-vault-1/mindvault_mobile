@@ -266,6 +266,7 @@ export function TransferOwnershipModal({
         visible={visible && pendingTransaction !== null}
         unsignedXdr={pendingTransaction?.unsignedXdr ?? ""}
         networkPassphrase={pendingTransaction?.networkPassphrase}
+        action="transfer ownership of this resource"
         onCancel={cancelSigning}
         onSigned={submitSigned}
       />
