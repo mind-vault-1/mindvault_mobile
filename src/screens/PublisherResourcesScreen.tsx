@@ -33,6 +33,8 @@ import { SkeletonCard } from "../components/SkeletonCard";
 import { TransferOwnershipModal } from "../components/TransferOwnershipModal";
 import { PublisherSignupSheet } from "../components/PublisherSignupSheet";
 import { useToast } from "../components/ToastProvider";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { enqueueMutation } from "../services/mutationQueue";
 import { logError } from "../utils/errorLogger";
 
 type PublisherResourcesNavigation = NativeStackNavigationProp<
@@ -57,6 +59,7 @@ export function PublisherResourcesScreen() {
   const [checkingStoredKey, setCheckingStoredKey] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
+  const { isOffline } = useNetworkStatus();
   const [authenticated, setAuthenticated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
@@ -522,6 +525,18 @@ export function PublisherResourcesScreen() {
     const target = delistTarget;
     if (!target) return;
 
+    if (isOffline) {
+      // Queued offline — no spinner, just a Queued confirmation.
+      await enqueueMutation({
+        kind: "delist",
+        payload: { resourceId: target.id, title: target.title },
+        idempotencyKey: `delist:${target.id}`,
+      });
+      setDelistTarget(null);
+      toast.info("Queued — delist will complete when you're back online");
+      return;
+    }
+
     setDelisting(true);
     setDelistError(null);
 
@@ -536,7 +551,7 @@ export function PublisherResourcesScreen() {
     } finally {
       setDelisting(false);
     }
-  }, [delistTarget, toast]);
+  }, [delistTarget, isOffline, toast]);
 
   const filteredResources = useMemo(() => {
     const query = search.trim().toLowerCase();

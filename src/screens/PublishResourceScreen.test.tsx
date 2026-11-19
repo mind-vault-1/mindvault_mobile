@@ -1,10 +1,13 @@
 import * as Clipboard from "expo-clipboard";
 import React from "react";
+import { ActivityIndicator } from "react-native";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 import { publishLink } from "../api/publish";
 import { signPaymentTransaction } from "../api/payment";
 import { ToastProvider } from "../components/ToastProvider";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { enqueueMutation, retryMutation } from "../services/mutationQueue";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { PublishResourceScreen } from "./PublishResourceScreen";
 
@@ -27,6 +30,12 @@ jest.mock("../api/payment", () => ({
   signPaymentTransaction: jest.fn(),
   sorobanRpcUrl: jest.fn(() => "https://rpc.example.com"),
 }));
+jest.mock("../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn() }));
+jest.mock("../services/mutationQueue", () => ({
+  enqueueMutation: jest.fn(),
+  retryMutation: jest.fn(),
+  subscribeMutations: jest.fn(() => () => {}),
+}));
 
 // The real sheet is covered by its own tests; this stub signs with a fixed secret.
 jest.mock("../components/SignTransactionSheet", () => {
@@ -48,6 +57,9 @@ jest.mock("../components/SignTransactionSheet", () => {
 
 const mockedPublishLink = publishLink as jest.MockedFunction<typeof publishLink>;
 const mockedSign = signPaymentTransaction as jest.MockedFunction<typeof signPaymentTransaction>;
+const mockedUseNetworkStatus = useNetworkStatus as jest.MockedFunction<typeof useNetworkStatus>;
+const mockedEnqueueMutation = enqueueMutation as jest.MockedFunction<typeof enqueueMutation>;
+const mockedRetryMutation = retryMutation as jest.MockedFunction<typeof retryMutation>;
 
 const resource = {
   id: "res-1",
@@ -96,6 +108,7 @@ function fillForm(screen: Awaited<ReturnType<typeof renderScreen>>) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockedUseNetworkStatus.mockReturnValue({ isOffline: false });
 });
 
 it("shows validation errors and does not submit an invalid form", async () => {
@@ -171,4 +184,56 @@ it("shows a server error and keeps the form", async () => {
 
   expect(await screen.findByText("Unauthorized: Invalid API key")).toBeTruthy();
   expect(screen.getByDisplayValue("Stellar handbook")).toBeTruthy();
+});
+
+it("queues the publish when offline and shows Queued without a spinner", async () => {
+  mockedUseNetworkStatus.mockReturnValue({ isOffline: true });
+  mockedEnqueueMutation.mockResolvedValue({
+    id: "mut_1",
+    kind: "publish",
+    payload: { input: { title: "Stellar handbook", url: "https://example.com/handbook", price: "1.5", description: "A guide" }, title: "Stellar handbook" },
+    idempotencyKey: "publish|Stellar handbook|https://example.com/handbook|1.5|A guide",
+    enqueuedAt: 1,
+    attempts: 0,
+    status: "pending",
+  });
+  const screen = await renderScreen();
+  fillForm(screen);
+
+  fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+
+  expect(
+    await screen.findByText("Saved on this device. It will be published automatically when you're back online.")
+  ).toBeTruthy();
+  expect(screen.getByText("Queued")).toBeTruthy();
+  expect(mockedPublishLink).not.toHaveBeenCalled();
+  expect(mockedEnqueueMutation).toHaveBeenCalledWith(
+    expect.objectContaining({
+      kind: "publish",
+      idempotencyKey: "publish|Stellar handbook|https://example.com/handbook|1.5|A guide",
+    })
+  );
+  // No spinner anywhere in the Queued state.
+  expect(screen.UNSAFE_queryAllByType(ActivityIndicator)).toHaveLength(0);
+});
+
+it("keeps a permanently failed queued publish visible with a retry action", async () => {
+  mockedUseNetworkStatus.mockReturnValue({ isOffline: true });
+  mockedEnqueueMutation.mockResolvedValue({
+    id: "mut_2",
+    kind: "publish",
+    payload: { input: { title: "Stellar handbook", url: "https://example.com/handbook", price: "1.5", description: "A guide" }, title: "Stellar handbook" },
+    idempotencyKey: "publish|Stellar handbook|https://example.com/handbook|1.5|A guide",
+    enqueuedAt: 1,
+    attempts: 1,
+    status: "failed",
+    lastError: "Server rejected the title.",
+  });
+  const screen = await renderScreen();
+  fillForm(screen);
+  fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+
+  expect(await screen.findByText("Server rejected the title.")).toBeTruthy();
+  fireEvent.press(screen.getByRole("button", { name: "Retry queued publish" }));
+  expect(mockedRetryMutation).toHaveBeenCalledWith("mut_2");
 });

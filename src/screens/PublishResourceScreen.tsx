@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -25,7 +25,14 @@ import {
 } from "../api/publish";
 import { SignTransactionSheet } from "../components/SignTransactionSheet";
 import { useToast } from "../components/ToastProvider";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import type { RootStackParamList } from "../navigation";
+import {
+  enqueueMutation,
+  retryMutation,
+  subscribeMutations,
+  type QueuedMutation,
+} from "../services/mutationQueue";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
@@ -157,6 +164,7 @@ export function PublishResourceScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const navigation = useNavigation<Navigation>();
   const toast = useToast();
+  const { isOffline } = useNetworkStatus();
 
   const [form, setForm] = useState<PublishLinkInput>(EMPTY_FORM);
   const [errors, setErrors] = useState<PublishLinkErrors>({});
@@ -166,6 +174,27 @@ export function PublishResourceScreen() {
   const [signing, setSigning] = useState(false);
   const [published, setPublished] = useState<Resource | null>(null);
   const [timelineStatus, setTimelineStatus] = useState<PublishStatus>({ status: "submitted" });
+  const [queued, setQueued] = useState<QueuedMutation | null>(null);
+  const [queuedDone, setQueuedDone] = useState(false);
+  const queuedRef = useRef<QueuedMutation | null>(null);
+
+  // Keep the Queued card in sync with the offline queue (retry status, replay).
+  useEffect(() => {
+    return subscribeMutations((mutations) => {
+      const current = queuedRef.current;
+      if (!current) return;
+      const updated = mutations.find((entry) => entry.id === current.id);
+      if (updated) {
+        queuedRef.current = updated;
+        setQueued(updated);
+      } else {
+        // The queue removes entries once they replay successfully.
+        queuedRef.current = null;
+        setQueued(null);
+        setQueuedDone(true);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (!published) return;
@@ -190,9 +219,31 @@ export function PublishResourceScreen() {
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
+  function publishIdempotencyKey(): string {
+    return [
+      "publish",
+      form.title.trim(),
+      form.url.trim(),
+      form.price.trim(),
+      form.description.trim(),
+    ].join("|");
+  }
+
   async function submit(payment?: { challenge: PaymentChallenge; transaction: string }) {
-    setSubmitting(true);
     setSubmitError(null);
+    if (isOffline) {
+      // Offline: persist the action — the UI shows "Queued", never a spinner.
+      const entry = await enqueueMutation({
+        kind: "publish",
+        payload: { input: form, payment, title: form.title.trim() },
+        idempotencyKey: publishIdempotencyKey(),
+      });
+      queuedRef.current = entry;
+      setQueued(entry);
+      setQueuedDone(false);
+      return;
+    }
+    setSubmitting(true);
     try {
       const result = await publishLink(form, payment);
       if (result.type === "payment") {
@@ -228,6 +279,72 @@ export function PublishResourceScreen() {
     setPublished(null);
     setSubmitError(null);
     setTimelineStatus({ status: "submitted" });
+    queuedRef.current = null;
+    setQueued(null);
+    setQueuedDone(false);
+  }
+
+  async function handleRetry() {
+    const entry = queuedRef.current;
+    if (!entry) return;
+    await retryMutation(entry.id);
+  }
+
+  if (queued) {
+    return (
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.card} accessibilityLabel="Queued publish">
+          <Text style={styles.muted}>Queued</Text>
+          <Text style={styles.cardTitle}>{form.title}</Text>
+          <Text style={styles.muted}>
+            Saved on this device. It will be published automatically when you're back online.
+          </Text>
+          {queued.status === "failed" ? (
+            <>
+              <Text accessibilityRole="alert" style={styles.banner}>
+                {queued.lastError ?? "Publish failed."}
+              </Text>
+              <Pressable
+                style={styles.button}
+                onPress={() => void handleRetry()}
+                accessibilityRole="button"
+                accessibilityLabel="Retry queued publish"
+              >
+                <Text style={styles.buttonText}>Retry</Text>
+              </Pressable>
+            </>
+          ) : null}
+        </View>
+        <Pressable
+          style={[styles.button, styles.secondary]}
+          onPress={reset}
+          accessibilityRole="button"
+          accessibilityLabel="Publish another"
+        >
+          <Text style={styles.secondaryText}>Publish another</Text>
+        </Pressable>
+      </ScrollView>
+    );
+  }
+
+  if (queuedDone && !published) {
+    return (
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.card} accessibilityLabel="Published resource">
+          <Text style={styles.muted}>Published</Text>
+          <Text style={styles.cardTitle}>{form.title}</Text>
+          <Text style={styles.muted}>Published from your queued action.</Text>
+        </View>
+        <Pressable
+          style={[styles.button, styles.secondary]}
+          onPress={reset}
+          accessibilityRole="button"
+          accessibilityLabel="Publish another"
+        >
+          <Text style={styles.secondaryText}>Publish another</Text>
+        </Pressable>
+      </ScrollView>
+    );
   }
 
   if (published) {

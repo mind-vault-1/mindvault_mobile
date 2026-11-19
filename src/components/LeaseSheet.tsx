@@ -14,6 +14,8 @@ import { SignTransactionSheet } from "./SignTransactionSheet";
 import { spacing } from "../theme";
 import { signTransactionXdr, DEFAULT_NETWORK_PASSPHRASE } from "../api/resources";
 import { buyLease, quoteLease, type LeaseTier, type LeaseQuote, leaseTierLabel, leaseTierSeconds } from "../api/leases";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { enqueueMutation } from "../services/mutationQueue";
 import { saveReceipt } from "../services/receipts";
 import type { Resource } from "../types";
 
@@ -25,7 +27,7 @@ interface LeaseSheetProps {
   onLeasePurchased: (result: { tier: LeaseTier; txHash: string }) => void;
 }
 
-type Phase = "select" | "quoting" | "confirm" | "signing" | "result" | "error";
+type Phase = "select" | "quoting" | "confirm" | "signing" | "queued" | "result" | "error";
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
@@ -193,6 +195,7 @@ export function LeaseSheet({
   const [quote, setQuote] = useState<LeaseQuote | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [result, setResult] = useState<{ tier: LeaseTier; txHash: string } | null>(null);
+  const { isOffline } = useNetworkStatus();
 
   const flow = useRef(0);
   const busy = useRef(false);
@@ -226,12 +229,36 @@ export function LeaseSheet({
     setPhase("error");
   }
 
+  async function enqueueLease(tier: LeaseTier) {
+    const run = ++flow.current;
+    busy.current = true;
+    try {
+      await enqueueMutation({
+        kind: "lease",
+        payload: { resourceId: resource.id, tier, title: resource.title },
+        idempotencyKey: `lease:${resource.id}:${tier}`,
+      });
+      if (!isActive(run)) return;
+      // Queued offline — no spinner, just the Queued state.
+      setPhase("queued");
+    } catch (err) {
+      showError(err, run);
+    } finally {
+      if (isActive(run)) busy.current = false;
+    }
+  }
+
   async function handleTierSelect(tier: LeaseTier) {
     if (busy.current) return;
     setSelectedTier(tier);
-    setPhase("quoting");
     setErrorMsg(null);
 
+    if (isOffline) {
+      await enqueueLease(tier);
+      return;
+    }
+
+    setPhase("quoting");
     const run = ++flow.current;
     busy.current = true;
 
@@ -249,6 +276,10 @@ export function LeaseSheet({
 
   async function handleConfirm() {
     if (!selectedTier || !quote || busy.current) return;
+    if (isOffline) {
+      await enqueueLease(selectedTier);
+      return;
+    }
     flow.current += 1;
     busy.current = true;
     setErrorMsg(null);
@@ -345,6 +376,25 @@ export function LeaseSheet({
                   style={[shared.button, shared.primaryButton, styles.actionBtn]}
                 >
                   <Text style={[shared.buttonText, shared.primaryButtonText]}>Confirm & Pay</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {phase === "queued" && (
+              <View style={styles.body}>
+                <Text style={typography.body} accessibilityLiveRegion="polite">
+                  Queued
+                </Text>
+                <Text style={styles.hint}>
+                  This lease is saved on this device and will be processed when you're back
+                  online.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={close}
+                  style={[shared.button, shared.primaryButton, styles.actionBtn]}
+                >
+                  <Text style={[shared.buttonText, shared.primaryButtonText]}>Done</Text>
                 </Pressable>
               </View>
             )}
