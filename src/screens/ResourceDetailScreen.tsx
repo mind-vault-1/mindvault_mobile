@@ -13,6 +13,7 @@ import * as Clipboard from "expo-clipboard";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { fetchResource, ResourceFetchError } from "../api/resources";
+import { fetchLeaseStatus, type LeaseStatus } from "../api/leases";
 import {
   fetchVerification,
   formatConfidence,
@@ -87,6 +88,16 @@ function createStyles(colors: ThemeColors) {
       flexDirection: "row",
       flexWrap: "wrap",
       gap: 6,
+    },
+    leaseBadge: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+      borderRadius: 8,
+      alignSelf: "flex-start",
+    },
+    leaseBadgeText: {
+      fontSize: 13,
+      fontWeight: "600",
     },
     infoRow: {
       flexDirection: "row",
@@ -198,6 +209,35 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
   const [isTransientError, setIsTransientError] = useState(false);
   const toast = useToast();
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const [leaseStatus, setLeaseStatus] = useState<LeaseStatus | null>(null);
+  const [countdown, setCountdown] = useState<string>("");
+
+  const leaseExpiresAt = leaseStatus?.expiresAt;
+  const leaseState = leaseStatus?.state;
+
+  useEffect(() => {
+    if (!leaseExpiresAt || leaseState !== "Active") {
+      setCountdown("");
+      return;
+    }
+    const expiresAt = leaseExpiresAt;
+    function updateCountdown() {
+      const remainingMs = new Date(expiresAt).getTime() - Date.now();
+      if (remainingMs <= 0) {
+        setCountdown("Expired");
+        setLeaseStatus((prev) => (prev ? { ...prev, hasActiveLease: false, state: "Expired" } : null));
+        return;
+      }
+      const totalSec = Math.floor(remainingMs / 1000);
+      const hours = Math.floor(totalSec / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = totalSec % 60;
+      setCountdown(hours > 0 ? `${hours}h ${mins}m` : `${mins}m ${secs}s`);
+    }
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, [leaseExpiresAt, leaseState]);
 
   const [verificationDetails, setVerificationDetails] = useState<VerificationDetails | null>(null);
   const [verificationLoading, setVerificationLoading] = useState(false);
@@ -239,6 +279,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
       try {
         const data = await fetchResource(resourceId);
         setResource(data);
+        void fetchLeaseStatus(resourceId).then(setLeaseStatus).catch(() => {});
         setError(null);
         setIsTransientError(false);
         navigation.setOptions({ title: data.title });
@@ -385,20 +426,58 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         <View style={styles.badges}>
           <StatusBadge kind="verification" status={resource.verificationStatus} />
           <StatusBadge kind="onchain" status={resource.onchainStatus} />
+          {leaseStatus?.state === "Active" && leaseStatus.expiresAt ? (
+            <View
+              style={[styles.leaseBadge, { backgroundColor: colors.primaryMuted }]}
+              accessibilityRole="text"
+              accessibilityLabel={`Active lease. Access until ${new Date(leaseStatus.expiresAt).toLocaleTimeString()}`}
+            >
+              <Text style={[styles.leaseBadgeText, { color: colors.primary }]}>
+                Access until {new Date(leaseStatus.expiresAt).toLocaleTimeString()} {countdown ? `(${countdown})` : ""}
+              </Text>
+            </View>
+          ) : leaseStatus?.state === "Expired" ? (
+            <View
+              style={[styles.leaseBadge, { backgroundColor: colors.dangerBg ?? "#fee2e2" }]}
+              accessibilityRole="text"
+              accessibilityLabel="Lease expired"
+            >
+              <Text style={[styles.leaseBadgeText, { color: colors.danger }]}>
+                Lease expired
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <Text style={[typography.price, styles.price]}>
           {resource.price} USDC
         </Text>
 
-        <Pressable
-          style={[shared.button, shared.primaryButton, styles.actionButton]}
-          accessibilityRole="button"
-          accessibilityLabel={`Unlock for ${resource.price} USDC`}
-          onPress={() => setPaywallVisible(true)}
-        >
-          <Text style={[shared.buttonText, shared.primaryButtonText]}>Unlock for {resource.price} USDC</Text>
-        </Pressable>
+        {leaseStatus?.hasActiveLease ? (
+          <Pressable
+            style={[shared.button, shared.primaryButton, styles.actionButton]}
+            accessibilityRole="button"
+            accessibilityLabel="Open resource"
+            onPress={() => {
+              if (resource.accessUrl) {
+                void openExternalUrl(resource.accessUrl);
+              } else {
+                toast.info("Resource is unlocked and active");
+              }
+            }}
+          >
+            <Text style={[shared.buttonText, shared.primaryButtonText]}>Open</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            style={[shared.button, shared.primaryButton, styles.actionButton]}
+            accessibilityRole="button"
+            accessibilityLabel={`Unlock for ${resource.price} USDC`}
+            onPress={() => setPaywallVisible(true)}
+          >
+            <Text style={[shared.buttonText, shared.primaryButtonText]}>Unlock for {resource.price} USDC</Text>
+          </Pressable>
+        )}
 
         <View style={styles.infoRow}>
           <Text style={styles.label}>Owner</Text>

@@ -1,4 +1,4 @@
-import { quoteLease, leaseTierLabel, leaseTierSeconds, type LeaseQuote } from "./leases";
+import { fetchLeaseStatus, quoteLease, leaseTierLabel, leaseTierSeconds, type LeaseQuote } from "./leases";
 
 describe("quoteLease", () => {
   const originalFetch = global.fetch;
@@ -57,5 +57,43 @@ describe("leaseTierSeconds", () => {
     expect(leaseTierSeconds(0)).toBe(3600);
     expect(leaseTierSeconds(1)).toBe(86400);
     expect(leaseTierSeconds(2)).toBe(604800);
+  });
+});
+
+describe("fetchLeaseStatus", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("fetches active lease status with expiry", async () => {
+    const futureDate = new Date(Date.now() + 3600000).toISOString();
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        hasActiveLease: true,
+        state: "Active",
+        expiresAt: futureDate,
+        tier: 0,
+      }),
+    });
+
+    const status = await fetchLeaseStatus("res-1", "GHOLDER");
+    expect(status.hasActiveLease).toBe(true);
+    expect(status.state).toBe("Active");
+    expect(status.expiresAt).toBe(futureDate);
+  });
+
+  it("returns None state on 404 or fetch failure", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+    });
+
+    const status = await fetchLeaseStatus("res-2");
+    expect(status.hasActiveLease).toBe(false);
+    expect(status.state).toBe("None");
   });
 });

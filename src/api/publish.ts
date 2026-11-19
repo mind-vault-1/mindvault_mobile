@@ -136,3 +136,66 @@ export async function publishLink(
     return { type: "payment", ...readVerificationFee(error.headers?.get(PAYMENT_REQUIRED_HEADER) ?? null) };
   }
 }
+
+export type PublishTimelineStatus = "submitted" | "verifying" | "verified" | "rejected" | "on-chain";
+
+export interface PublishStatus {
+  status: PublishTimelineStatus;
+  verified?: boolean;
+  txHash?: string;
+  error?: string;
+}
+
+/** Fetches verification and on-chain sync status for a newly published resource. */
+export async function fetchPublishStatus(resourceId: string): Promise<PublishStatus> {
+  try {
+    const resource = await publisherFetch<Resource>(
+      `/resources/${encodeURIComponent(resourceId)}`,
+      { method: "GET" },
+      "Failed to check resource publish status"
+    );
+
+    if (resource.onchainStatus === "registered" || resource.onchainTxHash) {
+      return { status: "on-chain", verified: true, txHash: resource.onchainTxHash };
+    }
+    if (resource.verificationStatus === "rejected" || resource.onchainStatus === "failed") {
+      return { status: "rejected", verified: false, error: "Verification or sync rejected" };
+    }
+    if (resource.verificationStatus === "verified") {
+      return { status: "verified", verified: true };
+    }
+    if (resource.verificationStatus === "pending" || resource.onchainStatus === "pending") {
+      return { status: "verifying" };
+    }
+    return { status: "submitted" };
+  } catch {
+    return { status: "submitted" };
+  }
+}
+
+/**
+ * Polls the publish status of a resource with exponential backoff until a terminal state
+ * ("on-chain" or "rejected") is reached, or until cancelled.
+ */
+export async function pollPublishStatus(
+  resourceId: string,
+  onStatus: (status: PublishStatus) => void,
+  isCancelled: () => boolean,
+  baseDelayMs = 1000,
+  maxDelayMs = 10000
+): Promise<void> {
+  let delay = baseDelayMs;
+
+  while (!isCancelled()) {
+    const current = await fetchPublishStatus(resourceId);
+    if (isCancelled()) break;
+    onStatus(current);
+
+    if (current.status === "on-chain" || current.status === "rejected" || isCancelled()) {
+      break;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 1.5, maxDelayMs);
+  }
+}

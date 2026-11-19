@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -16,10 +16,12 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { signPaymentTransaction, sorobanRpcUrl, type PaymentChallenge } from "../api/payment";
 import {
   DESCRIPTION_MAX_LENGTH,
+  pollPublishStatus,
   publishLink,
   validatePublishLink,
   type PublishLinkErrors,
   type PublishLinkInput,
+  type PublishStatus,
 } from "../api/publish";
 import { SignTransactionSheet } from "../components/SignTransactionSheet";
 import { useToast } from "../components/ToastProvider";
@@ -88,6 +90,52 @@ function createStyles(colors: ThemeColors) {
     cardTitle: { color: colors.text, fontSize: 18, fontWeight: "700" },
     muted: { color: colors.textMuted, fontSize: 13 },
     mono: { color: colors.text, fontFamily: "monospace", fontSize: 12 },
+    timelineCard: {
+      gap: spacing.sm,
+      padding: spacing.md,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    timelineTitle: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: "700",
+      marginBottom: spacing.xs,
+    },
+    timelineStep: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+      paddingVertical: 4,
+    },
+    timelineIndicator: {
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+    },
+    timelineIndicatorDone: {
+      backgroundColor: colors.primary,
+    },
+    timelineIndicatorCurrent: {
+      backgroundColor: colors.primary,
+      opacity: 0.7,
+    },
+    timelineIndicatorPending: {
+      backgroundColor: colors.border,
+    },
+    timelineIndicatorRejected: {
+      backgroundColor: colors.danger,
+    },
+    timelineStepText: {
+      fontSize: 13,
+      color: colors.textMuted,
+    },
+    timelineStepTextActive: {
+      color: colors.text,
+      fontWeight: "600",
+    },
     actions: { flexDirection: "row", gap: spacing.sm },
     button: {
       flex: 1,
@@ -117,6 +165,25 @@ export function PublishResourceScreen() {
   const [fee, setFee] = useState<{ challenge: PaymentChallenge; amount: string } | null>(null);
   const [signing, setSigning] = useState(false);
   const [published, setPublished] = useState<Resource | null>(null);
+  const [timelineStatus, setTimelineStatus] = useState<PublishStatus>({ status: "submitted" });
+
+  useEffect(() => {
+    if (!published) return;
+    let cancelled = false;
+    setTimelineStatus({ status: "submitted" });
+
+    void pollPublishStatus(
+      published.id,
+      (status) => {
+        if (!cancelled) setTimelineStatus(status);
+      },
+      () => cancelled
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [published]);
 
   function update(key: Field, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -160,6 +227,7 @@ export function PublishResourceScreen() {
     setFee(null);
     setPublished(null);
     setSubmitError(null);
+    setTimelineStatus({ status: "submitted" });
   }
 
   if (published) {
@@ -173,6 +241,76 @@ export function PublishResourceScreen() {
           <Text style={styles.mono} selectable>
             {published.accessUrl}
           </Text>
+        </View>
+
+        <View style={styles.timelineCard} accessibilityRole="summary" accessibilityLabel="Publish Status Timeline">
+          <Text style={styles.timelineTitle}>Publish Progress</Text>
+
+          <View style={styles.timelineStep}>
+            <View style={[styles.timelineIndicator, styles.timelineIndicatorDone]} />
+            <Text style={[styles.timelineStepText, styles.timelineStepTextActive]}>1. Submitted</Text>
+          </View>
+
+          <View style={styles.timelineStep}>
+            <View
+              style={[
+                styles.timelineIndicator,
+                timelineStatus.status === "verifying"
+                  ? styles.timelineIndicatorCurrent
+                  : timelineStatus.status === "submitted"
+                  ? styles.timelineIndicatorPending
+                  : styles.timelineIndicatorDone,
+              ]}
+            />
+            <Text
+              style={[
+                styles.timelineStepText,
+                ["verifying", "verified", "on-chain"].includes(timelineStatus.status) && styles.timelineStepTextActive,
+              ]}
+            >
+              2. Verifying
+            </Text>
+          </View>
+
+          <View style={styles.timelineStep}>
+            <View
+              style={[
+                styles.timelineIndicator,
+                timelineStatus.status === "rejected"
+                  ? styles.timelineIndicatorRejected
+                  : ["verified", "on-chain"].includes(timelineStatus.status)
+                  ? styles.timelineIndicatorDone
+                  : styles.timelineIndicatorPending,
+              ]}
+            />
+            <Text
+              style={[
+                styles.timelineStepText,
+                ["verified", "rejected", "on-chain"].includes(timelineStatus.status) && styles.timelineStepTextActive,
+              ]}
+            >
+              3. {timelineStatus.status === "rejected" ? "Verification Rejected" : "Verified"}
+            </Text>
+          </View>
+
+          <View style={styles.timelineStep}>
+            <View
+              style={[
+                styles.timelineIndicator,
+                timelineStatus.status === "on-chain"
+                  ? styles.timelineIndicatorDone
+                  : styles.timelineIndicatorPending,
+              ]}
+            />
+            <Text
+              style={[
+                styles.timelineStepText,
+                timelineStatus.status === "on-chain" && styles.timelineStepTextActive,
+              ]}
+            >
+              4. On-chain sync {timelineStatus.status === "on-chain" ? "✓" : ""}
+            </Text>
+          </View>
         </View>
         <View style={styles.actions}>
           <Pressable
