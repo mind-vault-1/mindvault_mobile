@@ -727,7 +727,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
           <View style={styles.header}>
             <View style={styles.headerRow}>
               <View style={{ flex: 1 }}>
-                <Text style={typography.title}>MindVault</Text>
+                <Text style={typography.title} accessibilityRole="header">MindVault</Text>
                 <Text style={typography.subtitle}>
                   Payment-protected digital resources on Stellar
                 </Text>
@@ -772,7 +772,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
             {recent.length > 0 && search.trim() === "" ? (
               <View style={styles.recentSection}>
                 <View style={styles.recentHeader}>
-                  <Text style={styles.filterLabel}>Recently viewed</Text>
+                  <Text style={styles.filterLabel} accessibilityRole="header">Recently viewed</Text>
                   <Pressable
                     onPress={clearRecent}
                     style={styles.clearButton}
@@ -812,7 +812,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
 
             <View style={styles.filters}>
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Sort</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">Sort</Text>
                 <View style={styles.chipRow} accessibilityRole="radiogroup" accessibilityLabel="Sort catalog">
                   {SORT_OPTIONS.map((option) => {
                     const active = sort === option.value;
@@ -832,7 +832,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                 </View>
               </View>
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Verification</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">Verification</Text>
                 <View
                   style={styles.chipRow}
                   accessibilityRole="radiogroup"
@@ -869,7 +869,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
               </View>
 
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Type</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">Type</Text>
                 <View
                   style={styles.chipRow}
                   accessibilityRole="radiogroup"
@@ -906,7 +906,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
               </View>
 
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Price (USDC)</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">Price (USDC)</Text>
                 <View style={styles.priceRow}>
                   <View style={styles.priceField}>
                     <TextInput
