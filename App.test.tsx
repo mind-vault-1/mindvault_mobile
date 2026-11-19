@@ -31,6 +31,9 @@ jest.mock("react-native-safe-area-context", () => {
   };
 });
 
+// Background receipt sync is covered by its own tests; keep it out of App's.
+jest.mock("./src/services/receiptSync", () => ({ requestReceiptSync: jest.fn() }));
+
 const originalFetch = global.fetch;
 let fetchMock: jest.Mock;
 

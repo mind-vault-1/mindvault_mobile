@@ -17,12 +17,15 @@ import { ErrorBoundary } from "./src/components/ErrorBoundary";
 import { OfflineBanner } from "./src/components/OfflineBanner";
 import { ToastProvider, useToast } from "./src/components/ToastProvider";
 import { useNetworkStatus } from "./src/hooks/useNetworkStatus";
+import { useReceiptSync } from "./src/hooks/useReceiptSync";
 
 function AppContent() {
   const { colors, colorScheme, isLoading } = useAppTheme();
   const [apiUrlReady, setApiUrlReady] = useState(false);
   const toast = useToast();
 
+  // Reconciles local receipts with the server in the background.
+  useReceiptSync(apiUrlReady);
 
   // Replays queued offline actions in FIFO order, with a toast per action.
   const drainMutationQueue = useCallback(() => {

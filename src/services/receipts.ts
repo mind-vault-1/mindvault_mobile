@@ -73,12 +73,24 @@ function enqueue<T>(operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
+const savedListeners = new Set<(receipt: PaymentReceipt) => void>();
+
+/**
+ * Notified after every successful `saveReceipt` — i.e. after every successful
+ * payment — so background services can react without touching call sites.
+ */
+export function subscribeReceiptSaved(listener: (receipt: PaymentReceipt) => void): () => void {
+  savedListeners.add(listener);
+  return () => savedListeners.delete(listener);
+}
+
 export function saveReceipt(receipt: PaymentReceipt): Promise<void> {
   return enqueue(async () => {
     const clean = normalize(receipt);
     if (!clean) throw new Error("Invalid payment receipt.");
     const receipts = await read();
     await write(sortedAndCapped([clean, ...receipts.filter((row) => row.txHash !== clean.txHash)]));
+    for (const listener of savedListeners) listener(clean);
   });
 }
 
