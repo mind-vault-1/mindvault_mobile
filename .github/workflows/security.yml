@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       # Requires "Dependency graph" to be enabled in Settings > Code security.
       # Non-blocking until it is; once enabled this step enforces the policy below.
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         continue-on-error: true
         with:
           fail-on-severity: high
