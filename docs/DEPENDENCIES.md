@@ -37,5 +37,12 @@ Ensure no conflicting or mismatched peer dependencies exist before submitting a 
 Dependabot is configured in [`.github/dependabot.yml`](../.github/dependabot.yml) with the following rules:
 
 - **Schedule**: Weekly runs (Mondays) with an open pull request limit of 5.
-- **Expo SDK Locking**: Major version upgrades for `expo`, `expo-*`, and `react-native` are ignored by Dependabot because SDK upgrades require coordinated migrations (e.g. testing native build outputs and EAS profiles).
-- **Grouped Updates**: Expo-related and React-related packages are grouped into single PRs to minimize build churn.
+- **Expo SDK Locking**: Major version upgrades for `expo`, `expo-*`, `@expo/*`, and `react-native` are ignored by Dependabot because SDK upgrades require coordinated migrations (e.g. testing native build outputs and EAS profiles).
+- **Grouped Updates**: Expo-related packages (`expo`, `expo-*`, and `@expo/*`) and React-related packages are grouped into single PRs to minimize build churn.
+- **SDK-controlled majors**: Major updates for `expo`, `expo-*`, `@expo/*`, and `react-native` are held back from routine PRs. Upgrade those together with the Expo SDK, then validate the result with `npm run validate-deps`.
+
+Dependabot configuration changes should be reviewed against the [Dependabot options reference](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference). The repository's required local gate is:
+
+```bash
+npm run typecheck && npm run lint && npm test
+```
