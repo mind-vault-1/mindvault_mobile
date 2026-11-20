@@ -2,12 +2,17 @@ import React from "react";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 
 import { signTransactionXdr } from "../api/resources";
+import { authenticate, isAvailable } from "../services/biometrics";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { SignTransactionSheet } from "./SignTransactionSheet";
 
 jest.mock("../api/resources", () => ({
   DEFAULT_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015",
   signTransactionXdr: jest.fn(() => "signed-xdr"),
+}));
+jest.mock("../services/biometrics", () => ({
+  authenticate: jest.fn(),
+  isAvailable: jest.fn(),
 }));
 jest.mock("../utils/validateStellarSecret", () => ({
   validateStellarSecret: (value: string) =>
@@ -33,6 +38,8 @@ jest.mock("../theme/ThemeProvider", () => {
 });
 
 const mockedSign = signTransactionXdr as jest.Mock;
+const mockedAuthenticate = authenticate as jest.Mock;
+const mockedIsAvailable = isAvailable as jest.Mock;
 const VALID_SECRET = "SCXZ7ZA2UUWX4SWVRPE3ENOZAOLG6A53YLBT6A43EFDE25N4MXZ75AAC";
 
 function renderSheet(props: Partial<React.ComponentProps<typeof SignTransactionSheet>> = {}) {
@@ -53,7 +60,11 @@ function renderSheet(props: Partial<React.ComponentProps<typeof SignTransactionS
   return { ...screen, onSigned, onCancel };
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockedAuthenticate.mockResolvedValue("success");
+  mockedIsAvailable.mockResolvedValue(true);
+});
 
 it("shows the network, masks the secret, and submits only a signed XDR", async () => {
   const secret = VALID_SECRET;
@@ -151,4 +162,54 @@ it("uses a custom signer when given one and shows its error message", async () =
   await waitFor(() => expect(screen.onSigned).toHaveBeenCalledWith("signed-payment-xdr"));
   expect(sign).toHaveBeenCalledWith(VALID_SECRET);
   expect(mockedSign).not.toHaveBeenCalled();
+});
+
+it("prompts for biometrics with the action-specific reason before signing", async () => {
+  const screen = renderSheet({ action: "lease this resource" });
+
+  fireEvent.changeText(screen.getByLabelText("Stellar secret key"), VALID_SECRET);
+  fireEvent.press(screen.getByText("Sign"));
+
+  await waitFor(() => expect(screen.onSigned).toHaveBeenCalledWith("signed-xdr"));
+  expect(mockedAuthenticate).toHaveBeenCalledWith("Authenticate to lease this resource");
+});
+
+it("does not sign when the user cancels the biometric prompt", async () => {
+  mockedAuthenticate.mockResolvedValue("cancelled");
+  const screen = renderSheet();
+
+  fireEvent.changeText(screen.getByLabelText("Stellar secret key"), VALID_SECRET);
+  fireEvent.press(screen.getByText("Sign"));
+
+  expect(await screen.findByText(/Biometric authentication was not completed/)).toBeTruthy();
+  expect(mockedSign).not.toHaveBeenCalled();
+  expect(screen.onSigned).not.toHaveBeenCalled();
+});
+
+it("does not sign when biometric authentication fails", async () => {
+  mockedAuthenticate.mockResolvedValue("failed");
+  const screen = renderSheet();
+
+  fireEvent.changeText(screen.getByLabelText("Stellar secret key"), VALID_SECRET);
+  fireEvent.press(screen.getByText("Sign"));
+
+  expect(await screen.findByText(/Biometric authentication failed/)).toBeTruthy();
+  expect(mockedSign).not.toHaveBeenCalled();
+  expect(screen.onSigned).not.toHaveBeenCalled();
+});
+
+it("falls back to the secret-entry flow with an explanation when biometrics are unavailable", async () => {
+  mockedIsAvailable.mockResolvedValue(false);
+  mockedAuthenticate.mockResolvedValue("unavailable");
+  const screen = renderSheet();
+
+  expect(
+    await screen.findByText(/Biometric authentication is unavailable on this device/)
+  ).toBeTruthy();
+
+  fireEvent.changeText(screen.getByLabelText("Stellar secret key"), VALID_SECRET);
+  fireEvent.press(screen.getByText("Sign"));
+
+  await waitFor(() => expect(screen.onSigned).toHaveBeenCalledWith("signed-xdr"));
+  expect(mockedSign).toHaveBeenCalled();
 });

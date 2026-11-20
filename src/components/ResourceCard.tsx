@@ -521,6 +521,7 @@ export function ResourceCard({
         visible={pendingTransaction !== null}
         unsignedXdr={pendingTransaction?.unsignedXdr ?? ""}
         networkPassphrase={pendingTransaction?.networkPassphrase}
+        action="update this resource's price"
         onCancel={cancelSigning}
         onSigned={handleSignedPrice}
       />

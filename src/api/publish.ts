@@ -94,11 +94,14 @@ function readVerificationFee(header: string | null): { challenge: PaymentChallen
  *
  * The server may charge a verification fee with an x402 `402`; that comes back
  * as `{ type: "payment" }` so the user can review and sign it. Call again with
- * the challenge and signed transaction to pay and publish.
+ * the challenge and signed transaction to pay and publish. `idempotencyKey`
+ * is forwarded as an `Idempotency-Key` header so a replayed (offline-queued)
+ * publish cannot create the resource twice.
  */
 export async function publishLink(
   input: PublishLinkInput,
-  payment?: { challenge: PaymentChallenge; transaction: string }
+  payment?: { challenge: PaymentChallenge; transaction: string },
+  idempotencyKey?: string
 ): Promise<PublishResult> {
   const body = {
     resourceType: "link",
@@ -114,16 +117,17 @@ export async function publishLink(
       {
         method: "POST",
         body,
-        ...(payment
-          ? {
-              headers: {
+        headers: {
+          ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+          ...(payment
+            ? {
                 [PAYMENT_SIGNATURE_HEADER]: encodePaymentSignature(
                   payment.challenge,
                   payment.transaction
                 ),
-              },
-            }
-          : {}),
+              }
+            : {}),
+        },
       },
       "Failed to publish resource"
     );

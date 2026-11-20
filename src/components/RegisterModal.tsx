@@ -287,6 +287,7 @@ export function RegisterModal({
         visible={visible && step === "signing"}
         unsignedXdr={xdr}
         networkPassphrase={networkPassphrase}
+        action="register this publisher"
         onCancel={() => {
           setXdr("");
           setNetworkPassphrase(undefined);

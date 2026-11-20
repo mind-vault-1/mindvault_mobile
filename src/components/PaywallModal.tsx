@@ -358,6 +358,7 @@ export function PaywallModal({
         <SignTransactionSheet
           visible
           unsignedXdr=""
+          action="pay for this resource"
           sign={async (secret) => {
             if (!isActive(signingRun)) throw new Error("Payment cancelled.");
             setPhase("authorizing");

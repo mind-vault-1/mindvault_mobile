@@ -10,6 +10,7 @@ import {
 } from "react-native";
 
 import { DEFAULT_NETWORK_PASSPHRASE, signTransactionXdr } from "../api/resources";
+import { authenticate, isAvailable } from "../services/biometrics";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
@@ -26,6 +27,8 @@ interface SignTransactionSheetProps {
    * one call only. Defaults to signing `unsignedXdr`.
    */
   sign?: (secret: string) => Promise<string>;
+  /** Names the action in the biometric prompt, e.g. "lease this resource". */
+  action?: string;
 }
 
 function createStyles(colors: ThemeColors) {
@@ -41,6 +44,7 @@ function createStyles(colors: ThemeColors) {
     },
     label: { color: colors.text, fontSize: 13, fontWeight: "600" },
     network: { color: colors.textMuted, fontSize: 12 },
+    notice: { color: colors.textMuted, fontSize: 12 },
     warning: { color: colors.warning, backgroundColor: colors.warningBg, padding: 10, borderRadius: 8 },
     input: {
       borderWidth: 1,
@@ -67,6 +71,7 @@ export function SignTransactionSheet({
   onSigned,
   onCancel,
   sign: customSign,
+  action = "sign this transaction",
 }: SignTransactionSheetProps) {
   const { colors, shared, typography } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -74,6 +79,7 @@ export function SignTransactionSheet({
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [signError, setSignError] = useState<string | null>(null);
+  const [biometricsUnavailable, setBiometricsUnavailable] = useState(false);
   const validation = useMemo(() => validateStellarSecret(secret), [secret]);
   const isNonProduction = /test|future network/i.test(networkPassphrase);
 
@@ -83,7 +89,16 @@ export function SignTransactionSheet({
       setTouched(false);
       setBusy(false);
       setSignError(null);
+      setBiometricsUnavailable(false);
+      return;
     }
+    let cancelled = false;
+    void isAvailable().then((available) => {
+      if (!cancelled) setBiometricsUnavailable(!available);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [visible]);
 
   function cancel() {
@@ -98,6 +113,18 @@ export function SignTransactionSheet({
 
     setBusy(true);
     setSignError(null);
+    // Re-authenticate the device owner before signing. Devices without
+    // biometrics fall back to the secret-entry flow below.
+    const outcome = await authenticate(`Authenticate to ${action}`);
+    if (outcome === "cancelled" || outcome === "failed") {
+      setSignError(
+        outcome === "cancelled"
+          ? "Biometric authentication was not completed."
+          : "Biometric authentication failed. Try again."
+      );
+      setBusy(false);
+      return;
+    }
     let signedXdr: string;
     try {
       signedXdr = customSign
@@ -132,6 +159,12 @@ export function SignTransactionSheet({
           <Text style={styles.network}>Network passphrase: {networkPassphrase}</Text>
           {isNonProduction ? (
             <Text style={styles.warning}>Development/test network — do not use a production account.</Text>
+          ) : null}
+          {biometricsUnavailable ? (
+            <Text style={styles.notice}>
+              Biometric authentication is unavailable on this device — enter your secret key to
+              continue.
+            </Text>
           ) : null}
           <Text style={styles.label}>Stellar secret key</Text>
           <TextInput
