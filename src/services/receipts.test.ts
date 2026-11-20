@@ -139,4 +139,19 @@ describe("merge with on-chain history", () => {
     await saveReceipt(fromChain(4));
     expect((await listReceipts()).map((row) => row.txHash)).toEqual(["tx-5", "tx-4", "tx-3"]);
   });
+
+  it("keeps the newest valid row when a merged history contains duplicate hashes", async () => {
+    await AsyncStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      receipts: [
+        receipt(7),
+        { ...receipt(7), title: "Updated on chain", paidAt: "2026-10-02T00:00:00.000Z" },
+        { ...receipt(8), title: "Another purchase" },
+      ],
+    }));
+
+    const merged = await listReceipts();
+    expect(merged.map((row) => row.txHash)).toEqual(["tx-7", "tx-8"]);
+    expect(merged.find((row) => row.txHash === "tx-7")?.title).toBe("Updated on chain");
+  });
 });

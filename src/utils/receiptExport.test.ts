@@ -155,6 +155,10 @@ describe("CSV escaping", () => {
     expect(csv.split("\r\n")).toHaveLength(3);
   });
 
+  it("preserves unicode while escaping commas, quotes and newlines together", () => {
+    expect(escapeCsvCell('指南, "v2"\n📚')).toBe('"指南, ""v2""\n📚"');
+  });
+
   it("guards formula-like titles even when they also need quoting", () => {
     expect(escapeCsvCell("=HYPERLINK(\"x\",\"y\")")).toBe('"\'=HYPERLINK(""x"",""y"")"');
   });

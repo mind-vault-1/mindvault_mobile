@@ -52,8 +52,7 @@ export function SettingsScreen() {
 
   const handleReopenOnboarding = useCallback(async () => {
     try {
-      const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
-      await AsyncStorage.removeItem(ONBOARDING_KEY);
+      await AsyncStorage.removeItem(STORAGE_KEYS.onboarding);
       navigation.navigate("Onboarding");
     } catch {
       Alert.alert("Error", "Failed to reopen onboarding");

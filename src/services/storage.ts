@@ -11,6 +11,7 @@ import { clearReceipts, RECEIPTS_STORAGE_KEY } from "./receipts";
  */
 export const STORAGE_KEYS = {
   catalogFilters: "@mindvault_catalog_filters",
+  onboarding: "@mindvault_catalog_filters:onboarding",
   favourites: "@mindvault_favourites",
   recentResources: "@mindvault_recent_resources",
   searchHistory: "@mindvault_search_history",
@@ -39,7 +40,7 @@ export const STORAGE_GROUPS: readonly StorageGroup[] = [
     id: "filters",
     label: "Filters",
     description: "Saved catalog search, sort and filter choices.",
-    keys: [STORAGE_KEYS.catalogFilters],
+    keys: [STORAGE_KEYS.catalogFilters, STORAGE_KEYS.onboarding],
   },
   {
     id: "searches",
