@@ -28,7 +28,7 @@ beforeEach(async () => {
 });
 
 it("has one group per data kind, with no key in two groups", () => {
-  expect(STORAGE_GROUPS.map((group) => group.id)).toEqual(["filters", "favourites", "history", "cache", "receipts"]);
+  expect(STORAGE_GROUPS.map((group) => group.id)).toEqual(["filters", "favourites", "history", "cache", "receipts", "auditLog"]);
   const keys = STORAGE_GROUPS.flatMap((group) => group.keys);
   expect(new Set(keys).size).toBe(keys.length);
   expect(STORAGE_KEYS.receipts).toBe(RECEIPTS_STORAGE_KEY);
