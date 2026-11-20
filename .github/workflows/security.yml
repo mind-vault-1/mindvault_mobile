@@ -1,0 +1,74 @@
+name: Security
+
+# Dependency, secret and licence scanning. Policy and suppressions are in
+# docs/SECURITY.md.
+
+on:
+  pull_request:
+  schedule:
+    # Weekly summary, Mondays 08:00 UTC.
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Licences allowed in production dependencies (SPDX ids).
+  ALLOWED_LICENSES: "MIT;ISC;Apache-2.0;BSD-2-Clause;BSD-3-Clause;0BSD;BlueOak-1.0.0;CC0-1.0;CC-BY-4.0;Python-2.0;Unlicense"
+
+jobs:
+  # PR-only: annotates the PR with vulnerable or disallowed-licence dependencies
+  # that the PR introduces.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          allow-licenses: MIT, ISC, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, BlueOak-1.0.0, CC0-1.0, CC-BY-4.0, Python-2.0, Unlicense
+          # Suppressions (documented in docs/SECURITY.md): add GHSA ids here.
+          allow-ghsas: ""
+          comment-summary-in-pr: on-failure
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: trufflesecurity/trufflehog@v3.82.13
+        with:
+          # Only verified (live) secrets fail the job, which keeps false
+          # positives down; see docs/SECURITY.md for how to suppress one.
+          extra_args: --only-verified
+
+  # Full-tree audit and licence allowlist, written to the job summary. On the
+  # weekly schedule this is the summary report.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: npm audit (production dependencies)
+        run: |
+          echo "## npm audit (production, high and above)" >> "$GITHUB_STEP_SUMMARY"
+          npm audit --omit=dev --audit-level=high | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Licence allowlist (production dependencies)
+        run: |
+          echo "## Licence check" >> "$GITHUB_STEP_SUMMARY"
+          npx --yes license-checker-rseidelsohn@4.4.2 --production --excludePrivatePackages \
+            --onlyAllow "$ALLOWED_LICENSES" --summary | tee -a "$GITHUB_STEP_SUMMARY"
