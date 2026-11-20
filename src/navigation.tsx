@@ -17,8 +17,10 @@ import { PurchaseHistoryScreen } from "./screens/PurchaseHistoryScreen";
 import { ReceiptDetailScreen } from "./screens/ReceiptDetailScreen";
 import { PublishResourceScreen } from "./screens/PublishResourceScreen";
 import { PublisherResourceDetailScreen } from "./screens/PublisherResourceDetailScreen";
+import { OnboardingScreen } from "./screens/OnboardingScreen";
 
 export type RootStackParamList = {
+  Onboarding: undefined;
   Catalog: undefined;
   ResourceDetail: { resourceId: string };
   Scanner: undefined;
@@ -51,9 +53,21 @@ function PublisherProfileButton() {
   );
 }
 
-export function RootNavigator() {
+interface RootNavigatorProps {
+  showOnboarding: boolean;
+}
+
+export function RootNavigator({ showOnboarding }: RootNavigatorProps) {
   return (
-    <Stack.Navigator>
+    <Stack.Navigator
+      screenOptions={{ animationEnabled: true }}
+      initialRouteName={showOnboarding ? "Onboarding" : "Catalog"}
+    >
+      <Stack.Screen
+        name="Onboarding"
+        component={OnboardingScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen name="Catalog" component={CatalogScreen} options={{ headerShown: false }} />
       <Stack.Screen
         name="ResourceDetail"

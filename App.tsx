@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useState } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -18,10 +19,15 @@ import { OfflineBanner } from "./src/components/OfflineBanner";
 import { ToastProvider, useToast } from "./src/components/ToastProvider";
 import { useNetworkStatus } from "./src/hooks/useNetworkStatus";
 import { useReceiptSync } from "./src/hooks/useReceiptSync";
+import { STORAGE_KEYS } from "./src/services/storage";
+
+const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
 
 function AppContent() {
   const { colors, colorScheme, isLoading } = useAppTheme();
   const [apiUrlReady, setApiUrlReady] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(true);
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
   const toast = useToast();
 
   // Reconciles local receipts with the server in the background.
@@ -44,6 +50,21 @@ function AppContent() {
       .finally(() => setApiUrlReady(true));
   }, []);
 
+  // Check if onboarding has been seen
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      try {
+        const hasSeenOnboarding = await AsyncStorage.getItem(ONBOARDING_KEY);
+        setShowOnboarding(!hasSeenOnboarding);
+      } catch {
+        setShowOnboarding(true);
+      } finally {
+        setOnboardingChecked(true);
+      }
+    };
+    void checkOnboarding();
+  }, []);
+
   // Also drain once the app is ready: actions queued before a restart must not
   // wait for the next offline→online transition.
   useEffect(() => {
@@ -52,7 +73,7 @@ function AppContent() {
 
   // Render nothing themed until the saved theme and API URL are known,
   // so there is no light/dark flash and no request to the wrong server.
-  if (isLoading || !apiUrlReady) return null;
+  if (isLoading || !apiUrlReady || !onboardingChecked) return null;
 
   return (
     <>
@@ -62,7 +83,7 @@ function AppContent() {
         theme={getNavigationTheme(colors, colorScheme)}
         linking={createLinkingOptions()}
       >
-        <RootNavigator />
+        <RootNavigator showOnboarding={showOnboarding} />
       </NavigationContainer>
     </>
   );
