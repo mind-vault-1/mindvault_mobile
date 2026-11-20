@@ -37,6 +37,7 @@ import {
   type StorageGroup,
   type StorageGroupId,
 } from "../services/storage";
+import { getAuditLog, exportAuditLog } from "../services/auditLog";
 
 export function SettingsScreen() {
   const { colors, shared } = useAppTheme();
@@ -56,6 +57,45 @@ export function SettingsScreen() {
       Alert.alert("Error", "Failed to reopen onboarding");
     }
   }, [navigation]);
+
+  const handleViewAuditLog = useCallback(async () => {
+    try {
+      const log = await getAuditLog();
+      if (log.length === 0) {
+        Alert.alert("Audit Log", "No sensitive actions have been recorded yet.");
+        return;
+      }
+      const preview = log.map((entry) => {
+        const lines = [
+          `${entry.action.replace(/_/g, " ")} - ${entry.timestamp}`,
+          `Outcome: ${entry.outcome}`,
+        ];
+        if (entry.metadata?.walletAddress) {
+          lines.push(`Wallet: ${entry.metadata.walletAddress}`);
+        }
+        if (entry.metadata?.errorMessage) {
+          lines.push(`Error: ${entry.metadata.errorMessage}`);
+        }
+        return lines.join("\n");
+      }).join("\n\n");
+      setAuditLogPreview(preview);
+    } catch {
+      Alert.alert("Error", "Failed to load audit log");
+    }
+  }, []);
+
+  const handleExportAuditLog = useCallback(async () => {
+    if (!auditLogPreview) return;
+    try {
+      await Share.share({
+        message: auditLogPreview,
+        title: "MindVault Audit Log",
+      });
+      setAuditLogPreview(null);
+    } catch {
+      Alert.alert("Error", "Failed to share audit log");
+    }
+  }, [auditLogPreview]);
 
   const loadUrl = useCallback(async () => {
     const url = await loadApiBaseUrl();
@@ -141,6 +181,7 @@ export function SettingsScreen() {
 
   const [dataSizes, setDataSizes] = useState<Partial<Record<StorageGroupId, number | null>>>({});
   const [clearingGroup, setClearingGroup] = useState<StorageGroupId | null>(null);
+  const [auditLogPreview, setAuditLogPreview] = useState<string | null>(null);
 
   const refreshDataSizes = useCallback(async () => {
     try {
@@ -379,6 +420,27 @@ export function SettingsScreen() {
         </View>
 
         <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text
+            style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
+            accessibilityRole="header"
+          >
+            Audit Log
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
+            Redacted record of sensitive actions like key rotation, wallet wipe and signing.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={handleViewAuditLog}
+            accessibilityRole="button"
+            accessibilityLabel="View audit log"
+            accessibilityHint="Shows redacted sensitive action history"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>View Audit Log</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
           <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
             Learn
           </Text>
@@ -445,6 +507,48 @@ export function SettingsScreen() {
                 <TouchableOpacity
                   style={[shared.button, styles.previewButton, { backgroundColor: colors.primary }]}
                   onPress={() => void handleShareDiagnostics()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Share"
+                >
+                  <Text style={[shared.buttonText, { color: "#ffffff" }]}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={auditLogPreview !== null}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setAuditLogPreview(null)}
+        >
+          <View style={styles.previewOverlay}>
+            <View style={[styles.previewSheet, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.title, { fontSize: 16, color: colors.text }]}>
+                Audit Log
+              </Text>
+              <ScrollView style={styles.previewBody}>
+                <Text
+                  selectable
+                  style={[styles.previewText, { color: colors.text }]}
+                  accessibilityLabel="Audit log entries"
+                >
+                  {auditLogPreview}
+                </Text>
+              </ScrollView>
+              <View style={styles.previewActions}>
+                <TouchableOpacity
+                  style={[shared.button, styles.previewButton, { backgroundColor: colors.neutralBg }]}
+                  onPress={() => setAuditLogPreview(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
+                  <Text style={[shared.buttonText, { color: colors.text }]}>Close</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[shared.button, styles.previewButton, { backgroundColor: colors.primary }]}
+                  onPress={() => void handleExportAuditLog()}
                   accessibilityRole="button"
                   accessibilityLabel="Share"
                 >
