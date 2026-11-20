@@ -14,6 +14,7 @@ import { getApiBaseUrl } from "../api/resources";
 import type { Resource } from "../types";
 import { getResourceTypeLabel } from "../types";
 import { useEditPrice, validatePrice } from "../hooks/useEditPrice";
+import { isImageCached, rememberImage } from "../utils/imageCache";
 import { shareResource } from "../utils/shareResource";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
@@ -80,8 +81,10 @@ const TYPE_ICONS: Record<string, string> = {
 };
 
 /**
- * A fixed-aspect-ratio image with a placeholder while it loads. If it fails to
- * load, it shows the resource-type icon instead, so the card layout stays put.
+ * A fixed-aspect-ratio image with a themed placeholder while it loads. The box
+ * size never changes, so swapping the placeholder for the image causes no layout
+ * shift. A thumbnail already in the image cache renders straight away (also
+ * offline); if it fails to load, the resource-type icon is shown instead.
  */
 export function ResourceThumbnail({
   uri,
@@ -93,7 +96,9 @@ export function ResourceThumbnail({
   resourceType: string;
 }) {
   const { colors } = useAppTheme();
-  const [status, setStatus] = useState<"loading" | "loaded" | "failed">("loading");
+  const [status, setStatus] = useState<"loading" | "loaded" | "failed">(() =>
+    isImageCached(uri) ? "loaded" : "loading"
+  );
 
   if (status === "failed") {
     return (
@@ -115,9 +120,14 @@ export function ResourceThumbnail({
         source={{ uri }}
         style={StyleSheet.absoluteFill}
         resizeMode="cover"
+        progressiveRenderingEnabled
+        fadeDuration={150}
         accessibilityRole="image"
         accessibilityLabel={`Thumbnail of ${title}`}
-        onLoad={() => setStatus("loaded")}
+        onLoad={() => {
+          rememberImage(uri);
+          setStatus("loaded");
+        }}
         onError={() => setStatus("failed")}
       />
     </View>
