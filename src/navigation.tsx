@@ -16,6 +16,7 @@ import { PublisherAnalyticsScreen } from "./screens/PublisherAnalyticsScreen";
 import { PurchaseHistoryScreen } from "./screens/PurchaseHistoryScreen";
 import { ReceiptDetailScreen } from "./screens/ReceiptDetailScreen";
 import { PublishResourceScreen } from "./screens/PublishResourceScreen";
+import { PublisherResourceDetailScreen } from "./screens/PublisherResourceDetailScreen";
 
 export type RootStackParamList = {
   Catalog: undefined;
@@ -24,6 +25,7 @@ export type RootStackParamList = {
   Settings: undefined;
   DevSigner: undefined;
   PublisherResources: undefined;
+  PublisherResourceDetail: { resourceId: string };
   PublisherProfile: undefined;
   PublisherAnalytics: undefined;
   PurchaseHistory: undefined;
@@ -75,6 +77,11 @@ export function RootNavigator() {
         name="PublisherResources"
         component={PublisherResourcesScreen}
         options={{ title: "Publisher Resources", headerRight: PublisherProfileButton }}
+      />
+      <Stack.Screen
+        name="PublisherResourceDetail"
+        component={PublisherResourceDetailScreen}
+        options={{ title: "Manage Resource" }}
       />
       <Stack.Screen
         name="PublisherProfile"
