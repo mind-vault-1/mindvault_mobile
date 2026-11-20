@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/mind-vault-1/mindvault_mobile/compare/v1.2.0...v1.3.0) (2026-11-20)
+
+
+### Features
+
+* offline mutation queue, receipt sync, secret redaction and biometric re-auth ([#273](https://github.com/mind-vault-1/mindvault_mobile/issues/273)-[#276](https://github.com/mind-vault-1/mindvault_mobile/issues/276)) ([#277](https://github.com/mind-vault-1/mindvault_mobile/issues/277)) ([68ffd34](https://github.com/mind-vault-1/mindvault_mobile/commit/68ffd34ba300032ae225033b3a833042cbac1b72))
+
+
+### Bug Fixes
+
+* **batch5:** address typecheck issues and hook ordering ([a3496cf](https://github.com/mind-vault-1/mindvault_mobile/commit/a3496cfe639b3e95e5582508a889b76a1fe1db40))
+* **batch5:** resolve lint, stabilize tests, and update onboarding expectations ([68f565a](https://github.com/mind-vault-1/mindvault_mobile/commit/68f565aa85d1f9106d12aa31f217bb2c3c59c7e1))
+
 ## [1.2.0](https://github.com/mind-vault-1/mindvault_mobile/compare/v1.1.0...v1.2.0) (2026-10-23)
 
 
