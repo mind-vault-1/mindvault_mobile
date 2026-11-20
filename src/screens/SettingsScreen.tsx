@@ -48,6 +48,8 @@ export function SettingsScreen() {
   const [savedUrl, setSavedUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  const [auditLogPreview, setAuditLogPreview] = useState<string | null>(null);
+
   const handleReopenOnboarding = useCallback(async () => {
     try {
       const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
@@ -181,7 +183,6 @@ export function SettingsScreen() {
 
   const [dataSizes, setDataSizes] = useState<Partial<Record<StorageGroupId, number | null>>>({});
   const [clearingGroup, setClearingGroup] = useState<StorageGroupId | null>(null);
-  const [auditLogPreview, setAuditLogPreview] = useState<string | null>(null);
 
   const refreshDataSizes = useCallback(async () => {
     try {

@@ -452,14 +452,6 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const [relativeTimeKey, setRelativeTimeKey] = useState(0);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (lastUpdatedAt && new Date().getTime() - lastUpdatedAt.getTime() > 60000) {
-        void loadData(true);
-      }
-    }, [lastUpdatedAt, loadData])
-  );
-
   useEffect(() => {
     const timer = setInterval(() => {
       setRelativeTimeKey((prev) => prev + 1);
@@ -577,6 +569,14 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       }
     }
   }, [debouncedSearch, verification, resourceType, debouncedMinPrice, debouncedMaxPrice, sort, isRestoring]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (lastUpdatedAt && new Date().getTime() - lastUpdatedAt.getTime() > 60000) {
+        void loadData(true);
+      }
+    }, [lastUpdatedAt, loadData])
+  );
 
   const currentFilters = useMemo(() => {
     const filters: CatalogFilters = {};

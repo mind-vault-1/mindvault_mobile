@@ -60,7 +60,7 @@ async function routeNames() {
   render(
     <ThemeProvider>
       <NavigationContainer ref={ref}>
-        <RootNavigator />
+        <RootNavigator showOnboarding={false} />
       </NavigationContainer>
     </ThemeProvider>
   );

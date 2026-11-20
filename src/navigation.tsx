@@ -60,7 +60,6 @@ interface RootNavigatorProps {
 export function RootNavigator({ showOnboarding }: RootNavigatorProps) {
   return (
     <Stack.Navigator
-      screenOptions={{ animationEnabled: true }}
       initialRouteName={showOnboarding ? "Onboarding" : "Catalog"}
     >
       <Stack.Screen

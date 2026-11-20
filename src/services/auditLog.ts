@@ -70,10 +70,9 @@ function redactMetadata(
   const redacted: AuditLogEntry["metadata"] = {};
 
   if (metadata.walletAddress) {
-    redacted.walletAddress = redact(metadata.walletAddress, {
-      showStart: 4,
-      showEnd: 4,
-    });
+    const addr = metadata.walletAddress;
+    redacted.walletAddress =
+      addr.length > 8 ? `${addr.slice(0, 4)}...${addr.slice(-4)}` : addr;
   }
 
   if (metadata.errorMessage) {
