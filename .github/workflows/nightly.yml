@@ -69,7 +69,7 @@ jobs:
           script: |
             adb install android/app/build/outputs/apk/release/app-release.apk
             maestro test smoke/launch.yaml --format junit --output smoke/report.xml --test-output-dir smoke/out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: nightly-android
@@ -112,7 +112,7 @@ jobs:
           xcrun simctl boot "iPhone 15" || true
           xcrun simctl install booted build/Build/Products/Release-iphonesimulator/MindVault.app
           maestro test smoke/launch.yaml --format junit --output smoke/report.xml --test-output-dir smoke/out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: nightly-ios
