@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import {
@@ -48,6 +49,7 @@ import {
   INVALID_PRICE_RANGE_MESSAGE,
   parsePriceRange,
 } from "../utils/priceRange";
+import { getRelativeTimeString } from "../utils/time";
 
 const CATALOG_FILTERS_KEY = STORAGE_KEYS.catalogFilters;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -92,12 +94,6 @@ const SORT_OPTIONS: { value: CatalogSort; label: string }[] = [
   { value: "title", label: "Title" },
 ];
 
-function formatLastUpdated(value: Date): string {
-  return value.toLocaleString([], {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
 
 const DEFAULT_PERSISTED_FILTERS: PersistedFilters = {
   search: "",
@@ -454,6 +450,22 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [recent, setRecent] = useState<RecentResource[]>([]);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [relativeTimeKey, setRelativeTimeKey] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (lastUpdatedAt && new Date().getTime() - lastUpdatedAt.getTime() > 60000) {
+        void loadData(true);
+      }
+    }, [lastUpdatedAt, loadData])
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRelativeTimeKey((prev) => prev + 1);
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     async function restoreFilters() {
@@ -826,8 +838,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                   </Text>
                 ) : null}
                 {lastUpdatedAt ? (
-                  <Text style={styles.lastUpdated}>
-                    Last updated {formatLastUpdated(lastUpdatedAt)}
+                  <Text style={styles.lastUpdated} key={relativeTimeKey}>
+                    Updated {getRelativeTimeString(lastUpdatedAt)}
                   </Text>
                 ) : null}
               </View>
