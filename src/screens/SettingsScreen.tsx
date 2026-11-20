@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   ScrollView,
   StyleSheet,
@@ -32,6 +33,7 @@ import {
   formatBytes,
   getStorageGroupSizes,
   STORAGE_GROUPS,
+  STORAGE_KEYS,
   type StorageGroup,
   type StorageGroupId,
 } from "../services/storage";
@@ -44,6 +46,16 @@ export function SettingsScreen() {
   const [apiUrl, setApiUrl] = useState("");
   const [savedUrl, setSavedUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  const handleReopenOnboarding = useCallback(async () => {
+    try {
+      const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
+      await AsyncStorage.removeItem(ONBOARDING_KEY);
+      navigation.navigate("Onboarding");
+    } catch {
+      Alert.alert("Error", "Failed to reopen onboarding");
+    }
+  }, [navigation]);
 
   const loadUrl = useCallback(async () => {
     const url = await loadApiBaseUrl();
@@ -364,6 +376,23 @@ export function SettingsScreen() {
               </View>
             );
           })}
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
+            Learn
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            Reopen the onboarding guide to learn about MindVault, USDC and Stellar testnet.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={handleReopenOnboarding}
+            accessibilityRole="button"
+            accessibilityLabel="Reopen onboarding guide"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>View Onboarding</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
