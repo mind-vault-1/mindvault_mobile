@@ -44,7 +44,9 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # Node 22 runs the TypeScript flaky-test reporter via
+          # --experimental-strip-types; no extra dependency is installed.
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -52,8 +54,61 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
-        run: npm test -- --ci
+      # Tests quarantined in .github/flaky-quarantine.json are skipped by both
+      # attempts, so a known flake cannot block the required check. The
+      # manifest requires an owner and a tracked issue per entry.
+      - name: Resolve quarantined tests
+        id: quarantine
+        run: |
+          set -euo pipefail
+          mkdir -p .flaky
+          patterns=$(node --experimental-strip-types scripts/flaky.ts --ignore-list)
+          echo "patterns=$patterns" >> "$GITHUB_OUTPUT"
+
+      # The suite runs twice so a test that failed and then passed is detected
+      # as flaky. A second failure still fails the job below.
+      - name: Test (attempt 1)
+        id: test-first
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          args=(--ci --json --outputFile=.flaky/run-1.json)
+          if [ -n "${{ steps.quarantine.outputs.patterns }}" ]; then
+            args+=("--testPathIgnorePatterns=${{ steps.quarantine.outputs.patterns }}")
+          fi
+          npx jest "${args[@]}"
+
+      - name: Test (attempt 2 - retry)
+        id: test-second
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          args=(--ci --json --outputFile=.flaky/run-2.json)
+          if [ -n "${{ steps.quarantine.outputs.patterns }}" ]; then
+            args+=("--testPathIgnorePatterns=${{ steps.quarantine.outputs.patterns }}")
+          fi
+          npx jest "${args[@]}"
+
+      # Records every retry in the report, and fails when a flaky test is not
+      # quarantined with an owner and a tracked issue.
+      - name: Flaky test report
+        if: always()
+        run: node --experimental-strip-types scripts/flaky.ts --reports .flaky/run-1.json .flaky/run-2.json
+
+      - name: Upload flaky test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flaky-test-report
+          path: .flaky/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Fail when the retried run still fails
+        if: steps.test-second.outcome == 'failure'
+        run: |
+          echo "::error::The test suite failed on both attempts; see the Jest output above."
+          exit 1
 
   # Job name `bundle` is a stable, required-status-check-friendly name.
   # Renaming it means updating branch protection in the same change.

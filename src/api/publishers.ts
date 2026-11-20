@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from "./resources";
-import { getApiKey } from "../services/secureStorage";
+import { clearApiKey, getApiKey, storeApiKey } from "../services/secureStorage";
 import { extractApiErrorMessage } from "../utils/errorLogger";
 
 /** Shape returned by `GET /publishers/me`. */
@@ -48,6 +48,21 @@ export interface RegisterPublisherResponse {
   createdAt: string;
 }
 
+/** Response from `POST /publishers/me/api-key/rotate`. */
+export interface RotateApiKeyResponse {
+  apiKey: string;
+}
+
+/**
+ * Shows just enough of a key for a publisher to recognise the active one
+ * without exposing the secret on screen or in a screenshot.
+ */
+export function maskApiKey(key: string): string {
+  const trimmed = key.trim();
+  if (trimmed.length <= 8) return "•".repeat(trimmed.length);
+  return `${trimmed.slice(0, 4)}…${trimmed.slice(-4)}`;
+}
+
 /**
  * Fetches the publisher that owns an API key. Uses the stored key by default;
  * pass `apiKey` to check a new key against the server before storing it.
@@ -84,6 +99,89 @@ export async function registerPublisher(
   }
 
   return res.json();
+}
+
+/**
+ * Rotates the stored publisher API key. The server invalidates the old key
+ * immediately, so the new key is written to secure storage only after the
+ * response has been validated; a failed rotation leaves the old key in place
+ * for the caller to report.
+ */
+export async function rotateApiKey(): Promise<string> {
+  const currentKey = await getApiKey();
+  if (!currentKey) {
+    throw new Error("No API key configured");
+  }
+
+  const res = await publisherKeyRequest(
+    "/publishers/me/api-key/rotate",
+    "POST",
+    currentKey,
+    "Failed to rotate API key"
+  );
+
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    throw new Error("Server did not return a new API key.");
+  }
+
+  const apiKey = (body as Partial<RotateApiKeyResponse> | null)?.apiKey;
+  const newKey = typeof apiKey === "string" ? apiKey.trim() : "";
+  if (!newKey) {
+    throw new Error("Server did not return a new API key.");
+  }
+
+  await storeApiKey(newKey);
+  return newKey;
+}
+
+/**
+ * Revokes the stored publisher API key on the server and removes it from this
+ * device. A key the server already rejects (401) or cannot find (404) is
+ * treated as revoked so the publisher can always sign out locally.
+ */
+export async function revokeApiKey(): Promise<void> {
+  const currentKey = await getApiKey();
+  if (!currentKey) {
+    throw new Error("No API key configured");
+  }
+
+  const res = await fetch(`${getApiBaseUrl()}/publishers/me/api-key`, {
+    method: "DELETE",
+    headers: { "x-api-key": currentKey },
+  });
+
+  if (!res.ok && res.status !== 401 && res.status !== 404) {
+    const message = await extractApiErrorMessage(res, "Failed to revoke API key");
+    throw new Error(message.split(currentKey).join("[redacted]"));
+  }
+
+  await clearApiKey();
+}
+
+async function publisherKeyRequest(
+  path: string,
+  method: "POST" | "DELETE",
+  key: string,
+  fallback: string
+): Promise<Response> {
+  const res = await fetch(`${getApiBaseUrl()}${path}`, {
+    method,
+    headers: { "x-api-key": key },
+  });
+
+  if (res.status === 401) {
+    throw new Error("Unauthorized: Invalid API key");
+  }
+  if (!res.ok) {
+    const message = await extractApiErrorMessage(res, fallback);
+    // Never let a server that echoes the key leak it into the UI.
+    throw new Error(message.split(key).join("[redacted]"));
+  }
+
+  return res;
 }
 
 async function fetchPublisherData<T>(path: string, fallback: string, apiKey?: string): Promise<T> {

@@ -1,0 +1,218 @@
+name: E2E purchase and lease
+
+# Builds the pull request with the EAS `preview` profile (Android APK and iOS
+# simulator app) and runs the Maestro purchase and lease flows against a seeded
+# testnet deployment.
+#
+# Safety rails:
+# - Only runs on the upstream repository, never on forks, so secrets are only
+#   exposed to code the maintainers control.
+# - Only runs on pull requests labelled `e2e`, or on manual dispatch.
+# - EXPO_PUBLIC_NETWORK is pinned to `testnet`; the flow signs testnet USDC
+#   payments and must never touch mainnet.
+# - Screenshots and Maestro output are uploaded on failure.
+#
+# Required repository configuration:
+#   secret  EXPO_TOKEN                       EAS account token (never echoed)
+#   secret  E2E_TESTNET_SECRET               funded testnet Stellar secret key
+#   var     E2E_PAID_RESOURCE_TITLE          accepted-payment text resource
+#   var     E2E_DECLINED_RESOURCE_TITLE      rejected-payment text resource
+#   var     E2E_LEASE_RESOURCE_TITLE         leasable text resource
+#   var     E2E_RESOURCE_PRICE               price shown on all three resources
+#   var     E2E_PAID_CONTENT                 content returned after a paid unlock
+# The EAS `preview` environment supplies EXPO_PUBLIC_API_URL for the seeded
+# server; see docs/TESTING.md and docs/PREVIEW_BUILDS.md.
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  EXPO_PUBLIC_NETWORK: testnet
+  MAESTRO_VERSION: "1.39.13"
+  EAS_CLI_VERSION: "13.2.0"
+  PAID_TITLE: ${{ vars.E2E_PAID_RESOURCE_TITLE }}
+  DECLINED_TITLE: ${{ vars.E2E_DECLINED_RESOURCE_TITLE }}
+  LEASE_TITLE: ${{ vars.E2E_LEASE_RESOURCE_TITLE }}
+  PRICE: ${{ vars.E2E_RESOURCE_PRICE }}
+  CONTENT: ${{ vars.E2E_PAID_CONTENT }}
+
+jobs:
+  android:
+    if: >-
+      github.repository == 'mind-vault-1/mindvault_mobile' &&
+      (github.event_name == 'workflow_dispatch' ||
+       contains(github.event.pull_request.labels.*.name, 'e2e'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check E2E configuration
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          TESTNET_SECRET: ${{ secrets.E2E_TESTNET_SECRET }}
+        run: |
+          set -euo pipefail
+          [ "$EXPO_PUBLIC_NETWORK" = "testnet" ] || {
+            echo "::error::E2E must run against testnet, not $EXPO_PUBLIC_NETWORK"; exit 1;
+          }
+          [ -n "${EXPO_TOKEN:-}" ] || { echo "::error::EXPO_TOKEN is not configured"; exit 1; }
+          [ -n "${TESTNET_SECRET:-}" ] || { echo "::error::E2E_TESTNET_SECRET is not configured"; exit 1; }
+          for name in PAID_TITLE DECLINED_TITLE LEASE_TITLE PRICE CONTENT; do
+            [ -n "${!name:-}" ] || { echo "::error::$name is not configured"; exit 1; }
+          done
+
+      - name: Build preview APK
+        id: build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --yes eas-cli@$EAS_CLI_VERSION build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --json > eas-android.json
+          url=$(jq -r '.[0].artifacts.applicationArchiveUrl // empty' eas-android.json)
+          [ -n "$url" ] || { echo "::error::EAS did not return an APK URL"; exit 1; }
+          echo "artifact_url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Download preview APK
+        run: curl -fsSL --retry 3 -o android-preview.apk "${{ steps.build.outputs.artifact_url }}"
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL -o maestro.zip "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          unzip -q maestro.zip -d "$HOME"
+          echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Run purchase and lease flows
+        env:
+          TESTNET_SECRET: ${{ secrets.E2E_TESTNET_SECRET }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          script: |
+            set -euo pipefail
+            adb install -r android-preview.apk
+            mkdir -p e2e/out
+            maestro test \
+              -e PAID_TITLE="$PAID_TITLE" \
+              -e DECLINED_TITLE="$DECLINED_TITLE" \
+              -e LEASE_TITLE="$LEASE_TITLE" \
+              -e PRICE="$PRICE" \
+              -e CONTENT="$CONTENT" \
+              -e TESTNET_SECRET="$TESTNET_SECRET" \
+              --format junit --output e2e/out/report.xml \
+              --test-output-dir e2e/out \
+              e2e/purchase.yaml e2e/lease.yaml
+
+      - name: Upload E2E screenshots and reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-android
+          path: |
+            e2e/out/
+            *.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+  ios:
+    if: >-
+      github.repository == 'mind-vault-1/mindvault_mobile' &&
+      (github.event_name == 'workflow_dispatch' ||
+       contains(github.event.pull_request.labels.*.name, 'e2e'))
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check E2E configuration
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          TESTNET_SECRET: ${{ secrets.E2E_TESTNET_SECRET }}
+        run: |
+          set -euo pipefail
+          [ "$EXPO_PUBLIC_NETWORK" = "testnet" ] || {
+            echo "::error::E2E must run against testnet, not $EXPO_PUBLIC_NETWORK"; exit 1;
+          }
+          [ -n "${EXPO_TOKEN:-}" ] || { echo "::error::EXPO_TOKEN is not configured"; exit 1; }
+          [ -n "${TESTNET_SECRET:-}" ] || { echo "::error::E2E_TESTNET_SECRET is not configured"; exit 1; }
+          for name in PAID_TITLE DECLINED_TITLE LEASE_TITLE PRICE CONTENT; do
+            [ -n "${!name:-}" ] || { echo "::error::$name is not configured"; exit 1; }
+          done
+
+      - name: Build preview simulator app
+        id: build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --yes eas-cli@$EAS_CLI_VERSION build \
+            --platform ios \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --json > eas-ios.json
+          url=$(jq -r '.[0].artifacts.applicationArchiveUrl // empty' eas-ios.json)
+          [ -n "$url" ] || { echo "::error::EAS did not return a simulator build URL"; exit 1; }
+          echo "artifact_url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL -o maestro.zip "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          unzip -q maestro.zip -d "$HOME"
+          echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Download and boot simulator app
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o ios-preview "${{ steps.build.outputs.artifact_url }}"
+          case "${{ steps.build.outputs.artifact_url }}" in
+            *.zip) unzip -q ios-preview -d ios-preview-dir ;;
+            *) mkdir -p ios-preview-dir && tar -xzf ios-preview -C ios-preview-dir ;;
+          esac
+          app=$(find ios-preview-dir -maxdepth 4 -name "*.app" -type d | head -n 1)
+          [ -n "$app" ] || { echo "::error::No .app found in the simulator build"; exit 1; }
+          xcrun simctl boot "iPhone 15" || true
+          xcrun simctl install booted "$app"
+
+      - name: Run purchase and lease flows
+        env:
+          TESTNET_SECRET: ${{ secrets.E2E_TESTNET_SECRET }}
+        run: |
+          set -euo pipefail
+          mkdir -p e2e/out
+          maestro test \
+            -e PAID_TITLE="$PAID_TITLE" \
+            -e DECLINED_TITLE="$DECLINED_TITLE" \
+            -e LEASE_TITLE="$LEASE_TITLE" \
+            -e PRICE="$PRICE" \
+            -e CONTENT="$CONTENT" \
+            -e TESTNET_SECRET="$TESTNET_SECRET" \
+            --format junit --output e2e/out/report.xml \
+            --test-output-dir e2e/out \
+            e2e/purchase.yaml e2e/lease.yaml
+
+      - name: Upload E2E screenshots and reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-ios
+          path: |
+            e2e/out/
+            *.png
+          if-no-files-found: ignore
+          retention-days: 14

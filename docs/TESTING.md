@@ -18,6 +18,62 @@ npm test -- src/screens/SettingsScreen.test.tsx
 npm test -- --coverage
 ```
 
+## End-to-end tests (Maestro)
+
+The `e2e/` directory holds [Maestro](https://maestro.mobile.dev/) flows that drive
+the real app against a running server:
+
+- `e2e/purchase.yaml` — a successful purchase (catalog → resource → `Unlock for X
+  USDC` → `Pay & Access` → sign → paid content) and a rejected payment (the
+  paywall stays locked and offers `Retry`).
+- `e2e/lease.yaml` — cancelling a lease before signing, then buying a day lease
+  (`Rent instead` → `Select Day lease` → `Confirm & Pay` → sign → `Lease
+  Purchased`).
+
+### Seeded testnet data
+
+The flows need three resources on a **testnet** deployment. Seed them before
+running, then pass their titles, price, and the paid content through environment
+variables:
+
+| Variable | Meaning |
+| --- | --- |
+| `PAID_TITLE` | Text resource whose payment the server accepts |
+| `DECLINED_TITLE` | Text resource whose payment the server rejects |
+| `LEASE_TITLE` | Text resource listed on the testnet lease registry |
+| `PRICE` | Price shown by all three resources, e.g. `2.50` |
+| `CONTENT` | Content returned after a successful unlock |
+| `TESTNET_SECRET` | Funded testnet Stellar secret key used to sign |
+
+Never point these flows at mainnet or use a production key: they sign real
+transactions and the network check in the workflow enforces `testnet`.
+
+### Running locally
+
+Build and install a preview build, then run the flows from the repository root:
+
+```sh
+maestro test \
+  -e PAID_TITLE="E2E Paid Resource" \
+  -e DECLINED_TITLE="E2E Declined Resource" \
+  -e LEASE_TITLE="E2E Leasable Resource" \
+  -e PRICE="2.50" \
+  -e CONTENT="E2E purchased content" \
+  -e TESTNET_SECRET="$E2E_TESTNET_SECRET" \
+  --test-output-dir e2e/out \
+  e2e/purchase.yaml e2e/lease.yaml
+```
+
+### In CI
+
+`.github/workflows/e2e.yml` builds the PR with the EAS `preview` profile (Android
+APK and iOS simulator app) and runs both flows on an emulator and a simulator.
+It only runs on the upstream repository when a PR carries the `e2e` label (or by
+manual dispatch), and it uploads `e2e/out/` plus any screenshots whenever a run
+fails. Configure the variables above as repository variables and `EXPO_TOKEN`
+and `E2E_TESTNET_SECRET` as secrets; the seeded API URL comes from the EAS
+`preview` environment (see `docs/PREVIEW_BUILDS.md`).
+
 ## Test Structure
 
 Tests are co-located with their source files:

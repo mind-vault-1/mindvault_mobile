@@ -1,0 +1,210 @@
+name: Preview builds
+
+# Builds an installable Android APK and iOS simulator app with the EAS
+# `preview` profile whenever a pull request is labelled `preview` (and again on
+# later pushes while the label is present). Each successful build is posted as a
+# sticky comment on the PR with the install link; preview builds older than the
+# retention window are deleted.
+#
+# Security:
+# - Only runs on the upstream repository, so fork PRs never receive EXPO_TOKEN.
+# - Only runs when a maintainer applies the `preview` label.
+# - EXPO_TOKEN is passed via env and is never printed; do not add `set -x`.
+# - The preview profile pins EXPO_PUBLIC_NETWORK=testnet.
+#
+# Setup (docs/PREVIEW_BUILDS.md):
+#   secret EXPO_TOKEN              EAS account token
+#   EAS `preview` environment      EXPO_PUBLIC_API_URL for the preview server
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+env:
+  EAS_CLI_VERSION: "13.2.0"
+  PREVIEW_RETENTION_DAYS: "14"
+
+jobs:
+  android:
+    if: >-
+      github.repository == 'mind-vault-1/mindvault_mobile' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'preview')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check EAS token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "${EXPO_TOKEN:-}" ] || { echo "::error::EXPO_TOKEN is not configured"; exit 1; }
+
+      - name: Build preview APK
+        id: build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --yes eas-cli@$EAS_CLI_VERSION build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --message "PR #${{ github.event.pull_request.number }} preview" \
+            --json > eas-android.json
+          build=$(jq -c 'if type == "array" then .[0] else . end' eas-android.json)
+          apk=$(jq -r '.artifacts.applicationArchiveUrl // empty' <<< "$build")
+          page=$(jq -r '.buildDetailsPageUrl // empty' <<< "$build")
+          [ -n "$apk" ] || { echo "::error::EAS did not return an APK URL"; exit 1; }
+          echo "apk=$apk" >> "$GITHUB_OUTPUT"
+          echo "page=$page" >> "$GITHUB_OUTPUT"
+
+      - name: Comment install link
+        if: steps.build.outputs.apk != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          APK_URL: ${{ steps.build.outputs.apk }}
+          BUILD_PAGE: ${{ steps.build.outputs.page }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          body=$(cat <<EOF
+          <!-- preview-android -->
+          ### Android preview build
+
+          [Download the APK]($APK_URL)
+
+          [View the EAS build]($BUILD_PAGE) · commit \`${SHA:0:7}\` · expires after $PREVIEW_RETENTION_DAYS days.
+          EOF
+          )
+          comment_id=$(gh api "repos/$REPO/issues/$NUMBER/comments" --paginate \
+            --jq '.[] | select((.body // "") | contains("<!-- preview-android -->")) | .id' | tail -n 1)
+          if [ -n "$comment_id" ]; then
+            jq -n --arg body "$body" '{body: $body}' |
+              gh api --method PATCH "repos/$REPO/issues/comments/$comment_id" --input -
+          else
+            jq -n --arg body "$body" '{body: $body}' |
+              gh api --method POST "repos/$REPO/issues/$NUMBER/comments" --input -
+          fi
+
+      - name: Expire old preview builds
+        if: always()
+        continue-on-error: true
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --yes eas-cli@$EAS_CLI_VERSION build:list \
+            --platform android --limit 100 --non-interactive --json > preview-builds.json
+          cutoff=$(date -u -d "$PREVIEW_RETENTION_DAYS days ago" +%s)
+          jq -r --argjson cutoff "$cutoff" 'if type == "array" then . else [.] end
+            | .[]
+            | select(.buildProfile == "preview")
+            | select((.createdAt | fromdateiso8601) < $cutoff)
+            | .id' preview-builds.json |
+            while read -r id; do
+              [ -n "$id" ] || continue
+              npx --yes eas-cli@$EAS_CLI_VERSION build:delete --id "$id" --non-interactive || true
+            done
+
+  ios:
+    if: >-
+      github.repository == 'mind-vault-1/mindvault_mobile' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'preview')
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check EAS token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "${EXPO_TOKEN:-}" ] || { echo "::error::EXPO_TOKEN is not configured"; exit 1; }
+
+      - name: Build preview simulator app
+        id: build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --yes eas-cli@$EAS_CLI_VERSION build \
+            --platform ios \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --message "PR #${{ github.event.pull_request.number }} preview" \
+            --json > eas-ios.json
+          build=$(jq -c 'if type == "array" then .[0] else . end' eas-ios.json)
+          archive=$(jq -r '.artifacts.applicationArchiveUrl // empty' <<< "$build")
+          page=$(jq -r '.buildDetailsPageUrl // empty' <<< "$build")
+          [ -n "$archive" ] || { echo "::error::EAS did not return a simulator build URL"; exit 1; }
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "page=$page" >> "$GITHUB_OUTPUT"
+
+      - name: Comment install link
+        if: steps.build.outputs.archive != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          ARCHIVE_URL: ${{ steps.build.outputs.archive }}
+          BUILD_PAGE: ${{ steps.build.outputs.page }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          body=$(cat <<EOF
+          <!-- preview-ios -->
+          ### iOS simulator preview build
+
+          [Download the simulator app]($ARCHIVE_URL) and install it with
+          \`xcrun simctl install booted <extracted .app>\`.
+
+          [View the EAS build]($BUILD_PAGE) · commit \`${SHA:0:7}\` · expires after $PREVIEW_RETENTION_DAYS days.
+          EOF
+          )
+          comment_id=$(gh api "repos/$REPO/issues/$NUMBER/comments" --paginate \
+            --jq '.[] | select((.body // "") | contains("<!-- preview-ios -->")) | .id' | tail -n 1)
+          if [ -n "$comment_id" ]; then
+            jq -n --arg body "$body" '{body: $body}' |
+              gh api --method PATCH "repos/$REPO/issues/comments/$comment_id" --input -
+          else
+            jq -n --arg body "$body" '{body: $body}' |
+              gh api --method POST "repos/$REPO/issues/$NUMBER/comments" --input -
+          fi
+
+      - name: Expire old preview builds
+        if: always()
+        continue-on-error: true
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --yes eas-cli@$EAS_CLI_VERSION build:list \
+            --platform ios --limit 100 --non-interactive --json > preview-builds.json
+          cutoff=$(date -u -v-"${PREVIEW_RETENTION_DAYS}"d +%s)
+          jq -r --argjson cutoff "$cutoff" 'if type == "array" then . else [.] end
+            | .[]
+            | select(.buildProfile == "preview")
+            | select((.createdAt | fromdateiso8601) < $cutoff)
+            | .id' preview-builds.json |
+            while read -r id; do
+              [ -n "$id" ] || continue
+              npx --yes eas-cli@$EAS_CLI_VERSION build:delete --id "$id" --non-interactive || true
+            done

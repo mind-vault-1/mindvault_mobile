@@ -1,12 +1,25 @@
-import { fetchAnalytics, fetchMe, registerPublisher, type PublisherAnalytics, type RegisterPublisherResponse } from "./publishers";
+import {
+  fetchAnalytics,
+  fetchMe,
+  maskApiKey,
+  registerPublisher,
+  revokeApiKey,
+  rotateApiKey,
+  type PublisherAnalytics,
+  type RegisterPublisherResponse,
+} from "./publishers";
 import { getApiBaseUrl } from "./resources";
-import { getApiKey } from "../services/secureStorage";
+import { clearApiKey, getApiKey, storeApiKey } from "../services/secureStorage";
 
 jest.mock("../services/secureStorage", () => ({
   getApiKey: jest.fn(),
+  storeApiKey: jest.fn(),
+  clearApiKey: jest.fn(),
 }));
 
 const mockGetApiKey = getApiKey as jest.MockedFunction<typeof getApiKey>;
+const mockStoreApiKey = storeApiKey as jest.MockedFunction<typeof storeApiKey>;
+const mockClearApiKey = clearApiKey as jest.MockedFunction<typeof clearApiKey>;
 const originalFetch = global.fetch;
 
 const profile = {
@@ -124,6 +137,148 @@ describe("fetchAnalytics", () => {
   it("uses an analytics-specific fallback", async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500, text: async () => "" });
     await expect(fetchAnalytics("key")).rejects.toThrow("Failed to load publisher analytics");
+  });
+});
+
+describe("maskApiKey", () => {
+  it("keeps only the first and last four characters", () => {
+    expect(maskApiKey("sk_live_abcdef123456")).toBe("sk_l…3456");
+  });
+
+  it("fully masks short keys so no secret is shown", () => {
+    expect(maskApiKey("abc123")).toBe("••••••");
+  });
+
+  it("trims whitespace before masking", () => {
+    expect(maskApiKey("  sk_live_abcdef123456  ")).toBe("sk_l…3456");
+  });
+});
+
+describe("rotateApiKey", () => {
+  it("POSTs to the rotate endpoint with the stored key and stores the new key", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    const fetchMock = mockFetch({ apiKey: "new-key-abcdef" });
+
+    await expect(rotateApiKey()).resolves.toBe("new-key-abcdef");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getApiBaseUrl()}/publishers/me/api-key/rotate`,
+      expect.objectContaining({
+        method: "POST",
+        headers: { "x-api-key": "old-key-123456" },
+      })
+    );
+    expect(mockStoreApiKey).toHaveBeenCalledWith("new-key-abcdef");
+  });
+
+  it("does not touch secure storage when the server rejects the rotation", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    mockFetch({ error: "Internal server error" }, 500);
+
+    await expect(rotateApiKey()).rejects.toThrow("Internal server error");
+    expect(mockStoreApiKey).not.toHaveBeenCalled();
+  });
+
+  it("leaves the old key in place when the stored key is already invalid", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    mockFetch({ error: "Invalid API key" }, 401);
+
+    await expect(rotateApiKey()).rejects.toThrow("Unauthorized: Invalid API key");
+    expect(mockStoreApiKey).not.toHaveBeenCalled();
+  });
+
+  it("does not overwrite the key when the response has no new key", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    mockFetch({ apiKey: "   " });
+
+    await expect(rotateApiKey()).rejects.toThrow("Server did not return a new API key.");
+    expect(mockStoreApiKey).not.toHaveBeenCalled();
+  });
+
+  it("does not overwrite the key when the response is not valid JSON", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => { throw new Error("Unexpected token"); },
+    });
+
+    await expect(rotateApiKey()).rejects.toThrow("Server did not return a new API key.");
+    expect(mockStoreApiKey).not.toHaveBeenCalled();
+  });
+
+  it("fails without calling the API when no key is stored", async () => {
+    mockGetApiKey.mockResolvedValue(null);
+    const fetchMock = mockFetch({ apiKey: "new-key" });
+
+    await expect(rotateApiKey()).rejects.toThrow("No API key configured");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockStoreApiKey).not.toHaveBeenCalled();
+  });
+
+  it("redacts an echoed API key in server errors", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    mockFetch({ error: "Cannot rotate old-key-123456" }, 403);
+
+    await expect(rotateApiKey()).rejects.toThrow("Cannot rotate [redacted]");
+  });
+});
+
+describe("revokeApiKey", () => {
+  it("DELETEs the key with the stored key and clears it locally", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    const fetchMock = mockFetch({}, 204);
+
+    await expect(revokeApiKey()).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getApiBaseUrl()}/publishers/me/api-key`,
+      expect.objectContaining({
+        method: "DELETE",
+        headers: { "x-api-key": "old-key-123456" },
+      })
+    );
+    expect(mockClearApiKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the key when the server fails to revoke it", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    mockFetch({ error: "Internal server error" }, 500);
+
+    await expect(revokeApiKey()).rejects.toThrow("Internal server error");
+    expect(mockClearApiKey).not.toHaveBeenCalled();
+  });
+
+  it("still signs the device out when the server says the key is already invalid", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    mockFetch({ error: "Invalid API key" }, 401);
+
+    await expect(revokeApiKey()).resolves.toBeUndefined();
+    expect(mockClearApiKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats an unknown key as already revoked", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    mockFetch({ error: "Not found" }, 404);
+
+    await expect(revokeApiKey()).resolves.toBeUndefined();
+    expect(mockClearApiKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails without calling the API when no key is stored", async () => {
+    mockGetApiKey.mockResolvedValue(null);
+    const fetchMock = mockFetch({});
+
+    await expect(revokeApiKey()).rejects.toThrow("No API key configured");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockClearApiKey).not.toHaveBeenCalled();
+  });
+
+  it("redacts an echoed API key in server errors", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    mockFetch({ error: "Cannot revoke old-key-123456" }, 403);
+
+    await expect(revokeApiKey()).rejects.toThrow("Cannot revoke [redacted]");
   });
 });
 
