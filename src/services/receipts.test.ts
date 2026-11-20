@@ -77,3 +77,66 @@ it("recovers the queue after a failed write", async () => {
   await saveReceipt(receipt(2));
   expect(await listReceipts()).toEqual([receipt(2)]);
 });
+
+describe("migration, cap and clear", () => {
+  it("migrates a version 0 array and drops rows with bad amounts or dates", async () => {
+    await AsyncStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify([
+      receipt(1),
+      { ...receipt(2), amount: "1.5" },
+      { ...receipt(3), paidAt: "not-a-date" },
+      { ...receipt(4), txHash: "" },
+      { ...receipt(5), resourceId: 42 },
+    ]));
+    expect(await listReceipts()).toEqual([receipt(1)]);
+    expect(JSON.parse((await AsyncStorage.getItem(RECEIPTS_STORAGE_KEY))!)).toEqual({ version: 1, receipts: [receipt(1)] });
+  });
+
+  it("caps an oversized migrated store to the newest receipts", async () => {
+    const old = Array.from({ length: MAX_RECEIPTS + 5 }, (_, index) => receipt(index));
+    await AsyncStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify(old));
+    const saved = await listReceipts();
+    expect(saved).toHaveLength(MAX_RECEIPTS);
+    expect(saved[0].txHash).toBe(`tx-${MAX_RECEIPTS + 4}`);
+    expect(saved.some((row) => row.txHash === "tx-0")).toBe(false);
+  });
+
+  it("clears to an empty versioned envelope", async () => {
+    await saveReceipt(receipt(1));
+    await clearReceipts();
+    expect(JSON.parse((await AsyncStorage.getItem(RECEIPTS_STORAGE_KEY))!)).toEqual({ version: 1, receipts: [] });
+    expect(await getReceipt("tx-1")).toBeNull();
+  });
+});
+
+describe("merge with on-chain history", () => {
+  // Shape the purchase history maps on-chain payments into before merging.
+  function fromChain(index: number, overrides: Partial<PaymentReceipt> = {}): PaymentReceipt {
+    return { ...receipt(index), title: "From chain", ...overrides };
+  }
+
+  it("keeps one row per transaction hash when a local receipt matches an on-chain one", async () => {
+    await saveReceipt(receipt(1));
+    await saveReceipt(fromChain(1));
+    await saveReceipt(fromChain(2));
+    const saved = await listReceipts();
+    expect(saved.map((row) => row.txHash)).toEqual(["tx-2", "tx-1"]);
+    expect(saved.find((row) => row.txHash === "tx-1")?.title).toBe("From chain");
+  });
+
+  it("de-duplicates repeated hashes in old data, keeping the newest row", async () => {
+    await AsyncStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      receipts: [receipt(1), { ...receipt(1), title: "Newer", paidAt: new Date(Date.UTC(2026, 9, 2)).toISOString() }],
+    }));
+    const saved = await listReceipts();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].title).toBe("Newer");
+  });
+
+  it("sorts merged local and on-chain rows newest first", async () => {
+    await saveReceipt(fromChain(5));
+    await saveReceipt(receipt(3));
+    await saveReceipt(fromChain(4));
+    expect((await listReceipts()).map((row) => row.txHash)).toEqual(["tx-5", "tx-4", "tx-3"]);
+  });
+});

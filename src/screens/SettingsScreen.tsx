@@ -27,6 +27,14 @@ import {
 import { DEFAULT_STELLAR_NETWORK, initializeApiBaseUrl } from "../api/resources";
 import { checkHealth, type ServerHealth } from "../api/health";
 import { collectDiagnostics, formatDiagnostics } from "../services/diagnostics";
+import {
+  clearStorageGroup,
+  formatBytes,
+  getStorageGroupSizes,
+  STORAGE_GROUPS,
+  type StorageGroup,
+  type StorageGroupId,
+} from "../services/storage";
 
 export function SettingsScreen() {
   const { colors, shared } = useAppTheme();
@@ -118,6 +126,50 @@ export function SettingsScreen() {
   const isDirty = apiUrl.trim() !== savedUrl;
   const isDefault =
     apiUrl.trim() === getDefaultApiBaseUrl() && savedUrl === getDefaultApiBaseUrl();
+
+  const [dataSizes, setDataSizes] = useState<Partial<Record<StorageGroupId, number | null>>>({});
+  const [clearingGroup, setClearingGroup] = useState<StorageGroupId | null>(null);
+
+  const refreshDataSizes = useCallback(async () => {
+    try {
+      setDataSizes(await getStorageGroupSizes());
+    } catch {
+      setDataSizes({});
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshDataSizes();
+  }, [refreshDataSizes]);
+
+  const sizeLabel = (id: StorageGroupId) => {
+    const size = dataSizes[id];
+    return typeof size === "number" ? formatBytes(size) : "size unknown";
+  };
+
+  const clearGroup = async (group: StorageGroup) => {
+    setClearingGroup(group.id);
+    try {
+      await clearStorageGroup(group.id);
+      Alert.alert("Cleared", `${group.label} removed from this device.`);
+    } catch {
+      Alert.alert("Error", `Failed to clear ${group.label.toLowerCase()}.`);
+    } finally {
+      setClearingGroup(null);
+      void refreshDataSizes();
+    }
+  };
+
+  const confirmClearGroup = (group: StorageGroup) => {
+    Alert.alert(
+      `Clear ${group.label.toLowerCase()}?`,
+      `${group.description}\n\nThis removes ${sizeLabel(group.id)} from this device and cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Clear", style: "destructive", onPress: () => void clearGroup(group) },
+      ]
+    );
+  };
 
   // The report is shown in full before anything leaves the device.
   const [diagnosticsPreview, setDiagnosticsPreview] = useState<string | null>(null);
@@ -269,6 +321,49 @@ export function SettingsScreen() {
           >
             <Text style={[shared.buttonText, { color: "#ffffff" }]}>View Purchase History</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text
+            style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
+            accessibilityRole="header"
+          >
+            Local Data
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
+            Clear data stored on this device. Wallet and API keys are not affected here; use
+            the wallet wipe to remove them.
+          </Text>
+          {STORAGE_GROUPS.map((group) => {
+            const busy = clearingGroup === group.id;
+            return (
+              <View key={group.id} style={styles.dataRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.infoText, { color: colors.text, fontWeight: "600" }]}>
+                    {group.label}
+                  </Text>
+                  <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                    {sizeLabel(group.id)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[shared.button, { backgroundColor: colors.dangerBg }, busy && styles.disabledButton]}
+                  onPress={() => confirmClearGroup(group)}
+                  disabled={clearingGroup !== null}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Clear ${group.label.toLowerCase()}, ${sizeLabel(group.id)}`}
+                  accessibilityHint="Asks for confirmation before removing this data"
+                  accessibilityState={{ disabled: clearingGroup !== null, busy }}
+                >
+                  {busy ? (
+                    <ActivityIndicator color={colors.danger} />
+                  ) : (
+                    <Text style={[shared.buttonText, { color: colors.danger }]}>Clear</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            );
+          })}
         </View>
 
         <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
@@ -476,6 +571,12 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  dataRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 6,
   },
   aboutRow: {
     flexDirection: "row",

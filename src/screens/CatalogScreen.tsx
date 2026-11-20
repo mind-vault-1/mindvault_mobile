@@ -32,6 +32,14 @@ import {
   recordRecentResource,
 } from "../services/recent";
 import type { RecentResource } from "../services/recent";
+import {
+  addSearchQuery,
+  clearSearchHistory,
+  filterSearchSuggestions,
+  getSearchHistory,
+  removeSearchQuery,
+} from "../services/searchHistory";
+import { STORAGE_KEYS } from "../services/storage";
 import type { CatalogFilters, CatalogSort, Resource, VerificationStatus } from "../types";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
@@ -41,7 +49,7 @@ import {
   parsePriceRange,
 } from "../utils/priceRange";
 
-const CATALOG_FILTERS_KEY = "@mindvault_catalog_filters";
+const CATALOG_FILTERS_KEY = STORAGE_KEYS.catalogFilters;
 const SEARCH_DEBOUNCE_MS = 300;
 
 interface PersistedFilters {
@@ -277,6 +285,39 @@ function createStyles(colors: ThemeColors) {
     recentSection: {
       gap: spacing.sm,
     },
+    suggestions: {
+      gap: spacing.xs,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: spacing.sm,
+    },
+    suggestionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    suggestionButton: {
+      flex: 1,
+      minHeight: 44,
+      justifyContent: "center",
+      paddingHorizontal: spacing.sm,
+    },
+    suggestionText: {
+      fontSize: 15,
+      color: colors.text,
+    },
+    suggestionRemove: {
+      minHeight: 44,
+      minWidth: 44,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    suggestionRemoveText: {
+      fontSize: 14,
+      color: colors.textMuted,
+    },
     recentHeader: {
       flexDirection: "row",
       justifyContent: "space-between",
@@ -411,6 +452,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
   const [recent, setRecent] = useState<RecentResource[]>([]);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
 
   useEffect(() => {
     async function restoreFilters() {
@@ -609,7 +652,46 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     // Recently viewed is a shortcut, not data the screen depends on: a failed
     // read simply leaves the row hidden.
     void getRecentResources().then(setRecent);
+    void getSearchHistory().then(setSearchHistory);
   }, []);
+
+  const rememberSearch = useCallback((query: string) => {
+    if (!query.trim()) return;
+    void addSearchQuery(query).then(setSearchHistory);
+  }, []);
+
+  const handleSearchSubmit = useCallback(() => {
+    rememberSearch(search);
+  }, [rememberSearch, search]);
+
+  const handleSearchBlur = useCallback(() => {
+    setSearchFocused(false);
+    rememberSearch(search);
+  }, [rememberSearch, search]);
+
+  const applySuggestion = useCallback(
+    (query: string) => {
+      setSearch(query);
+      // A picked suggestion runs straight away instead of waiting for the debounce.
+      setDebouncedSearch(query);
+      rememberSearch(query);
+    },
+    [rememberSearch],
+  );
+
+  const removeSuggestion = useCallback((query: string) => {
+    void removeSearchQuery(query).then(setSearchHistory);
+  }, []);
+
+  const clearAllSuggestions = useCallback(() => {
+    setSearchHistory([]);
+    void clearSearchHistory();
+  }, []);
+
+  const suggestions = useMemo(
+    () => (searchFocused ? filterSearchSuggestions(searchHistory, search) : []),
+    [searchFocused, searchHistory, search],
+  );
 
   const hasActiveFilters =
     search.trim() !== "" ||
@@ -717,6 +799,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         data={loading ? null : resources}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        // Lets a suggestion be tapped without the first tap only dismissing the keyboard.
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -767,7 +851,62 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
               autoCorrect={false}
               clearButtonMode="while-editing"
               accessibilityLabel="Search resources"
+              accessibilityHint={
+                searchHistory.length > 0
+                  ? "Recent searches are listed below while this field is focused"
+                  : undefined
+              }
+              returnKeyType="search"
+              onFocus={() => setSearchFocused(true)}
+              onBlur={handleSearchBlur}
+              onSubmitEditing={handleSearchSubmit}
             />
+
+            {suggestions.length > 0 ? (
+              <View
+                style={styles.suggestions}
+                testID="search-suggestions"
+                accessibilityLabel="Recent searches"
+              >
+                <View style={styles.recentHeader}>
+                  <Text style={styles.filterLabel} accessibilityRole="header">
+                    Recent searches
+                  </Text>
+                  <Pressable
+                    onPress={clearAllSuggestions}
+                    style={styles.clearButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear all recent searches"
+                  >
+                    <Text style={styles.clearButtonText}>Clear all</Text>
+                  </Pressable>
+                </View>
+                {suggestions.map((query) => (
+                  <View key={query} style={styles.suggestionRow}>
+                    <Pressable
+                      onPress={() => applySuggestion(query)}
+                      style={styles.suggestionButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Search for ${query}`}
+                      accessibilityHint="Runs this recent search"
+                    >
+                      <Text style={styles.suggestionText} numberOfLines={1}>
+                        {query}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => removeSuggestion(query)}
+                      style={styles.suggestionRemove}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${query} from recent searches`}
+                    >
+                      <Text style={styles.suggestionRemoveText}>✕</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : null}
 
             {recent.length > 0 && search.trim() === "" ? (
               <View style={styles.recentSection}>

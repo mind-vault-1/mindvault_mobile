@@ -1,6 +1,6 @@
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { Share } from "react-native";
+import { Alert, Share } from "react-native";
 import {
   NavigationContainer,
   createNavigationContainerRef,
@@ -155,5 +155,59 @@ describe("about section", () => {
     expect(
       fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/health"))
     ).toHaveLength(2);
+  });
+});
+
+describe("local data", () => {
+  type AlertButton = { text: string; style?: string; onPress?: () => void };
+
+  it("shows every group with its size and clears one after confirmation", async () => {
+    await AsyncStorage.setItem("@mindvault_catalog_filters", '{"search":"x"}');
+    await AsyncStorage.setItem("@mindvault_search_history", '["q"]');
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const screen = await renderSettings();
+
+    expect(screen.getByText("Local Data")).toBeTruthy();
+    for (const label of ["filters", "favourites", "history", "cache", "receipts"]) {
+      expect(await screen.findByLabelText(new RegExp(`^Clear ${label}, `))).toBeTruthy();
+    }
+    expect(await screen.findByLabelText(/^Clear filters, \d+ B$/)).toBeTruthy();
+    expect(screen.getByLabelText("Clear favourites, 0 B")).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText(/^Clear filters, /));
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Clear filters?",
+      expect.stringMatching(/\d+ B from this device/),
+      expect.any(Array)
+    );
+    const buttons = alertSpy.mock.calls[0][2] as AlertButton[];
+    expect(buttons.map((b) => b.style)).toEqual(["cancel", "destructive"]);
+
+    await act(async () => {
+      buttons[1].onPress?.();
+    });
+
+    await waitFor(() => expect(screen.getByLabelText("Clear filters, 0 B")).toBeTruthy());
+    expect(await AsyncStorage.getItem("@mindvault_catalog_filters")).toBeNull();
+    expect(await AsyncStorage.getItem("@mindvault_search_history")).toBe('["q"]');
+    alertSpy.mockRestore();
+  });
+
+  it("does nothing when the confirmation is cancelled", async () => {
+    await AsyncStorage.setItem("@mindvault_recent_resources", "[]");
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const screen = await renderSettings();
+
+    fireEvent.press(await screen.findByLabelText(/^Clear history, /));
+    const buttons = alertSpy.mock.calls[0][2] as AlertButton[];
+    buttons[0].onPress?.();
+
+    expect(await AsyncStorage.getItem("@mindvault_recent_resources")).toBe("[]");
+    alertSpy.mockRestore();
+  });
+
+  it("explains that keys are handled by the wallet wipe only", async () => {
+    const screen = await renderSettings();
+    expect(screen.getByText(/Wallet and API keys are not affected here/)).toBeTruthy();
   });
 });

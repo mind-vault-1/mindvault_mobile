@@ -424,3 +424,21 @@ describe("PublisherResourcesScreen - Publisher Signup", () => {
     });
   });
 });
+
+describe("PublisherResourcesScreen - resource detail", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedGetStoredApiKey.mockResolvedValue("stored-test-key");
+  });
+
+  it("opens the detail screen for the chosen resource", async () => {
+    mockedFetchPublisherResources.mockResolvedValue([
+      createResource({ id: "r1", title: "First" }),
+      createResource({ id: "r2", title: "Second" }),
+    ]);
+    const screen = renderScreen();
+
+    fireEvent.press(await screen.findByLabelText("Manage Second"));
+    expect(mockNavigation.navigate).toHaveBeenCalledWith("PublisherResourceDetail", { resourceId: "r2" });
+  });
+});
