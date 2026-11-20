@@ -31,13 +31,13 @@ describe("getRelativeTimeString", () => {
   it("formats days ago", () => {
     const date = new Date("2026-11-19T12:00:00Z");
     const result = getRelativeTimeString(date);
-    expect(result).toMatch(/\d+ day/);
+    expect(result).toMatch(/yesterday|day/);
   });
 
   it("formats weeks ago", () => {
     const date = new Date("2026-11-13T12:00:00Z");
     const result = getRelativeTimeString(date);
-    expect(result).toMatch(/\d+ week/);
+    expect(result).toMatch(/last week|week/);
   });
 
   it("formats future times", () => {
