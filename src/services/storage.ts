@@ -15,12 +15,13 @@ export const STORAGE_KEYS = {
   recentResources: "@mindvault_recent_resources",
   searchHistory: "@mindvault_search_history",
   receipts: RECEIPTS_STORAGE_KEY,
+  auditLog: "mindvault:auditLog",
 } as const;
 
 /** Every key under this prefix is disposable cached data. */
 export const CACHE_KEY_PREFIX = "@mindvault_cache:";
 
-export type StorageGroupId = "filters" | "favourites" | "history" | "cache" | "receipts";
+export type StorageGroupId = "filters" | "favourites" | "history" | "cache" | "receipts" | "auditLog";
 
 export interface StorageGroup {
   id: StorageGroupId;
@@ -63,6 +64,12 @@ export const STORAGE_GROUPS: readonly StorageGroup[] = [
     label: "Receipts",
     description: "Payment receipts stored on this device. On-chain records are not affected.",
     keys: [STORAGE_KEYS.receipts],
+  },
+  {
+    id: "auditLog",
+    label: "Audit Log",
+    description: "Redacted record of sensitive account actions (key rotation, wallet wipe, signing).",
+    keys: [STORAGE_KEYS.auditLog],
   },
 ];
 
