@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -26,6 +27,7 @@ import {
 import type { Resource } from "../types";
 import type { RootStackParamList } from "../navigation";
 import { spacing } from "../theme";
+import { STORAGE_KEYS } from "../services/storage";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { RegisterModal } from "../components/RegisterModal";
 import { ResourceCard } from "../components/ResourceCard";
@@ -41,6 +43,8 @@ type PublisherResourcesNavigation = NativeStackNavigationProp<
   RootStackParamList,
   "PublisherResources"
 >;
+
+const PUBLISHER_FILTERS_KEY = `${STORAGE_KEYS.catalogFilters}:publisher`;
 
 export function PublisherResourcesScreen() {
   const { colors, colorScheme, shared, typography } = useAppTheme();
@@ -63,6 +67,9 @@ export function PublisherResourcesScreen() {
   const [authenticated, setAuthenticated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
+  const [verificationFilter, setVerificationFilter] = useState<"all" | "verified" | "pending" | "rejected">("all");
+  const [onchainStatusFilter, setOnchainStatusFilter] = useState<"all" | "registered" | "unregistered">("all");
+  const [sortBy, setSortBy] = useState<"newest" | "price_asc" | "price_desc" | "title">("newest");
   /** Issue #66: the resource currently open in the TransferOwnershipModal, or null */
   const [transferResource, setTransferResource] = useState<Resource | null>(null);
   /** Issue #204: the resource currently open in the RegisterModal, or null */
@@ -264,6 +271,34 @@ export function PublisherResourcesScreen() {
       separator: {
         height: 0,
       },
+      filterRow: {
+        flexDirection: "row",
+        gap: spacing.sm,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.md,
+        flexWrap: "wrap",
+      },
+      chip: {
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+      },
+      chipActive: {
+        borderColor: colors.primary,
+        backgroundColor: colors.primaryMuted,
+      },
+      chipText: {
+        fontSize: 12,
+        fontWeight: "500",
+        color: colors.textMuted,
+      },
+      chipTextActive: {
+        color: colors.primary,
+        fontWeight: "600",
+      },
       manageButton: {
         marginTop: spacing.sm,
         minHeight: 44,
@@ -376,6 +411,45 @@ export function PublisherResourcesScreen() {
 
     void loadStoredKey();
   }, [loadResources]);
+
+  useEffect(() => {
+    async function restoreFilters() {
+      try {
+        const raw = await AsyncStorage.getItem(PUBLISHER_FILTERS_KEY);
+        if (raw) {
+          const filters = JSON.parse(raw);
+          if (filters.verificationFilter && ["all", "verified", "pending", "rejected"].includes(filters.verificationFilter)) {
+            setVerificationFilter(filters.verificationFilter);
+          }
+          if (filters.onchainStatusFilter && ["all", "registered", "unregistered"].includes(filters.onchainStatusFilter)) {
+            setOnchainStatusFilter(filters.onchainStatusFilter);
+          }
+          if (filters.sortBy && ["newest", "price_asc", "price_desc", "title"].includes(filters.sortBy)) {
+            setSortBy(filters.sortBy);
+          }
+        }
+      } catch {
+      }
+    }
+    void restoreFilters();
+  }, []);
+
+  useEffect(() => {
+    async function persistFilters() {
+      try {
+        await AsyncStorage.setItem(
+          PUBLISHER_FILTERS_KEY,
+          JSON.stringify({
+            verificationFilter,
+            onchainStatusFilter,
+            sortBy,
+          })
+        );
+      } catch {
+      }
+    }
+    void persistFilters();
+  }, [verificationFilter, onchainStatusFilter, sortBy]);
 
   const handleSaveApiKey = async () => {
     if (!apiKey.trim()) {
@@ -567,18 +641,47 @@ export function PublisherResourcesScreen() {
   }, [delistTarget, isOffline, toast]);
 
   const filteredResources = useMemo(() => {
+    let result = resources;
+
     const query = search.trim().toLowerCase();
-    if (!query) return resources;
-    return resources.filter((resource) =>
-      [
-        resource.title,
-        resource.publisherName,
-        resource.walletAddress,
-        resource.resourceType,
-        resource.accessUrl,
-      ].some((value) => value?.toLowerCase().includes(query))
-    );
-  }, [resources, search]);
+    if (query) {
+      result = result.filter((resource) =>
+        [
+          resource.title,
+          resource.publisherName,
+          resource.walletAddress,
+          resource.resourceType,
+          resource.accessUrl,
+        ].some((value) => value?.toLowerCase().includes(query))
+      );
+    }
+
+    if (verificationFilter !== "all") {
+      result = result.filter((r) => r.verificationStatus === verificationFilter);
+    }
+
+    if (onchainStatusFilter !== "all") {
+      const isRegistered = onchainStatusFilter === "registered";
+      result = result.filter((r) => (r.onchainStatus === "registered") === isRegistered);
+    }
+
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case "newest":
+          return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+        case "price_asc":
+          return parseFloat(a.price || "0") - parseFloat(b.price || "0");
+        case "price_desc":
+          return parseFloat(b.price || "0") - parseFloat(a.price || "0");
+        case "title":
+          return a.title.localeCompare(b.title);
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [resources, search, verificationFilter, onchainStatusFilter, sortBy]);
 
   const renderStoredKeyLoading = () => (
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
@@ -716,6 +819,92 @@ export function PublisherResourcesScreen() {
               autoCorrect={false}
               clearButtonMode="while-editing"
             />
+
+            <View>
+              <Text style={styles.label}>Sort by</Text>
+              <View style={styles.filterRow}>
+                {(["newest", "price_asc", "price_desc", "title"] as const).map((option) => {
+                  const labels: Record<typeof option, string> = {
+                    newest: "Newest",
+                    price_asc: "Price: Low to High",
+                    price_desc: "Price: High to Low",
+                    title: "Title",
+                  };
+                  const isActive = sortBy === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      onPress={() => setSortBy(option)}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: isActive }}
+                      accessibilityLabel={labels[option]}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                        {labels[option]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View>
+              <Text style={styles.label}>Verification Status</Text>
+              <View style={styles.filterRow}>
+                {(["all", "verified", "pending", "rejected"] as const).map((option) => {
+                  const labels: Record<typeof option, string> = {
+                    all: "All",
+                    verified: "Verified",
+                    pending: "Pending",
+                    rejected: "Rejected",
+                  };
+                  const isActive = verificationFilter === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      onPress={() => setVerificationFilter(option)}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: isActive }}
+                      accessibilityLabel={labels[option]}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                        {labels[option]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View>
+              <Text style={styles.label}>On-Chain Status</Text>
+              <View style={styles.filterRow}>
+                {(["all", "registered", "unregistered"] as const).map((option) => {
+                  const labels: Record<typeof option, string> = {
+                    all: "All",
+                    registered: "Registered",
+                    unregistered: "Not Registered",
+                  };
+                  const isActive = onchainStatusFilter === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      onPress={() => setOnchainStatusFilter(option)}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: isActive }}
+                      accessibilityLabel={labels[option]}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                        {labels[option]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
 
             {error ? (
               <View style={styles.errorBanner}>
