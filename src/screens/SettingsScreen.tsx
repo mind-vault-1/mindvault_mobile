@@ -37,7 +37,7 @@ import {
   type StorageGroup,
   type StorageGroupId,
 } from "../services/storage";
-import { getAuditLog, exportAuditLog } from "../services/auditLog";
+import { getAuditLog } from "../services/auditLog";
 
 export function SettingsScreen() {
   const { colors, shared } = useAppTheme();

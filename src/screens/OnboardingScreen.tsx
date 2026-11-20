@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Animated,
   Dimensions,
   FlatList,
-  Platform,
   Pressable,
   StyleSheet,
   Text,

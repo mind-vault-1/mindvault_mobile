@@ -37,8 +37,11 @@ jest.mock("./src/services/receiptSync", () => ({ requestReceiptSync: jest.fn() }
 const originalFetch = global.fetch;
 let fetchMock: jest.Mock;
 
+const ONBOARDING_KEY = "@mindvault_catalog_filters:onboarding";
+
 beforeEach(async () => {
   await AsyncStorage.clear();
+  await AsyncStorage.setItem(ONBOARDING_KEY, "true");
   mockLinkingProps = undefined;
   fetchMock = setupFetchMock();
 });

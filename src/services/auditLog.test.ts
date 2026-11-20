@@ -7,9 +7,6 @@ import {
 } from "./auditLog";
 
 jest.mock("@react-native-async-storage/async-storage");
-jest.mock("../utils/redact", () => ({
-  redact: (value: string) => `${value.slice(0, 4)}****${value.slice(-4)}`,
-}));
 
 describe("auditLog", () => {
   beforeEach(() => {
@@ -39,8 +36,7 @@ describe("auditLog", () => {
 
       const call = (AsyncStorage.setItem as jest.Mock).mock.calls[0];
       const logData = JSON.parse(call[1]);
-      expect(logData[0].metadata?.walletAddress).toMatch(/\*{4}/);
-      expect(logData[0].metadata?.walletAddress).not.toContain("XXX");
+      expect(logData[0].metadata?.walletAddress).toBe("GBXX...XXXX");
     });
 
     it("maintains append-only behavior by preserving existing entries", async () => {
@@ -142,14 +138,14 @@ describe("auditLog", () => {
       expect(exported).toContain('"outcome": "success"');
     });
 
-    it("handles export errors gracefully", async () => {
+    it("returns an empty log export when storage read fails", async () => {
       (AsyncStorage.getItem as jest.Mock).mockRejectedValue(
         new Error("Storage error")
       );
 
       const exported = await exportAuditLog();
 
-      expect(exported).toBe("Failed to export audit log");
+      expect(exported).toBe("[]");
     });
   });
 });

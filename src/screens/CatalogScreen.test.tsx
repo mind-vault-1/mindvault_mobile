@@ -69,6 +69,14 @@ jest.mock("react-native-safe-area-context", () => ({
   SafeAreaProvider: ({ children }: any) => children,
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
+jest.mock("@react-navigation/native", () => {
+  const React = require("react");
+  return {
+    useFocusEffect: (effect: () => void | (() => void)) => {
+      React.useEffect(() => effect(), []);
+    },
+  };
+});
 
 const mockedFetchCatalog = fetchCatalog as jest.Mock;
 const mockedFetchRegistryStatus = fetchRegistryStatus as jest.Mock;

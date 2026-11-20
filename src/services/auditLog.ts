@@ -1,5 +1,4 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { redact } from "../utils/redact";
 import { STORAGE_KEYS } from "./storage";
 
 export type AuditLogEntry = {
@@ -31,7 +30,7 @@ export async function appendAuditLogEntry(
     };
     log.push(entry);
     await AsyncStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(log));
-  } catch (err) {
+  } catch {
   }
 }
 
@@ -57,7 +56,7 @@ export async function exportAuditLog(): Promise<string> {
   try {
     const log = await getAuditLog();
     return JSON.stringify(log, null, 2);
-  } catch (err) {
+  } catch {
     return "Failed to export audit log";
   }
 }
