@@ -23,8 +23,17 @@ declare const process: {
   stdout: { write(chunk: string): void };
   stderr: { write(chunk: string): void };
   exitCode?: number;
+  /** Node 22.3+; used instead of `require`, which is undefined in ESM. */
+  getBuiltinModule?: (id: string) => any;
 };
-declare const require: (id: string) => any;
+
+function fsModule(): any {
+  const getBuiltinModule = process.getBuiltinModule;
+  if (!getBuiltinModule) {
+    throw new Error("Node 22.3 or newer is required to run scripts/flaky.ts");
+  }
+  return getBuiltinModule("fs");
+}
 
 export interface JestAssertionResult {
   title?: string;
@@ -283,12 +292,12 @@ export function renderMarkdown(report: FlakyReport): string {
 }
 
 function readJson(path: string): unknown {
-  const fs = require("node:fs");
+  const fs = fsModule();
   return JSON.parse(fs.readFileSync(path, "utf8"));
 }
 
 function readManifest(path: string): QuarantineManifest {
-  const fs = require("node:fs");
+  const fs = fsModule();
   if (!fs.existsSync(path)) return { entries: [], invalid: [] };
   return parseQuarantineManifest(readJson(path));
 }
@@ -305,7 +314,7 @@ function collectFailureDetails(report: FlakyReport): string {
 }
 
 function runReports(reports: string[], manifestPath: string): void {
-  const fs = require("node:fs");
+  const fs = fsModule();
   const missing = reports.filter((path) => !fs.existsSync(path));
   if (missing.length > 0) {
     process.stderr.write(`Missing Jest report(s): ${missing.join(", ")}\n`);
