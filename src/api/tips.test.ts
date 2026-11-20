@@ -1,5 +1,3 @@
-import { Buffer } from "buffer";
-
 import { TIP_PRESETS, initiateTip, submitTip, type TipRequest } from "./tips";
 
 const mockInitiateTip = jest.fn();

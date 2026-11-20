@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -41,6 +42,7 @@ import {
   removeSearchQuery,
 } from "../services/searchHistory";
 import {
+  deleteSearch,
   getSavedSearches,
   saveSearch,
   type SavedSearch,
@@ -356,6 +358,45 @@ function createStyles(colors: ThemeColors) {
       minHeight: 44,
       justifyContent: "center",
     },
+    saveSearchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    saveSearchInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      fontSize: 14,
+      color: colors.text,
+    },
+    saveSearchAction: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    savedSearchChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.xs,
+    },
+    savedSearchDelete: {
+      minWidth: 32,
+      minHeight: 44,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    savedSearchDeleteText: {
+      fontSize: 20,
+      color: colors.textMuted,
+    },
     savedSearchName: {
       fontSize: 14,
       fontWeight: "600",
@@ -477,6 +518,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const [relativeTimeKey, setRelativeTimeKey] = useState(0);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+  const [saveSearchName, setSaveSearchName] = useState("");
+  const [isSavingSearch, setIsSavingSearch] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -775,27 +818,47 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     setSort(saved.sort);
   }, []);
 
-  const saveCurrentSearch = useCallback(
-    async (name: string) => {
-      try {
-        const newSearch = await saveSearch({
-          name,
-          search,
-          verification,
-          resourceType,
-          minPrice,
-          maxPrice,
-          sort,
-        });
-        setSavedSearches((prev) => [...prev, newSearch]);
-        toast?.show(`Search "${name}" saved successfully`);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to save search";
-        toast?.show(message, "error");
-      }
-    },
-    [search, verification, resourceType, minPrice, maxPrice, sort, toast],
-  );
+  const saveCurrentSearch = useCallback(async () => {
+    const name = saveSearchName.trim();
+    if (!name || isSavingSearch) return;
+    setIsSavingSearch(true);
+    try {
+      const newSearch = await saveSearch({
+        name,
+        search,
+        verification,
+        resourceType,
+        minPrice,
+        maxPrice,
+        sort,
+      });
+      setSavedSearches((prev) => [...prev, newSearch]);
+      setSaveSearchName("");
+      toast?.show(`Search "${name}" saved successfully`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save search";
+      toast?.show(message, "error");
+    } finally {
+      setIsSavingSearch(false);
+    }
+  }, [saveSearchName, isSavingSearch, search, verification, resourceType, minPrice, maxPrice, sort, toast]);
+
+  const deleteSavedSearch = useCallback((saved: SavedSearch) => {
+    Alert.alert("Delete saved search", `Delete "${saved.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          void deleteSearch(saved.id).then((deleted) => {
+            if (!deleted) return;
+            setSavedSearches((prev) => prev.filter((entry) => entry.id !== saved.id));
+            toast?.show(`Search "${saved.name}" deleted`);
+          });
+        },
+      },
+    ]);
+  }, [toast]);
 
   const handleSeeAll = useCallback(
     (sectionSort?: CatalogSort, sectionFilter?: { verificationStatus?: "verified" }) => {
@@ -1014,27 +1077,66 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
               </View>
             ) : null}
 
+            {hasActiveFilters ? (
+              <View style={styles.recentSection}>
+                <Text style={styles.filterLabel} accessibilityRole="header">Save this search</Text>
+                <View style={styles.saveSearchRow}>
+                  <TextInput
+                    value={saveSearchName}
+                    onChangeText={setSaveSearchName}
+                    placeholder="Search name"
+                    placeholderTextColor={colors.textSubtle}
+                    style={styles.saveSearchInput}
+                    accessibilityLabel="Saved search name"
+                    onSubmitEditing={() => { void saveCurrentSearch(); }}
+                  />
+                  <Pressable
+                    onPress={() => { void saveCurrentSearch(); }}
+                    disabled={!saveSearchName.trim() || isSavingSearch}
+                    style={[
+                      styles.saveSearchAction,
+                      (!saveSearchName.trim() || isSavingSearch) && styles.clearButtonDisabled,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Save current search"
+                    accessibilityState={{ disabled: !saveSearchName.trim() || isSavingSearch }}
+                  >
+                    <Text style={styles.clearButtonText}>Save</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+
             {savedSearches.length > 0 && search.trim() === "" ? (
               <View style={styles.recentSection}>
                 <Text style={styles.filterLabel} accessibilityRole="header">Saved searches</Text>
                 <View style={styles.chipRow} accessibilityLabel="Saved searches">
                   {savedSearches.map((saved) => (
-                    <Pressable
-                      key={saved.id}
-                      onPress={() => applySavedSearch(saved)}
-                      style={styles.savedSearchButton}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Apply saved search: ${saved.name}`}
-                    >
-                      <Text style={styles.savedSearchName} numberOfLines={1}>
-                        {saved.name}
-                      </Text>
-                      <Text style={styles.savedSearchSummary} numberOfLines={1}>
-                        {[saved.search, saved.verification !== "all" && saved.verification, saved.resourceType !== "all" && saved.resourceType]
-                          .filter(Boolean)
-                          .join(" • ")}
-                      </Text>
-                    </Pressable>
+                    <View key={saved.id} style={styles.savedSearchChip}>
+                      <Pressable
+                        onPress={() => applySavedSearch(saved)}
+                        style={styles.savedSearchButton}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Apply saved search: ${saved.name}`}
+                      >
+                        <Text style={styles.savedSearchName} numberOfLines={1}>
+                          {saved.name}
+                        </Text>
+                        <Text style={styles.savedSearchSummary} numberOfLines={1}>
+                          {[saved.search, saved.verification !== "all" && saved.verification, saved.resourceType !== "all" && saved.resourceType]
+                            .filter(Boolean)
+                            .join(" • ")}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => deleteSavedSearch(saved)}
+                        style={styles.savedSearchDelete}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete saved search: ${saved.name}`}
+                      >
+                        <Text style={styles.savedSearchDeleteText}>×</Text>
+                      </Pressable>
+                    </View>
                   ))}
                 </View>
               </View>

@@ -1,5 +1,3 @@
-import { Buffer } from "buffer";
-
 import {
   PAYMENT_REQUIRED_HEADER,
   encodePaymentSignature,
