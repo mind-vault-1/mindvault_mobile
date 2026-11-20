@@ -3,26 +3,56 @@ name: Release
 on:
   push:
     branches: ["main"]
+  # Validates PR titles: squash-merged titles are the commits release-please reads.
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# release-please opens a "release PR" that accumulates conventional-commit
-# entries, then creates a GitHub Release + tag when that PR is merged. It only
-# needs the default GITHUB_TOKEN, which is read-only in this repo unless the
-# job asks for more.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
-  release-please:
+  # Fails when the PR title is not a valid Conventional Commit, e.g.
+  # `feat(catalog): paginate with infinite scroll` or `fix!: drop v1 API`.
+  pr-title:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
     steps:
-      # Manifest mode: all settings (bootstrap-sha, the app.json version bump)
-      # live in release-please-config.json, and the current version lives in
-      # .release-please-manifest.json.
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            test
+            ci
+            build
+            chore
+            revert
+
+  # release-please opens a "release PR" that accumulates conventional-commit
+  # entries, then creates a GitHub Release + tag when that PR is merged. The
+  # release PR only touches CHANGELOG.md and the version files listed in
+  # release-please-config.json.
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Manifest mode: all settings (bootstrap-sha, changelog sections, the
+      # app.json version bump) live in release-please-config.json, and the
+      # current version lives in .release-please-manifest.json.
       - uses: googleapis/release-please-action@v4
         with:
           config-file: release-please-config.json
