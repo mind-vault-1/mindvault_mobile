@@ -40,6 +40,11 @@ import {
   getSearchHistory,
   removeSearchQuery,
 } from "../services/searchHistory";
+import {
+  getSavedSearches,
+  saveSearch,
+  type SavedSearch,
+} from "../services/savedSearches";
 import { STORAGE_KEYS } from "../services/storage";
 import type { CatalogFilters, CatalogSort, Resource, VerificationStatus } from "../types";
 import { spacing } from "../theme";
@@ -341,6 +346,26 @@ function createStyles(colors: ThemeColors) {
       fontSize: 12,
       color: colors.textMuted,
     },
+    savedSearchButton: {
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      minHeight: 44,
+      justifyContent: "center",
+    },
+    savedSearchName: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.text,
+      marginBottom: spacing.xs,
+    },
+    savedSearchSummary: {
+      fontSize: 12,
+      color: colors.textMuted,
+    },
     apiHint: {
       fontSize: 11,
       color: colors.textSubtle,
@@ -451,6 +476,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [searchFocused, setSearchFocused] = useState(false);
   const [relativeTimeKey, setRelativeTimeKey] = useState(0);
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -661,10 +687,9 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   }, [loadData]);
 
   useEffect(() => {
-    // Recently viewed is a shortcut, not data the screen depends on: a failed
-    // read simply leaves the row hidden.
     void getRecentResources().then(setRecent);
     void getSearchHistory().then(setSearchHistory);
+    void getSavedSearches().then(setSavedSearches);
   }, []);
 
   const rememberSearch = useCallback((query: string) => {
@@ -739,6 +764,38 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     setRecent([]);
     void clearRecentResources();
   }, []);
+
+  const applySavedSearch = useCallback((saved: SavedSearch) => {
+    setSearch(saved.search);
+    setDebouncedSearch(saved.search);
+    setVerification(saved.verification);
+    setResourceType(saved.resourceType);
+    setMinPrice(saved.minPrice);
+    setMaxPrice(saved.maxPrice);
+    setSort(saved.sort);
+  }, []);
+
+  const saveCurrentSearch = useCallback(
+    async (name: string) => {
+      try {
+        const newSearch = await saveSearch({
+          name,
+          search,
+          verification,
+          resourceType,
+          minPrice,
+          maxPrice,
+          sort,
+        });
+        setSavedSearches((prev) => [...prev, newSearch]);
+        toast?.show(`Search "${name}" saved successfully`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to save search";
+        toast?.show(message, "error");
+      }
+    },
+    [search, verification, resourceType, minPrice, maxPrice, sort, toast],
+  );
 
   const handleSeeAll = useCallback(
     (sectionSort?: CatalogSort, sectionFilter?: { verificationStatus?: "verified" }) => {
@@ -954,6 +1011,32 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                     </Pressable>
                   ))}
                 </ScrollView>
+              </View>
+            ) : null}
+
+            {savedSearches.length > 0 && search.trim() === "" ? (
+              <View style={styles.recentSection}>
+                <Text style={styles.filterLabel} accessibilityRole="header">Saved searches</Text>
+                <View style={styles.chipRow} accessibilityLabel="Saved searches">
+                  {savedSearches.map((saved) => (
+                    <Pressable
+                      key={saved.id}
+                      onPress={() => applySavedSearch(saved)}
+                      style={styles.savedSearchButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Apply saved search: ${saved.name}`}
+                    >
+                      <Text style={styles.savedSearchName} numberOfLines={1}>
+                        {saved.name}
+                      </Text>
+                      <Text style={styles.savedSearchSummary} numberOfLines={1}>
+                        {[saved.search, saved.verification !== "all" && saved.verification, saved.resourceType !== "all" && saved.resourceType]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
               </View>
             ) : null}
 

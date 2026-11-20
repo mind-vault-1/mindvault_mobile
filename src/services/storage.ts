@@ -14,6 +14,7 @@ export const STORAGE_KEYS = {
   favourites: "@mindvault_favourites",
   recentResources: "@mindvault_recent_resources",
   searchHistory: "@mindvault_search_history",
+  savedSearches: "@mindvault_saved_searches",
   receipts: RECEIPTS_STORAGE_KEY,
   auditLog: "mindvault:auditLog",
 } as const;
@@ -21,7 +22,7 @@ export const STORAGE_KEYS = {
 /** Every key under this prefix is disposable cached data. */
 export const CACHE_KEY_PREFIX = "@mindvault_cache:";
 
-export type StorageGroupId = "filters" | "favourites" | "history" | "cache" | "receipts" | "auditLog";
+export type StorageGroupId = "filters" | "searches" | "favourites" | "history" | "cache" | "receipts" | "auditLog";
 
 export interface StorageGroup {
   id: StorageGroupId;
@@ -39,6 +40,12 @@ export const STORAGE_GROUPS: readonly StorageGroup[] = [
     label: "Filters",
     description: "Saved catalog search, sort and filter choices.",
     keys: [STORAGE_KEYS.catalogFilters],
+  },
+  {
+    id: "searches",
+    label: "Saved Searches",
+    description: "Named search filters you have saved for quick access.",
+    keys: [STORAGE_KEYS.savedSearches],
   },
   {
     id: "favourites",
