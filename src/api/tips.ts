@@ -1,15 +1,15 @@
+import { Buffer } from "buffer";
+
 import {
+  PAYMENT_REQUIRED_HEADER,
   encodePaymentSignature,
   parsePaymentRequired,
-  prepareResourceAccess,
   priceToAtomicUnits,
-  signPaymentTransaction,
-  submitSignedPayment,
   type PaymentChallenge,
 } from "./payment";
 import { getApiBaseUrl } from "./resources";
 
-export const TIP_PRESETS = ["1.00", "5.00", "10.00", "25.00"];
+export const TIP_PRESETS = ["1.00", "5.00", "10.00", "25.00"] as const;
 
 export interface TipRequest {
   publisherId: string;
@@ -36,15 +36,12 @@ export async function initiateTip(request: TipRequest): Promise<PaymentChallenge
   }
 
   const atomicAmount = priceToAtomicUnits(amount);
-  if (atomicAmount <= 0n) {
+  if (atomicAmount <= BigInt(0)) {
     throw new Error("Tip amount must be greater than zero.");
   }
 
-  const url = new URL(
-    `${getApiBaseUrl()}/publishers/${encodeURIComponent(publisherId)}/tip`
-  );
-
-  const response = await fetch(url.toString(), {
+  const url = `${getApiBaseUrl()}/publishers/${encodeURIComponent(publisherId)}/tip`;
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -55,7 +52,7 @@ export async function initiateTip(request: TipRequest): Promise<PaymentChallenge
   });
 
   if (response.status === 402) {
-    const paymentRequired = response.headers.get("PAYMENT-REQUIRED");
+    const paymentRequired = response.headers.get(PAYMENT_REQUIRED_HEADER);
     return parsePaymentRequired(paymentRequired, amount);
   }
 
@@ -66,23 +63,17 @@ export async function initiateTip(request: TipRequest): Promise<PaymentChallenge
   throw new Error("Tip initiated but no payment challenge received.");
 }
 
-/** Submits a signed tip payment to the server. */
+/** Submits a signed tip payment (transaction XDR) to the server. */
 export async function submitTip(
   challenge: PaymentChallenge,
-  signature: string,
+  transaction: string,
   options?: { note?: string }
 ): Promise<TipReceipt> {
-  const paymentSignature = encodePaymentSignature({
-    scheme: "exact",
-    network: challenge.accepted.network,
-    signature,
-  });
-
   const response = await fetch(`${getApiBaseUrl()}/tips/verify`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      [challenge.x402Version === 2 ? "PAYMENT-SIGNATURE" : "X-Payment-Signature"]: paymentSignature,
+      "PAYMENT-SIGNATURE": encodePaymentSignature(challenge, transaction),
     },
     body: JSON.stringify({
       challenge,
@@ -120,14 +111,4 @@ function parseTipReceipt(value: unknown): TipReceipt {
   }
 
   return { tipId, publisherId, resourceId, amount, txHash, createdAt };
-}
-
-/** Signs and submits a tip payment in one operation. */
-export async function sendTip(
-  challenge: PaymentChallenge,
-  keypair: { sign: (message: Uint8Array) => Buffer },
-  options?: { note?: string }
-): Promise<TipReceipt> {
-  const signature = signPaymentTransaction(challenge, keypair);
-  return submitTip(challenge, signature, options);
 }

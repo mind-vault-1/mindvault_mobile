@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -9,7 +9,8 @@ import {
   View,
 } from "react-native";
 
-import { TIP_PRESETS, initiateTip, type TipRequest } from "../api/tips";
+import { TIP_PRESETS, initiateTip, submitTip } from "../api/tips";
+import { signPaymentTransaction, type PaymentChallenge } from "../api/payment";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
@@ -18,7 +19,7 @@ interface TipSheetProps {
   publisherId: string;
   resourceId?: string;
   resourceTitle?: string;
-  onTipInitiated: (amount: string) => void;
+  onTipSent?: (amount: string) => void;
   onDismiss: () => void;
 }
 
@@ -39,7 +40,7 @@ function createStyles(colors: ThemeColors) {
     },
     subtitle: {
       fontSize: 14,
-      color: colors.textSecondary,
+      color: colors.textMuted,
     },
     presetsContainer: {
       marginBottom: spacing.lg,
@@ -61,14 +62,14 @@ function createStyles(colors: ThemeColors) {
       paddingVertical: spacing.md,
       paddingHorizontal: spacing.sm,
       borderRadius: 8,
-      backgroundColor: colors.surfaceAlt,
+      backgroundColor: colors.neutralBg,
       alignItems: "center",
       borderWidth: 2,
       borderColor: "transparent",
     },
     presetButtonActive: {
       borderColor: colors.primary,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.primaryMuted,
     },
     presetButtonText: {
       fontSize: 16,
@@ -76,7 +77,7 @@ function createStyles(colors: ThemeColors) {
       color: colors.text,
     },
     presetButtonActiveText: {
-      color: "white",
+      color: colors.primary,
     },
     customContainer: {
       marginBottom: spacing.lg,
@@ -131,10 +132,10 @@ function createStyles(colors: ThemeColors) {
     submitButtonText: {
       fontSize: 16,
       fontWeight: "600",
-      color: "white",
+      color: colors.onPrimary,
     },
     cancelButton: {
-      backgroundColor: colors.surfaceAlt,
+      backgroundColor: colors.neutralBg,
     },
     cancelButtonText: {
       fontSize: 16,
@@ -159,48 +160,66 @@ export function TipSheet({
   publisherId,
   resourceId,
   resourceTitle,
-  onTipInitiated,
+  onTipSent,
   onDismiss,
 }: TipSheetProps) {
-  const colors = useAppTheme();
-  const styles = createStyles(colors);
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [customAmount, setCustomAmount] = useState("");
   const [note, setNote] = useState("");
+  const [secret, setSecret] = useState("");
+  const [challenge, setChallenge] = useState<PaymentChallenge | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const getAmount = useCallback(() => {
-    if (selectedPreset) return selectedPreset;
-    return customAmount;
-  }, [selectedPreset, customAmount]);
+  const amount = selectedPreset || customAmount;
 
-  const handleTip = useCallback(async () => {
-    const amount = getAmount();
-    if (!amount.trim()) {
+  const handleInitiate = useCallback(async () => {
+    const value = amount.trim();
+    if (!value) {
       setError("Please enter a tip amount or select a preset.");
       return;
     }
 
     setLoading(true);
     setError(null);
-
     try {
-      const request: TipRequest = {
+      const nextChallenge = await initiateTip({
         publisherId,
         resourceId,
-        amount,
+        amount: value,
         note: note.trim() || undefined,
-      };
-
-      await initiateTip(request);
-      onTipInitiated(amount);
+      });
+      setChallenge(nextChallenge);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to initiate tip");
+    } finally {
       setLoading(false);
     }
-  }, [getAmount, publisherId, resourceId, note, onTipInitiated]);
+  }, [amount, publisherId, resourceId, note]);
+
+  const handleSend = useCallback(async () => {
+    if (!challenge) return;
+    if (!secret.trim()) {
+      setError("Enter your secret key to sign the tip.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const transaction = await signPaymentTransaction(challenge, secret.trim());
+      await submitTip(challenge, transaction, { note: note.trim() || undefined });
+      onTipSent?.(amount.trim());
+      onDismiss();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send tip");
+    } finally {
+      setLoading(false);
+    }
+  }, [challenge, secret, note, onTipSent, amount, onDismiss]);
 
   if (loading) {
     return (
@@ -214,7 +233,7 @@ export function TipSheet({
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Send a Tip</Text>
-        {resourceTitle && <Text style={styles.subtitle}>For "{resourceTitle}"</Text>}
+        {resourceTitle ? <Text style={styles.subtitle}>For "{resourceTitle}"</Text> : null}
       </View>
 
       <View style={styles.presetsContainer}>
@@ -247,7 +266,7 @@ export function TipSheet({
         <TextInput
           style={styles.customInput}
           placeholder="0.00"
-          placeholderTextColor={colors.textSecondary}
+          placeholderTextColor={colors.textMuted}
           keyboardType="decimal-pad"
           value={customAmount}
           onChangeText={(text) => {
@@ -262,7 +281,7 @@ export function TipSheet({
         <TextInput
           style={styles.noteInput}
           placeholder="Thank you for this amazing content!"
-          placeholderTextColor={colors.textSecondary}
+          placeholderTextColor={colors.textMuted}
           multiline
           numberOfLines={4}
           value={note}
@@ -270,11 +289,33 @@ export function TipSheet({
         />
       </View>
 
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {challenge ? (
+        <View style={styles.customContainer}>
+          <Text style={styles.customLabel}>Secret key (to sign tip)</Text>
+          <TextInput
+            style={styles.customInput}
+            placeholder="S..."
+            placeholderTextColor={colors.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={secret}
+            onChangeText={setSecret}
+          />
+        </View>
+      ) : null}
 
-      <Pressable style={[styles.button, styles.submitButton]} onPress={handleTip} disabled={loading}>
-        <Text style={styles.submitButtonText}>Send Tip</Text>
-      </Pressable>
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+      {!challenge ? (
+        <Pressable style={[styles.button, styles.submitButton]} onPress={handleInitiate} disabled={loading}>
+          <Text style={styles.submitButtonText}>Continue</Text>
+        </Pressable>
+      ) : (
+        <Pressable style={[styles.button, styles.submitButton]} onPress={handleSend} disabled={loading}>
+          <Text style={styles.submitButtonText}>Send Tip</Text>
+        </Pressable>
+      )}
 
       <Pressable style={[styles.button, styles.cancelButton]} onPress={onDismiss} disabled={loading}>
         <Text style={styles.cancelButtonText}>Cancel</Text>
