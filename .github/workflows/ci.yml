@@ -129,7 +129,7 @@ jobs:
       # the OS temp dir; its entries are content-keyed, so any previous run's
       # cache is safe to restore.
       - name: Cache Metro
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/metro-cache
           key: ${{ runner.os }}-metro-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
