@@ -12,3 +12,5 @@ web-build/
 .DS_Store
 android/
 ios/
+
+coverage/
