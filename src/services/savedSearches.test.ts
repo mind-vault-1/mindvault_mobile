@@ -39,7 +39,7 @@ describe("savedSearches", () => {
     });
 
     it("should handle corrupted storage gracefully", async () => {
-      await AsyncStorage.setItem("mindvault_saved_searches", "invalid json");
+      await AsyncStorage.setItem("@mindvault_saved_searches", "invalid json");
       const searches = await getSavedSearches();
       expect(searches).toEqual([]);
     });
@@ -65,7 +65,7 @@ describe("savedSearches", () => {
         ],
       };
 
-      await AsyncStorage.setItem("mindvault_saved_searches", JSON.stringify(data));
+      await AsyncStorage.setItem("@mindvault_saved_searches", JSON.stringify(data));
       const searches = await getSavedSearches();
 
       expect(searches).toHaveLength(1);
@@ -261,7 +261,7 @@ describe("savedSearches", () => {
       const saved = await saveSearch(search);
       await deleteSearch(saved.id);
 
-      const item = await AsyncStorage.getItem("mindvault_saved_searches");
+      const item = await AsyncStorage.getItem("@mindvault_saved_searches");
       expect(item).toBeNull();
     });
 
