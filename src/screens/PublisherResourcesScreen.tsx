@@ -261,6 +261,19 @@ export function PublisherResourcesScreen() {
       separator: {
         height: 0,
       },
+      manageButton: {
+        marginTop: spacing.sm,
+        minHeight: 44,
+        borderRadius: 10,
+        backgroundColor: colors.primaryMuted,
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      manageButtonText: {
+        fontSize: 13,
+        fontWeight: "600",
+        color: colors.primary,
+      },
       emptyState: {
         gap: spacing.sm,
         paddingVertical: spacing.xl,
@@ -721,15 +734,28 @@ export function PublisherResourcesScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <ResourceCard
-            resource={item}
-            onCopyUrl={toast.info}
-            editablePrice={true}
-            onPriceUpdated={handlePriceUpdated}
-            onTransferOwnership={handleOpenTransfer}
-            onRegister={handleOpenRegister}
-            onDelist={handleOpenDelist}
-          />
+          <View>
+            <ResourceCard
+              resource={item}
+              onCopyUrl={toast.info}
+              editablePrice={true}
+              onPriceUpdated={handlePriceUpdated}
+              onTransferOwnership={handleOpenTransfer}
+              onRegister={handleOpenRegister}
+              onDelist={handleOpenDelist}
+            />
+            <Pressable
+              onPress={() =>
+                navigation.navigate("PublisherResourceDetail", { resourceId: item.id })
+              }
+              style={styles.manageButton}
+              accessibilityRole="button"
+              accessibilityLabel={`Manage ${item.title}`}
+              accessibilityHint="Opens stats, on-chain info and actions for this resource"
+            >
+              <Text style={styles.manageButtonText}>Manage resource ›</Text>
+            </Pressable>
+          </View>
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={() =>

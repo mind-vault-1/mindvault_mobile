@@ -118,3 +118,69 @@ describe("exportReceipts", () => {
     expect(csv.split("\r\n").filter(Boolean)).toHaveLength(3);
   });
 });
+
+describe("JSON schema", () => {
+  it("has exactly schemaVersion, exportedAt and receipts with the public fields", () => {
+    const parsed = JSON.parse(buildReceiptsJson([receipt()], NOW));
+    expect(Object.keys(parsed).sort()).toEqual(["exportedAt", "receipts", "schemaVersion"]);
+    expect(parsed.schemaVersion).toBe(1);
+    expect(Object.keys(parsed.receipts[0]).sort()).toEqual(
+      ["amount", "asset", "network", "paidAt", "payer", "resourceId", "title", "txHash"]
+    );
+  });
+
+  it("keeps unicode titles intact and writes an empty list when nothing matches", () => {
+    const parsed = JSON.parse(buildReceiptsJson([receipt({ title: "Ünïcødé 📚 指南" })], NOW));
+    expect(parsed.receipts[0].title).toBe("Ünïcødé 📚 指南");
+    expect(JSON.parse(exportReceipts([receipt({ paidAt: "2020-01-01T00:00:00.000Z" })], "json", "last30Days", NOW)).receipts).toEqual([]);
+  });
+});
+
+describe("CSV escaping", () => {
+  it.each([
+    ["a comma", "Guide, part 1", '"Guide, part 1"'],
+    ["quotes", 'The "best" guide', '"The ""best"" guide"'],
+    ["a newline", "Line 1\nLine 2", '"Line 1\nLine 2"'],
+    ["a carriage return", "Line 1\rLine 2", '"Line 1\rLine 2"'],
+    ["unicode", "Ünïcødé 📚 指南", "Ünïcødé 📚 指南"],
+    ["unicode and a comma", "café, 東京", '"café, 東京"'],
+  ])("handles %s", (_label, input, expected) => {
+    expect(escapeCsvCell(input)).toBe(expected);
+  });
+
+  it("keeps a multi-line title inside one CSV record", () => {
+    const csv = buildReceiptsCsv([receipt({ title: 'Multi\nline, "quoted"' })]);
+    expect(csv).toContain('"Multi\nline, ""quoted"""');
+    // Header, one record, and the trailing terminator.
+    expect(csv.split("\r\n")).toHaveLength(3);
+  });
+
+  it("guards formula-like titles even when they also need quoting", () => {
+    expect(escapeCsvCell("=HYPERLINK(\"x\",\"y\")")).toBe('"\'=HYPERLINK(""x"",""y"")"');
+  });
+});
+
+describe("date filter boundaries", () => {
+  it("includes exactly 30 days ago and excludes anything older or in the future", () => {
+    const thirtyDays = new Date(NOW.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const older = new Date(NOW.getTime() - 30 * 24 * 60 * 60 * 1000 - 1).toISOString();
+    const future = new Date(NOW.getTime() + 60 * 1000).toISOString();
+    const hashes = filterReceiptsByRange([
+      receipt({ txHash: "edge", paidAt: thirtyDays }),
+      receipt({ txHash: "older", paidAt: older }),
+      receipt({ txHash: "future", paidAt: future }),
+    ], "last30Days", NOW).map((r) => r.txHash);
+    expect(hashes).toEqual(["edge"]);
+  });
+
+  it("filters a merged local and on-chain list without changing its order", () => {
+    const merged = [
+      receipt({ txHash: "local", paidAt: "2026-10-15T00:00:00.000Z" }),
+      receipt({ txHash: "chain", paidAt: "2026-10-12T00:00:00.000Z" }),
+      receipt({ txHash: "old-chain", paidAt: "2025-06-01T12:00:00.000Z" }),
+    ];
+    const csv = exportReceipts(merged, "csv", "thisYear", NOW);
+    const rows = csv.split("\r\n").filter(Boolean).slice(1).map((row) => row.split(",")[6]);
+    expect(rows).toEqual(["local", "chain"]);
+  });
+});

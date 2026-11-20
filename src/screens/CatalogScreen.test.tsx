@@ -9,6 +9,12 @@ import {
   getRecentResources,
   recordRecentResource,
 } from "../services/recent";
+import {
+  addSearchQuery,
+  clearSearchHistory,
+  getSearchHistory,
+  removeSearchQuery,
+} from "../services/searchHistory";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { ToastProvider } from "../components/ToastProvider";
 
@@ -38,6 +44,13 @@ jest.mock("../components/HomeSections", () => {
     ),
   };
 });
+jest.mock("../services/searchHistory", () => ({
+  ...jest.requireActual("../services/searchHistory"),
+  getSearchHistory: jest.fn(),
+  addSearchQuery: jest.fn(),
+  removeSearchQuery: jest.fn(),
+  clearSearchHistory: jest.fn(),
+}));
 jest.mock("../services/recent", () => ({
   getRecentResources: jest.fn(),
   recordRecentResource: jest.fn(),
@@ -90,6 +103,10 @@ beforeEach(() => {
   mockedGetRecentResources.mockResolvedValue([]);
   mockedRecordRecentResource.mockResolvedValue([]);
   mockedClearRecentResources.mockResolvedValue(undefined);
+  (getSearchHistory as jest.Mock).mockResolvedValue([]);
+  (addSearchQuery as jest.Mock).mockImplementation(async (q: string) => [q]);
+  (removeSearchQuery as jest.Mock).mockResolvedValue([]);
+  (clearSearchHistory as jest.Mock).mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -573,3 +590,70 @@ describe("CatalogScreen HomeSections", () => {
   });
 });
 
+
+describe("CatalogScreen search history", () => {
+  async function focusedScreen(history: string[]) {
+    (getSearchHistory as jest.Mock).mockResolvedValue(history);
+    const screen = renderCatalog();
+    await waitFor(() => expect(getSearchHistory).toHaveBeenCalled());
+    await waitFor(() => expect(mockedFetchCatalog).toHaveBeenCalled());
+    fireEvent(screen.getByLabelText("Search resources"), "focus");
+    return screen;
+  }
+
+  it("shows recent searches only while the search box is focused", async () => {
+    const screen = await focusedScreen(["stellar", "soroban"]);
+    expect(await screen.findByLabelText("Search for stellar")).toBeTruthy();
+    expect(screen.getByLabelText("Search for soroban")).toBeTruthy();
+
+    fireEvent(screen.getByLabelText("Search resources"), "blur");
+    expect(screen.queryByTestId("search-suggestions")).toBeNull();
+  });
+
+  it("narrows suggestions to the current input", async () => {
+    const screen = await focusedScreen(["stellar", "soroban"]);
+    fireEvent.changeText(screen.getByLabelText("Search resources"), "rob");
+    expect(screen.getByLabelText("Search for soroban")).toBeTruthy();
+    expect(screen.queryByLabelText("Search for stellar")).toBeNull();
+  });
+
+  it("runs a suggestion immediately and remembers it", async () => {
+    const screen = await focusedScreen(["stellar"]);
+    fireEvent.press(await screen.findByLabelText("Search for stellar"));
+    expect(screen.getByLabelText("Search resources").props.value).toBe("stellar");
+    expect(addSearchQuery).toHaveBeenCalledWith("stellar");
+    await waitFor(() =>
+      expect(mockedFetchCatalog).toHaveBeenLastCalledWith(expect.objectContaining({ search: "stellar" }))
+    );
+  });
+
+  it("remembers a query on submit", async () => {
+    const screen = await focusedScreen([]);
+    const input = screen.getByLabelText("Search resources");
+    fireEvent.changeText(input, "  guides ");
+    fireEvent(input, "submitEditing");
+    expect(addSearchQuery).toHaveBeenCalledWith("  guides ");
+    expect(input.props.returnKeyType).toBe("search");
+  });
+
+  it("removes one suggestion or clears them all", async () => {
+    (removeSearchQuery as jest.Mock).mockResolvedValue(["soroban"]);
+    const screen = await focusedScreen(["stellar", "soroban"]);
+
+    fireEvent.press(await screen.findByLabelText("Remove stellar from recent searches"));
+    expect(removeSearchQuery).toHaveBeenCalledWith("stellar");
+    await waitFor(() => expect(screen.queryByLabelText("Search for stellar")).toBeNull());
+
+    fireEvent.press(screen.getByLabelText("Clear all recent searches"));
+    expect(clearSearchHistory).toHaveBeenCalled();
+    expect(screen.queryByTestId("search-suggestions")).toBeNull();
+  });
+
+  it("gives every suggestion control an accessible button role", async () => {
+    const screen = await focusedScreen(["stellar"]);
+    await screen.findByLabelText("Search for stellar");
+    for (const name of ["Search for stellar", "Remove stellar from recent searches", "Clear all recent searches"]) {
+      expect(screen.getByRole("button", { name })).toBeTruthy();
+    }
+  });
+});
