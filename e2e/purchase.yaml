@@ -1,0 +1,100 @@
+# End-to-end purchase flow against a seeded testnet deployment.
+#
+# Requires two text resources that the e2e server can serve:
+#   PAID_TITLE      a resource whose payment the server accepts
+#   DECLINED_TITLE  a resource whose payment the server rejects
+# Both must be single-purchase (non-lease) text resources so the app renders
+# the paid content in the paywall sheet. Values are supplied with `maestro test
+# -e KEY=VALUE`; the defaults below are placeholders for local runs.
+appId: app.mindvault.mobile
+name: Purchase - successful payment and rejected payment
+env:
+  PAID_TITLE: "E2E Paid Resource"
+  DECLINED_TITLE: "E2E Declined Resource"
+  PRICE: "2.50"
+  CONTENT: "E2E purchased content"
+  TESTNET_SECRET: "S_SET_ME"
+---
+- launchApp:
+    clearState: true
+
+# Fresh installs land on onboarding first.
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+
+- extendedWaitUntil:
+    visible: "Search resources…"
+    timeout: 30000
+
+# --- Successful purchase ---------------------------------------------------
+- tapOn: "${PAID_TITLE}"
+- extendedWaitUntil:
+    visible: "Resource Detail"
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      text: "Unlock for ${PRICE} USDC"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "Unlock for ${PRICE} USDC"
+- extendedWaitUntil:
+    visible: "Pay & Access"
+    timeout: 15000
+- tapOn: "Pay & Access"
+
+# Testnet signing uses the in-app secret entry sheet (no biometrics on CI).
+- extendedWaitUntil:
+    visible: "Stellar secret key"
+    timeout: 20000
+- tapOn: "Stellar secret key"
+- inputText: "${TESTNET_SECRET}"
+- tapOn: "Sign"
+
+# The server accepts the payment and returns the resource content.
+- extendedWaitUntil:
+    visible: "${CONTENT}"
+    timeout: 45000
+- takeScreenshot: purchase-success
+- tapOn: "Close payment"
+
+# --- Rejected payment ------------------------------------------------------
+- launchApp:
+    clearState: true
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+- extendedWaitUntil:
+    visible: "Search resources…"
+    timeout: 30000
+- tapOn: "${DECLINED_TITLE}"
+- extendedWaitUntil:
+    visible: "Resource Detail"
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      text: "Unlock for ${PRICE} USDC"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "Unlock for ${PRICE} USDC"
+- extendedWaitUntil:
+    visible: "Pay & Access"
+    timeout: 15000
+- tapOn: "Pay & Access"
+- extendedWaitUntil:
+    visible: "Stellar secret key"
+    timeout: 20000
+- tapOn: "Stellar secret key"
+- inputText: "${TESTNET_SECRET}"
+- tapOn: "Sign"
+
+# The rejected payment keeps the resource locked and offers a retry.
+- extendedWaitUntil:
+    visible: "Retry"
+    timeout: 45000
+- assertNotVisible: "${CONTENT}"
+- takeScreenshot: purchase-rejected

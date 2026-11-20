@@ -1,0 +1,74 @@
+# End-to-end lease flow against a seeded testnet deployment.
+#
+# Requires a text resource that is listed on the testnet lease registry and
+# accepts USDC payments. Values are supplied with `maestro test -e KEY=VALUE`.
+appId: app.mindvault.mobile
+name: Lease - cancellation and purchase
+env:
+  LEASE_TITLE: "E2E Leasable Resource"
+  PRICE: "2.50"
+  TESTNET_SECRET: "S_SET_ME"
+---
+- launchApp:
+    clearState: true
+
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+
+- extendedWaitUntil:
+    visible: "Search resources…"
+    timeout: 30000
+- tapOn: "${LEASE_TITLE}"
+- extendedWaitUntil:
+    visible: "Resource Detail"
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      text: "Unlock for ${PRICE} USDC"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "Unlock for ${PRICE} USDC"
+- extendedWaitUntil:
+    visible: "Rent instead"
+    timeout: 15000
+
+# --- Cancelling a lease before signing leaves the resource untouched -------
+- tapOn: "Rent instead"
+- extendedWaitUntil:
+    visible: "Select Week lease"
+    timeout: 15000
+- tapOn: "Select Week lease"
+- extendedWaitUntil:
+    visible: "Confirm & Pay"
+    timeout: 15000
+- tapOn: "Close"
+- extendedWaitUntil:
+    visible: "Rent instead"
+    timeout: 15000
+- takeScreenshot: lease-cancelled
+
+# --- Purchasing a day lease -------------------------------------------------
+- tapOn: "Rent instead"
+- extendedWaitUntil:
+    visible: "Select Day lease"
+    timeout: 15000
+- tapOn: "Select Day lease"
+- extendedWaitUntil:
+    visible: "Confirm & Pay"
+    timeout: 15000
+- tapOn: "Confirm & Pay"
+- extendedWaitUntil:
+    visible: "Stellar secret key"
+    timeout: 20000
+- tapOn: "Stellar secret key"
+- inputText: "${TESTNET_SECRET}"
+- tapOn: "Sign"
+
+- extendedWaitUntil:
+    visible: "Lease Purchased"
+    timeout: 45000
+- takeScreenshot: lease-purchased
+- tapOn: "Done"
