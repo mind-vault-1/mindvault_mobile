@@ -38,7 +38,7 @@ function renderAppAt(initialUrl: string | null) {
   jest.spyOn(Linking, "getInitialURL").mockResolvedValue(initialUrl);
   return render(
     <NavigationContainer linking={createLinkingOptions(API_HOST)}>
-      <RootNavigator />
+      <RootNavigator showOnboarding={false} />
     </NavigationContainer>
   );
 }

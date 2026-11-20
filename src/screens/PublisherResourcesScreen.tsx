@@ -668,7 +668,7 @@ export function PublisherResourcesScreen() {
     result.sort((a, b) => {
       switch (sortBy) {
         case "newest":
-          return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+          return new Date(b.publishedAt ?? b.updatedAt ?? 0).getTime() - new Date(a.publishedAt ?? a.updatedAt ?? 0).getTime();
         case "price_asc":
           return parseFloat(a.price || "0") - parseFloat(b.price || "0");
         case "price_desc":
