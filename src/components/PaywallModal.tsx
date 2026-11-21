@@ -28,6 +28,7 @@ import type { AccessResult } from "../types";
 import { SignTransactionSheet } from "./SignTransactionSheet";
 import { LeaseSheet } from "./LeaseSheet";
 import { getRegistryClient } from "../api/leases";
+import { hapticError, hapticSuccess } from "../utils/haptics";
 
 interface PaywallModalProps {
   visible: boolean;
@@ -193,6 +194,7 @@ export function PaywallModal({
 
   function showError(err: unknown, run: number) {
     if (!isActive(run)) return;
+    void hapticError();
     busy.current = false;
     setChallenge(null);
     setErrorMsg(err instanceof Error ? err.message : "Unable to access this resource. Please try again.");
@@ -201,6 +203,7 @@ export function PaywallModal({
 
   async function showResult(access: AccessResult, run: number) {
     if (!isActive(run)) return;
+    void hapticSuccess();
     setResult(access);
     if (access.type === "external") {
       await Linking.openURL(access.url);

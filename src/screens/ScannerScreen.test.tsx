@@ -1,5 +1,6 @@
 import React from "react";
-import { fireEvent } from "@testing-library/react-native";
+import { fireEvent, waitFor } from "@testing-library/react-native";
+import * as Haptics from "expo-haptics";
 
 import { ScannerScreen } from "./ScannerScreen";
 import { renderWithProviders } from "../test-utils";
@@ -40,7 +41,7 @@ describe("ScannerScreen paste flow", () => {
     expect(screen.getByPlaceholderText("https://mindvault.app/resources/…")).toBeTruthy();
   });
 
-  it("navigates for a valid resource link", () => {
+  it("navigates for a valid resource link", async () => {
     const screen = renderScreen();
 
     fireEvent.press(screen.getByText("Paste Link Instead"));
@@ -51,6 +52,9 @@ describe("ScannerScreen paste flow", () => {
     fireEvent.press(screen.getByText("Go"));
 
     expect(navigation.replace).toHaveBeenCalledWith("ResourceDetail", { resourceId: "abc" });
+    await waitFor(() =>
+      expect(Haptics.impactAsync).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light)
+    );
   });
 
   it("shows an error for an invalid resource link", () => {

@@ -20,6 +20,7 @@ import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { parseResourceId } from "../utils/resourceLinks";
+import { hapticImpact } from "../utils/haptics";
 
 interface ScannerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Scanner">;
@@ -234,6 +235,7 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
 
     const resourceId = parseResourceId(data);
     if (resourceId) {
+      void hapticImpact();
       AccessibilityInfo.announceForAccessibility(`Scanned MindVault resource ${resourceId}`);
       navigation.replace("ResourceDetail", { resourceId });
       return;
@@ -295,6 +297,7 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
 
     const resourceId = parseResourceId(trimmed);
     if (resourceId) {
+      void hapticImpact();
       closePasteModal();
       navigation.replace("ResourceDetail", { resourceId });
       return;

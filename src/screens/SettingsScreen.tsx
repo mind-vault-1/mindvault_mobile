@@ -10,6 +10,7 @@ import {
   Modal,
   Share,
   ActivityIndicator,
+  Switch,
 } from "react-native";
 import Constants from "expo-constants";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -38,6 +39,11 @@ import {
   type StorageGroupId,
 } from "../services/storage";
 import { getAuditLog } from "../services/auditLog";
+import {
+  areHapticsEnabled,
+  hapticImpact,
+  setHapticsEnabled,
+} from "../utils/haptics";
 
 export function SettingsScreen() {
   const { colors, shared } = useAppTheme();
@@ -47,8 +53,19 @@ export function SettingsScreen() {
   const [apiUrl, setApiUrl] = useState("");
   const [savedUrl, setSavedUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [hapticsEnabled, setHapticsEnabledState] = useState(true);
 
   const [auditLogPreview, setAuditLogPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    void areHapticsEnabled().then(setHapticsEnabledState);
+  }, []);
+
+  const handleHapticsChange = useCallback(async (enabled: boolean) => {
+    setHapticsEnabledState(enabled);
+    await setHapticsEnabled(enabled);
+    if (enabled) void hapticImpact();
+  }, []);
 
   const handleReopenOnboarding = useCallback(async () => {
     try {
@@ -260,6 +277,35 @@ export function SettingsScreen() {
         </View>
 
         <ThemeToggle />
+
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.hapticsRow}>
+            <View style={styles.hapticsCopy}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                Haptic feedback
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Tactile confirmation for payments, scans and copy actions.
+              </Text>
+            </View>
+            <Switch
+              value={hapticsEnabled}
+              onValueChange={(value) => void handleHapticsChange(value)}
+              accessibilityLabel="Haptic feedback"
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.surface}
+            />
+          </View>
+        </View>
 
         <View style={[styles.infoCard, { backgroundColor: colors.neutralBg }]}>
           <Text style={[styles.infoText, { color: colors.textMuted }]}>
@@ -655,6 +701,14 @@ const styles = StyleSheet.create({
   infoText: {
     fontSize: 13,
     lineHeight: 20,
+  },
+  hapticsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  hapticsCopy: {
+    flex: 1,
   },
   previewOverlay: {
     flex: 1,

@@ -33,6 +33,7 @@ import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { openExternalUrl, stellarExpertAccountUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 import { shareResource } from "../utils/shareResource";
+import { hapticImpact } from "../utils/haptics";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ResourceDetail">;
 
@@ -330,6 +331,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
   async function handleCopy() {
     if (!resource) return;
     await Clipboard.setStringAsync(resource.accessUrl);
+    void hapticImpact();
     toast.success("Resource URL copied");
   }
 
