@@ -41,6 +41,7 @@ export function buildQuery(filters?: FetchCatalogParams): string {
   if (filters.resourceType && filters.resourceType !== "all") {
     params.set("resourceType", filters.resourceType);
   }
+  if (filters.owner?.trim()) params.set("owner", filters.owner.trim());
   if (["newest", "price_asc", "price_desc", "title"].includes(filters.sort ?? "")) {
     params.set("sort", filters.sort!);
   }

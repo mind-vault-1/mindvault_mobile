@@ -498,6 +498,16 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
 
+        <Pressable
+          style={[shared.button, styles.actionButton]}
+          onPress={() => navigation.navigate("Catalog", { owner: resource.walletAddress })}
+          accessibilityRole="button"
+          accessibilityLabel="More from this publisher"
+          accessibilityHint="Opens the catalog filtered to this publisher"
+        >
+          <Text style={shared.buttonText}>More from this publisher</Text>
+        </Pressable>
+
         {resource.onchainTxHash ? (
           <View style={styles.infoRow}>
             <Text style={styles.label}>Tx</Text>

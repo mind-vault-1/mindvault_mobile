@@ -262,6 +262,16 @@ it("opens the owner's public publisher profile", async () => {
   expect(mockedOpenExternalUrl).not.toHaveBeenCalled();
 });
 
+it("opens the catalog filtered to the publisher", async () => {
+  mockedFetchResource.mockResolvedValue(resource);
+  const screen = renderScreen();
+  fireEvent.press(await screen.findByLabelText("More from this publisher"));
+
+  expect(navigation.navigate).toHaveBeenCalledWith("Catalog", {
+    owner: resource.walletAddress,
+  });
+});
+
 describe("collapsible verification section", () => {
   it("can be expanded and collapsed with accessibility attributes", async () => {
     mockedFetchResource.mockResolvedValue(resource);

@@ -69,10 +69,16 @@ interface PersistedFilters {
   minPrice: string;
   maxPrice: string;
   sort: CatalogSort;
+  owner: string;
 }
 
 interface CatalogScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Catalog">;
+  route?: { params?: { owner?: string } };
+}
+
+function shortOwner(owner: string): string {
+  return owner.length > 12 ? `${owner.slice(0, 6)}…${owner.slice(-4)}` : owner;
 }
 
 type VerificationFilter = "all" | VerificationStatus;
@@ -110,6 +116,7 @@ const DEFAULT_PERSISTED_FILTERS: PersistedFilters = {
   minPrice: "",
   maxPrice: "",
   sort: DEFAULT_SORT,
+  owner: "",
 };
 
 /**
@@ -142,6 +149,7 @@ function sanitizePersistedFilters(raw: unknown): PersistedFilters {
     minPrice: typeof saved.minPrice === "string" ? saved.minPrice : "",
     maxPrice: typeof saved.maxPrice === "string" ? saved.maxPrice : "",
     sort: isSort ? (saved.sort as CatalogSort) : DEFAULT_SORT,
+    owner: typeof saved.owner === "string" ? saved.owner.trim() : "",
   };
 }
 
@@ -483,10 +491,12 @@ function createStyles(colors: ThemeColors) {
   });
 }
 
-export function CatalogScreen({ navigation }: CatalogScreenProps) {
+export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
   const { colors, shared, typography, colorScheme } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const filtersRestored = useRef(false);
+  const routeOwner = route?.params?.owner?.trim() || undefined;
+  const routeOwnerRef = useRef(routeOwner);
 
   const [resources, setResources] = useState<Resource[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -507,6 +517,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [sort, setSort] = useState<CatalogSort>(DEFAULT_SORT);
+  const [owner, setOwner] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -549,6 +560,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         setDebouncedMinPrice(restored.minPrice);
         setDebouncedMaxPrice(restored.maxPrice);
         setSort(restored.sort);
+        // A publisher link opened this screen: it wins over the saved owner.
+        setOwner(routeOwnerRef.current ?? restored.owner);
         filtersRestored.current = true;
         setIsRestoring(false);
       }
@@ -559,14 +572,27 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   useEffect(() => {
     async function persistFilters() {
       if (!filtersRestored.current) return;
-      const data: PersistedFilters = { search, verification, resourceType, minPrice, maxPrice, sort };
+      const data: PersistedFilters = { search, verification, resourceType, minPrice, maxPrice, sort, owner };
       try {
         await AsyncStorage.setItem(CATALOG_FILTERS_KEY, JSON.stringify(data));
       } catch {
       }
     }
     persistFilters();
-  }, [search, verification, resourceType, minPrice, maxPrice, sort]);
+  }, [search, verification, resourceType, minPrice, maxPrice, sort, owner]);
+
+  // "More from this publisher" re-targets an already-mounted catalog.
+  useEffect(() => {
+    routeOwnerRef.current = routeOwner;
+    if (routeOwner && filtersRestored.current) setOwner(routeOwner);
+  }, [routeOwner]);
+
+  const removeOwner = useCallback(() => {
+    setOwner("");
+    routeOwnerRef.current = undefined;
+    // Drop the param too, otherwise it would re-apply on the next focus.
+    if (routeOwner) navigation.setParams?.({ owner: undefined });
+  }, [navigation, routeOwner]);
 
   const requestIdRef = useRef(0);
 
@@ -593,6 +619,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       filters.resourceType = resourceType;
     }
     if (sort !== DEFAULT_SORT) filters.sort = sort;
+    if (owner) filters.owner = owner;
     const range = parsePriceRange(debouncedMinPrice, debouncedMaxPrice);
     if (!range.isInvalid) {
       if (range.min !== null) filters.minPrice = String(range.min);
@@ -638,7 +665,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         setRefreshing(false);
       }
     }
-  }, [debouncedSearch, verification, resourceType, debouncedMinPrice, debouncedMaxPrice, sort, isRestoring]);
+  }, [debouncedSearch, verification, resourceType, debouncedMinPrice, debouncedMaxPrice, sort, owner, isRestoring]);
 
   useFocusEffect(
     useCallback(() => {
@@ -658,13 +685,14 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
       filters.resourceType = resourceType;
     }
     if (sort !== DEFAULT_SORT) filters.sort = sort;
+    if (owner) filters.owner = owner;
     const range = parsePriceRange(debouncedMinPrice, debouncedMaxPrice);
     if (!range.isInvalid) {
       if (range.min !== null) filters.minPrice = String(range.min);
       if (range.max !== null) filters.maxPrice = String(range.max);
     }
     return filters;
-  }, [debouncedSearch, verification, resourceType, debouncedMinPrice, debouncedMaxPrice, sort]);
+  }, [debouncedSearch, verification, resourceType, debouncedMinPrice, debouncedMaxPrice, sort, owner]);
 
   const loadMore = useCallback(async () => {
     if (loading || loadingMore || nextOffset === null) {
@@ -780,7 +808,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     resourceType !== DEFAULT_RESOURCE_TYPE ||
     minPrice.trim() !== "" ||
     maxPrice.trim() !== "" ||
-    sort !== DEFAULT_SORT;
+    sort !== DEFAULT_SORT ||
+    owner !== "";
 
   const clearFilters = useCallback(() => {
     setSearch("");
@@ -789,7 +818,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     setMinPrice("");
     setMaxPrice("");
     setSort(DEFAULT_SORT);
-  }, []);
+    removeOwner();
+  }, [removeOwner]);
 
   const openResource = useCallback(
     (resource: RecentResource) => {
@@ -1185,6 +1215,23 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
             )}
 
             <View style={styles.filters}>
+              {owner ? (
+                <View style={styles.filterGroup}>
+                  <Text style={styles.filterLabel} accessibilityRole="header">Publisher</Text>
+                  <View style={styles.chipRow}>
+                    <Pressable
+                      onPress={removeOwner}
+                      style={[styles.chip, styles.chipActive]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Publisher ${shortOwner(owner)}. Remove publisher filter`}
+                    >
+                      <Text style={[styles.chipText, styles.chipTextActive]}>
+                        {shortOwner(owner)} ✕
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
               <View style={styles.filterGroup}>
                 <Text style={styles.filterLabel} accessibilityRole="header">Sort</Text>
                 <View style={styles.chipRow} accessibilityRole="radiogroup" accessibilityLabel="Sort catalog">

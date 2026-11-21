@@ -27,6 +27,11 @@ describe('buildQuery', () => {
     expect(buildQuery({})).toBe('');
   });
 
+  it('includes the owner filter and ignores a blank one', () => {
+    expect(buildQuery({ owner: 'GABC' })).toBe('?owner=GABC');
+    expect(buildQuery({ owner: '  ' })).toBe('');
+  });
+
   it('includes search query when provided', () => {
     expect(buildQuery({ search: 'test' })).toBe('?search=test');
     expect(buildQuery({ search: 'hello world' })).toBe('?search=hello+world');

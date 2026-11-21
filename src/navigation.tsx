@@ -23,7 +23,8 @@ import { OnboardingScreen } from "./screens/OnboardingScreen";
 
 export type RootStackParamList = {
   Onboarding: undefined;
-  Catalog: undefined;
+  /** `owner` opens the catalog filtered to one publisher wallet. */
+  Catalog: { owner?: string } | undefined;
   ResourceDetail: { resourceId: string };
   Scanner: undefined;
   Settings: undefined;
