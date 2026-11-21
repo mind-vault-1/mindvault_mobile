@@ -28,11 +28,11 @@ flowchart TD
 
 | Layer | Path | Responsibility |
 | --- | --- | --- |
-| Entry | `App.tsx` | Wraps the app in `SafeAreaProvider`, `ThemeProvider` and `ErrorBoundary`. Loads the saved API base URL (`initializeApiBaseUrl`) and theme before rendering anything themed. Shows `OfflineBanner` from `useNetworkStatus`. Mounts `NavigationContainer` with the deep-link config. |
+| Entry | `App.tsx` | Wraps the app in `SafeAreaProvider`, `ThemeProvider` and `ErrorBoundary`. Loads the saved API base URL (`initializeApiBaseUrl`) and theme before rendering anything themed. Shows `OfflineBanner` from `useNetworkStatus`. `AppLockProvider` can require device authentication after the configured background timeout. Mounts `NavigationContainer` with the deep-link config. |
 | Navigation | `src/navigation.tsx`, `src/linking.ts` | Native stack with `RootStackParamList` (Catalog, ResourceDetail, Scanner, Settings, PublisherResources, PublisherProfile, PublisherAnalytics, PurchaseHistory, and `DevSigner` in `__DEV__` only). `linking.ts` maps `mindvault://` and `https://<api-host>/resources/:id` links to ResourceDetail via `parseResourceId`. |
 | Screens | `src/screens` | One component per route. Fetch data, hold view state, compose components. |
 | Components | `src/components` | Reusable UI: `ResourceCard`, `StatusBadge`, `PaywallModal`, `RegisterModal`, `TransferOwnershipModal`, `SignTransactionSheet`, banners and skeletons. |
-| Hooks | `src/hooks` | Reusable stateful logic: `useNetworkStatus` (NetInfo, `onReconnect`), `useAppForeground` (AppState, refetch on return to foreground), `useEditPrice`, `useTransferOwnership`. |
+| Hooks | `src/hooks` | Reusable stateful logic: `useNetworkStatus` (NetInfo, `onReconnect`), `useAppForeground` (AppState, refetch on return to foreground), `useAppLock` (persisted inactivity lock and device re-authentication), `useBulkSelection`, `useEditPrice`, `useTransferOwnership`. |
 | API | `src/api` | Everything that talks to the network. `client.ts` is the single `fetch` wrapper; `resources.ts`, `publishers.ts`, `verification.ts` are endpoint modules; `payment.ts` is the x402 client; `apiSettings.ts` validates and persists the base URL. |
 | Services | `src/services` | On-device persistence and support tooling: `secureStorage`, `receipts`, `recent`, `diagnostics`. |
 | Theme | `src/theme` | `useTheme` hook (persisted mode), `ThemeProvider`, colour tokens, shared styles. |
@@ -96,6 +96,7 @@ two stores. Keys are listed here so you can find and clear them while debugging.
 | `@mindvault_catalog_filters` | `src/screens/CatalogScreen.tsx` | JSON of the saved catalog search and filters. |
 | `@mindvault_recent_resources` | `src/services/recent.ts` | JSON list of recently viewed resources, capped at `MAX_RECENT_RESOURCES` (20). |
 | `@mindvault_receipts` | `src/services/receipts.ts` | JSON `{ version, receipts }` of payment receipts, capped at `MAX_RECEIPTS` (200). |
+| `@mindvault_app_lock_*` | `src/hooks/useAppLock.ts` | App-lock enabled state, inactivity timeout, last background timestamp, and pending lock state. |
 
 ### SecureStore (Keychain / Keystore)
 

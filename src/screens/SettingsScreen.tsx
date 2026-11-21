@@ -44,6 +44,10 @@ import {
   hapticImpact,
   setHapticsEnabled,
 } from "../utils/haptics";
+import {
+  APP_LOCK_TIMEOUT_OPTIONS,
+  useAppLock,
+} from "../hooks/useAppLock";
 
 export function SettingsScreen() {
   const { colors, shared } = useAppTheme();
@@ -54,6 +58,13 @@ export function SettingsScreen() {
   const [savedUrl, setSavedUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  const {
+    enabled: appLockEnabled,
+    timeoutMinutes: appLockTimeout,
+    error: appLockError,
+    setEnabled: setAppLockEnabled,
+    setTimeoutMinutes: setAppLockTimeout,
+  } = useAppLock();
 
   const [auditLogPreview, setAuditLogPreview] = useState<string | null>(null);
 
@@ -66,6 +77,16 @@ export function SettingsScreen() {
     await setHapticsEnabled(enabled);
     if (enabled) void hapticImpact();
   }, []);
+
+  const handleAppLockChange = useCallback(async (enabled: boolean) => {
+    const saved = await setAppLockEnabled(enabled);
+    if (!saved) {
+      Alert.alert(
+        "App lock unavailable",
+        "Set up device biometrics and try again. Your existing setting has not changed.",
+      );
+    }
+  }, [setAppLockEnabled]);
 
   const handleReopenOnboarding = useCallback(async () => {
     try {
@@ -305,6 +326,74 @@ export function SettingsScreen() {
               thumbColor={colors.surface}
             />
           </View>
+        </View>
+
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.hapticsRow}>
+            <View style={styles.hapticsCopy}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                Lock after inactivity
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Require device authentication before returning to wallet and publisher screens.
+              </Text>
+            </View>
+            <Switch
+              value={appLockEnabled}
+              onValueChange={(value) => void handleAppLockChange(value)}
+              accessibilityLabel="Lock after inactivity"
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.surface}
+            />
+          </View>
+          {appLockEnabled ? (
+            <View style={{ marginTop: 16, gap: 8 }}>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Lock after
+              </Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {APP_LOCK_TIMEOUT_OPTIONS.map((minutes) => {
+                  const selected = minutes === appLockTimeout;
+                  return (
+                    <TouchableOpacity
+                      key={minutes}
+                      onPress={() => void setAppLockTimeout(minutes)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      accessibilityLabel={`${minutes} minutes`}
+                      style={{
+                        borderRadius: 999,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        backgroundColor: selected ? colors.primaryMuted : colors.neutralBg,
+                      }}
+                    >
+                      <Text style={{ color: selected ? colors.primary : colors.text }}>
+                        {minutes} min
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+          {appLockError ? (
+            <Text
+              style={[styles.infoText, { color: colors.danger, marginTop: 8 }]}
+              accessibilityRole="alert"
+            >
+              {appLockError}
+            </Text>
+          ) : null}
         </View>
 
         <View style={[styles.infoCard, { backgroundColor: colors.neutralBg }]}>

@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  type ListRenderItemInfo,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -803,6 +804,20 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     [navigation],
   );
 
+  const renderCatalogItem = useCallback(
+    ({ item }: ListRenderItemInfo<Resource>) => (
+      <Pressable
+        onPress={() => openResource(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${item.title}`}
+        accessibilityHint="Opens the resource detail"
+      >
+        <ResourceCard resource={item} onCopyUrl={toast.info} />
+      </Pressable>
+    ),
+    [openResource, toast],
+  );
+
   const clearRecent = useCallback(() => {
     setRecent([]);
     void clearRecentResources();
@@ -931,6 +946,11 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         data={loading ? null : resources}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
+        windowSize={7}
+        removeClippedSubviews
         // Lets a suggestion be tapped without the first tap only dismissing the keyboard.
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -1350,16 +1370,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
             ) : null}
           </View>
         }
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => openResource(item)}
-            accessibilityRole="button"
-            accessibilityLabel={`Open ${item.title}`}
-            accessibilityHint="Opens the resource detail"
-          >
-            <ResourceCard resource={item} onCopyUrl={toast.info} />
-          </Pressable>
-        )}
+        renderItem={renderCatalogItem}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={renderEmpty}
         onEndReached={() => void loadMore()}
