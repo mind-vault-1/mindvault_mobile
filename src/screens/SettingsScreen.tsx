@@ -48,6 +48,11 @@ import {
   APP_LOCK_TIMEOUT_OPTIONS,
   useAppLock,
 } from "../hooks/useAppLock";
+import { openExternalUrl } from "../utils/stellarExpert";
+
+/** docs/PRIVACY.md on the default branch: what is stored, what leaves the device, how to delete it. */
+const PRIVACY_POLICY_URL =
+  "https://github.com/mind-vault-1/mindvault_mobile/blob/main/docs/PRIVACY.md";
 
 export function SettingsScreen() {
   const { colors, shared } = useAppTheme();
@@ -522,6 +527,21 @@ export function SettingsScreen() {
             Clear data stored on this device. Wallet and API keys are not affected here; use
             the wallet wipe to remove them.
           </Text>
+          <TouchableOpacity
+            style={{ minHeight: 44, justifyContent: "center", marginBottom: 12 }}
+            onPress={() =>
+              openExternalUrl(PRIVACY_POLICY_URL).catch(() =>
+                Alert.alert("Error", "Unable to open the privacy policy")
+              )
+            }
+            accessibilityRole="link"
+            accessibilityLabel="Privacy policy"
+            accessibilityHint="Opens what the app stores, what it sends, and how to delete it"
+          >
+            <Text style={[styles.infoText, { color: colors.primary, fontWeight: "600" }]}>
+              Privacy policy: what is stored and how to delete it
+            </Text>
+          </TouchableOpacity>
           {STORAGE_GROUPS.map((group) => {
             const busy = clearingGroup === group.id;
             return (

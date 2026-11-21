@@ -114,15 +114,21 @@ jobs:
   # Renaming it means updating branch protection in the same change.
   # Runs `expo export` for all platforms without native build credentials:
   # no Xcode signing, no Android keystore, no EAS token. Catches Metro
-  # bundling regressions that typecheck alone cannot detect.
+  # bundling regressions that typecheck alone cannot detect. It also enforces
+  # the bundle-size and dependency budgets in scripts/check-bundle-size.ts.
   bundle:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # Node 22 runs scripts/check-bundle-size.ts via --experimental-strip-types.
+          node-version: 22
           cache: npm
 
       # npm is cached by setup-node above. Metro keeps its transform cache in
@@ -141,3 +147,51 @@ jobs:
 
       - name: Export bundles (android, ios, web)
         run: npx expo export --platform android --platform ios --platform web
+
+      # Sizes from the latest main run, for the delta. Only pushes to main save
+      # them; a PR falls back to the newest main entry when its base has none.
+      - name: Restore main bundle sizes
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6
+        with:
+          path: bundle-sizes.json
+          key: bundle-sizes-${{ github.event.pull_request.base.sha }}
+          restore-keys: bundle-sizes-
+
+      # Reads the main sizes from bundle-sizes.json before writing this run's.
+      - name: Check bundle size and dependency budgets
+        run: >-
+          node --experimental-strip-types scripts/check-bundle-size.ts
+          --baseline bundle-sizes.json --out bundle-sizes.json --report bundle-size.md
+
+      # Fork PRs get a read-only token, so they see the same table in the job
+      # summary instead of a comment.
+      - name: Comment bundle size on the PR
+        if: >-
+          always() &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          [ -f bundle-size.md ] || exit 0
+          body="<!-- bundle-size -->"$'\n'"$(cat bundle-size.md)"
+          comment_id=$(gh api "repos/$REPO/issues/$NUMBER/comments" --paginate \
+            --jq '.[] | select((.body // "") | contains("<!-- bundle-size -->")) | .id' | tail -n 1)
+          if [ -n "$comment_id" ]; then
+            jq -n --arg body "$body" '{body: $body}' |
+              gh api --method PATCH "repos/$REPO/issues/comments/$comment_id" --input -
+          else
+            jq -n --arg body "$body" '{body: $body}' |
+              gh api --method POST "repos/$REPO/issues/$NUMBER/comments" --input -
+          fi
+
+      - name: Save main bundle sizes
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v6
+        with:
+          path: bundle-sizes.json
+          key: bundle-sizes-${{ github.sha }}

@@ -1,5 +1,7 @@
+import { ApiError, request } from "./client";
 import { getApiBaseUrl } from "./resources";
 import { clearApiKey, getApiKey, storeApiKey } from "../services/secureStorage";
+import type { Resource } from "../types";
 import { extractApiErrorMessage } from "../utils/errorLogger";
 
 /** Shape returned by `GET /publishers/me`. */
@@ -51,6 +53,45 @@ export interface RegisterPublisherResponse {
 /** Response from `POST /publishers/me/api-key/rotate`. */
 export interface RotateApiKeyResponse {
   apiKey: string;
+}
+
+/** A publisher's public page: `GET /publishers/wallet/:address` plus their listed resources. */
+export interface PublicPublisher {
+  publisher: PublisherProfile;
+  resources: Resource[];
+}
+
+/**
+ * Loads the public profile and listed resources of the publisher that owns a
+ * wallet. Resolves to null when the server has no publisher for it (404).
+ */
+export async function fetchPublicPublisher(
+  address: string,
+  signal?: AbortSignal
+): Promise<PublicPublisher | null> {
+  const baseUrl = getApiBaseUrl();
+  const wallet = encodeURIComponent(address);
+  try {
+    const [{ data: publisher }, { data: listed }] = await Promise.all([
+      request<PublisherProfile>(`${baseUrl}/publishers/wallet/${wallet}`, {
+        signal,
+        fallbackMessage: "Failed to load publisher",
+      }),
+      // shortcut: first 100 listings only (the server's page limit); paginate if a publisher outgrows it.
+      request<Resource[]>(`${baseUrl}/resources?owner=${wallet}&limit=100`, {
+        signal,
+        fallbackMessage: "Failed to load publisher resources",
+      }),
+    ]);
+    // `owner` also matches publisher names and partial addresses; keep this wallet's rows only.
+    const resources = Array.isArray(listed)
+      ? listed.filter((resource) => resource.walletAddress === address)
+      : [];
+    return { publisher, resources };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 /**

@@ -78,7 +78,7 @@ const resource = {
   updatedAt: "2025-06-15T12:30:00.000Z",
 };
 
-const navigation = { setOptions: jest.fn(), goBack: jest.fn() } as any;
+const navigation = { setOptions: jest.fn(), goBack: jest.fn(), navigate: jest.fn() } as any;
 const route = { params: { resourceId: resource.id } } as any;
 
 function renderScreen() {
@@ -251,13 +251,15 @@ it("shares through the resource helper", async () => {
   );
 });
 
-it("shows a toast when opening Stellar Expert fails", async () => {
+it("opens the owner's public publisher profile", async () => {
   mockedFetchResource.mockResolvedValue(resource);
-  mockedOpenExternalUrl.mockRejectedValue(new Error("cannot open"));
   const screen = renderScreen();
   fireEvent.press(await screen.findByLabelText(`Owner: ${resource.walletAddress}`));
 
-  expect(await screen.findByText("Unable to open explorer")).toBeTruthy();
+  expect(navigation.navigate).toHaveBeenCalledWith("PublisherPublic", {
+    address: resource.walletAddress,
+  });
+  expect(mockedOpenExternalUrl).not.toHaveBeenCalled();
 });
 
 describe("collapsible verification section", () => {
