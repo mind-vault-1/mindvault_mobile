@@ -818,6 +818,9 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     [openResource, toast],
   );
 
+  const renderSeparator = useCallback(() => <View style={styles.separator} />, [styles.separator]);
+  const handleEndReached = useCallback(() => { void loadMore(); }, [loadMore]);
+
   const clearRecent = useCallback(() => {
     setRecent([]);
     void clearRecentResources();
@@ -1371,9 +1374,9 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
           </View>
         }
         renderItem={renderCatalogItem}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ItemSeparatorComponent={renderSeparator}
         ListEmptyComponent={renderEmpty}
-        onEndReached={() => void loadMore()}
+        onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         ListFooterComponent={renderFooter}
       />
