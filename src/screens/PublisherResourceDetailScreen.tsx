@@ -96,6 +96,7 @@ export function PublisherResourceDetailScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setStats(null);
     setStatsError(null);
     try {
       // Stats are a bonus: if analytics fail, the resource and its actions still show.

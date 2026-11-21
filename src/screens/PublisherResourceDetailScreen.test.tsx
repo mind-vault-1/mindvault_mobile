@@ -21,10 +21,11 @@ jest.mock("../utils/errorLogger", () => ({ logError: jest.fn() }));
 jest.mock("react-native-safe-area-context", () => require("../test-utils").safeAreaMock());
 
 const mockNavigation = { navigate: jest.fn(), goBack: jest.fn() };
+let mockResourceId = "res-1";
 jest.mock("@react-navigation/native", () => ({
   ...jest.requireActual("@react-navigation/native"),
   useNavigation: () => mockNavigation,
-  useRoute: () => ({ params: { resourceId: "res-1" } }),
+  useRoute: () => ({ params: { resourceId: mockResourceId } }),
 }));
 
 jest.mock("../components/TransferOwnershipModal", () => {
@@ -83,8 +84,8 @@ const analytics = {
   ],
 };
 
-function renderScreen() {
-  return render(
+function detail() {
+  return (
     <ThemeProvider>
       <ToastProvider>
         <PublisherResourceDetailScreen />
@@ -93,8 +94,13 @@ function renderScreen() {
   );
 }
 
+function renderScreen() {
+  return render(detail());
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
+  mockResourceId = "res-1";
   mockedFetchResources.mockResolvedValue([resource({ id: "other", title: "Other" }), resource()]);
   mockedFetchAnalytics.mockResolvedValue(analytics);
 });
@@ -140,6 +146,22 @@ it("still shows the resource when stats fail", async () => {
   const screen = renderScreen();
   expect(await screen.findByText("Stats unavailable: Analytics down")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Delist Stellar Handbook" })).toBeTruthy();
+});
+
+it("clears stale stats when the selected resource changes", async () => {
+  const screen = renderScreen();
+  expect(await screen.findByLabelText("Sales: 5")).toBeTruthy();
+
+  mockResourceId = "res-2";
+  mockedFetchResources.mockResolvedValue([
+    resource({ id: "res-2", title: "Other Handbook" }),
+  ]);
+  mockedFetchAnalytics.mockResolvedValue({ ...analytics, resources: [] });
+  screen.rerender(detail());
+
+  expect(await screen.findByText("No sales recorded yet.")).toBeTruthy();
+  expect(screen.queryByLabelText("Sales: 5")).toBeNull();
+  expect(screen.getByText("Other Handbook")).toBeTruthy();
 });
 
 it("shows an error with retry when loading fails", async () => {

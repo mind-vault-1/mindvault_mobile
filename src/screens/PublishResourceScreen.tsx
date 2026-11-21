@@ -44,6 +44,10 @@ const EMPTY_FORM: PublishLinkInput = { title: "", url: "", price: "", descriptio
 
 type Field = keyof PublishLinkInput;
 
+function shortenHash(value: string): string {
+  return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
+}
+
 const FIELDS: {
   key: Field;
   label: string;
@@ -428,6 +432,20 @@ export function PublishResourceScreen() {
               4. On-chain sync {timelineStatus.status === "on-chain" ? "✓" : ""}
             </Text>
           </View>
+
+          {timelineStatus.status === "rejected" && timelineStatus.error ? (
+            <Text accessibilityRole="alert" style={styles.banner}>
+              Verification failed: {timelineStatus.error}
+            </Text>
+          ) : null}
+          {timelineStatus.status === "on-chain" && timelineStatus.txHash ? (
+            <Text
+              style={styles.muted}
+              accessibilityLabel={`On-chain transaction ${timelineStatus.txHash}`}
+            >
+              Tx: {shortenHash(timelineStatus.txHash)}
+            </Text>
+          ) : null}
         </View>
         <View style={styles.actions}>
           <Pressable

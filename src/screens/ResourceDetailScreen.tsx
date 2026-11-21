@@ -20,6 +20,7 @@ import {
   type VerificationDetails,
 } from "../api/verification";
 import { useAppForeground } from "../hooks/useAppForeground";
+import { getPublicKey } from "../services/wallet";
 import { ResourceThumbnail } from "../components/ResourceCard";
 import { StatusBadge } from "../components/StatusBadge";
 import { PaywallModal } from "../components/PaywallModal";
@@ -221,9 +222,11 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
       return;
     }
     const expiresAt = leaseExpiresAt;
+    let timer: ReturnType<typeof setInterval> | null = null;
     function updateCountdown() {
       const remainingMs = new Date(expiresAt).getTime() - Date.now();
       if (remainingMs <= 0) {
+        if (timer) clearInterval(timer);
         setCountdown("Expired");
         setLeaseStatus((prev) => (prev ? { ...prev, hasActiveLease: false, state: "Expired" } : null));
         return;
@@ -235,8 +238,10 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
       setCountdown(hours > 0 ? `${hours}h ${mins}m` : `${mins}m ${secs}s`);
     }
     updateCountdown();
-    const timer = setInterval(updateCountdown, 1000);
-    return () => clearInterval(timer);
+    timer = setInterval(updateCountdown, 1000);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
   }, [leaseExpiresAt, leaseState]);
 
   const [verificationDetails, setVerificationDetails] = useState<VerificationDetails | null>(null);
@@ -279,7 +284,10 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
       try {
         const data = await fetchResource(resourceId);
         setResource(data);
-        void fetchLeaseStatus(resourceId).then(setLeaseStatus).catch(() => {});
+        void getPublicKey()
+          .then((holder) => fetchLeaseStatus(resourceId, holder ?? undefined))
+          .then(setLeaseStatus)
+          .catch(() => {});
         setError(null);
         setIsTransientError(false);
         navigation.setOptions({ title: data.title });
@@ -430,7 +438,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
             <View
               style={[styles.leaseBadge, { backgroundColor: colors.primaryMuted }]}
               accessibilityRole="text"
-              accessibilityLabel={`Active lease. Access until ${new Date(leaseStatus.expiresAt).toLocaleTimeString()}`}
+              accessibilityLabel={`Active lease. Access until ${new Date(leaseStatus.expiresAt).toLocaleTimeString()}${countdown ? `, ${countdown} remaining` : ""}`}
             >
               <Text style={[styles.leaseBadgeText, { color: colors.primary }]}>
                 Access until {new Date(leaseStatus.expiresAt).toLocaleTimeString()} {countdown ? `(${countdown})` : ""}
