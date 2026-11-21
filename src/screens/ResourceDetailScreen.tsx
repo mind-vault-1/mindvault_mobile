@@ -32,6 +32,7 @@ import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
+import { ResourceQrSheet } from "../components/ResourceQrSheet";
 import { shareResource } from "../utils/shareResource";
 import { hapticImpact } from "../utils/haptics";
 
@@ -211,6 +212,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
   const [isTransientError, setIsTransientError] = useState(false);
   const toast = useToast();
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const [qrVisible, setQrVisible] = useState(false);
   const [leaseStatus, setLeaseStatus] = useState<LeaseStatus | null>(null);
   const [countdown, setCountdown] = useState<string>("");
 
@@ -660,7 +662,24 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         >
           <Text style={shared.buttonText}>Share Access URL</Text>
         </Pressable>
+
+        <Pressable
+          style={[shared.button, styles.actionButton]}
+          onPress={() => setQrVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Show QR code"
+          accessibilityHint="Opens a scannable QR code for this resource"
+        >
+          <Text style={shared.buttonText}>Share as QR code</Text>
+        </Pressable>
       </ScrollView>
+
+      <ResourceQrSheet
+        visible={qrVisible}
+        resourceId={resource.id}
+        resourceTitle={resource.title}
+        onClose={() => setQrVisible(false)}
+      />
 
       <PaywallModal
         key={resource.id}

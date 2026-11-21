@@ -52,6 +52,14 @@
         {
           "cameraPermission": "Allow MindVault to access your camera to scan QR codes."
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow MindVault to save QR codes to your photos.",
+          "savePhotosPermission": "Allow MindVault to save QR codes to your photos.",
+          "isAccessMediaLocationEnabled": false
+        }
       ]
     ],
     "extra": {

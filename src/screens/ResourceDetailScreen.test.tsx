@@ -30,6 +30,9 @@ jest.mock("../api/leases", () => ({
   fetchLeaseStatus: jest.fn(),
 }));
 jest.mock("../services/wallet", () => ({ getPublicKey: jest.fn() }));
+jest.mock("react-native-qrcode-svg", () => "QRCode");
+jest.mock("expo-media-library", () => ({}));
+jest.mock("expo-file-system", () => ({}));
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
 jest.mock("../utils/shareResource", () => ({ shareResource: jest.fn().mockResolvedValue("shared") }));
 jest.mock("../utils/stellarExpert", () => ({
@@ -270,6 +273,13 @@ it("opens the catalog filtered to the publisher", async () => {
   expect(navigation.navigate).toHaveBeenCalledWith("Catalog", {
     owner: resource.walletAddress,
   });
+});
+
+it("opens the QR code sheet", async () => {
+  mockedFetchResource.mockResolvedValue(resource);
+  const screen = renderScreen();
+  fireEvent.press(await screen.findByLabelText("Show QR code"));
+  expect(await screen.findByLabelText("Save QR code to Photos")).toBeTruthy();
 });
 
 describe("collapsible verification section", () => {
