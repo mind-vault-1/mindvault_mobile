@@ -22,6 +22,8 @@ import {
   fetchPublisherResources,
   getApiBaseUrl,
   getStoredApiKey,
+  prepareEditPrice,
+  submitPriceEdit,
   storeApiKey,
 } from "../api/resources";
 import type { Resource } from "../types";
@@ -38,6 +40,9 @@ import { useToast } from "../components/ToastProvider";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { enqueueMutation } from "../services/mutationQueue";
 import { logError } from "../utils/errorLogger";
+import { useBulkSelection } from "../hooks/useBulkSelection";
+import { validatePrice } from "../hooks/useEditPrice";
+import { SignTransactionSheet } from "../components/SignTransactionSheet";
 
 type PublisherResourcesNavigation = NativeStackNavigationProp<
   RootStackParamList,
@@ -78,6 +83,18 @@ export function PublisherResourcesScreen() {
   const [delistTarget, setDelistTarget] = useState<Resource | null>(null);
   const [delisting, setDelisting] = useState(false);
   const [delistError, setDelistError] = useState<string | null>(null);
+  const [bulkDelistVisible, setBulkDelistVisible] = useState(false);
+  const [bulkPriceVisible, setBulkPriceVisible] = useState(false);
+  const [bulkPriceValue, setBulkPriceValue] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkPriceQueue, setBulkPriceQueue] = useState<Resource[]>([]);
+  const [bulkPriceCompleted, setBulkPriceCompleted] = useState(0);
+  const [pendingBulkPrice, setPendingBulkPrice] = useState<{
+    resource: Resource;
+    index: number;
+    unsignedXdr: string;
+    networkPassphrase?: string;
+  } | null>(null);
 
   const styles = useMemo(() => {
     return StyleSheet.create({
@@ -311,6 +328,55 @@ export function PublisherResourcesScreen() {
         fontSize: 13,
         fontWeight: "600",
         color: colors.primary,
+      },
+      bulkControls: {
+        flexDirection: "row",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: spacing.sm,
+        padding: spacing.md,
+        borderRadius: 12,
+        backgroundColor: colors.neutralBg,
+      },
+      bulkButton: {
+        minHeight: 40,
+        justifyContent: "center",
+        paddingHorizontal: spacing.md,
+        borderRadius: 8,
+        backgroundColor: colors.primaryMuted,
+      },
+      bulkDangerButton: {
+        backgroundColor: colors.dangerBg,
+      },
+      bulkButtonText: {
+        color: colors.primary,
+        fontWeight: "600",
+      },
+      selectionRow: {
+        alignItems: "flex-start",
+        marginBottom: spacing.xs,
+      },
+      selectionButton: {
+        minHeight: 40,
+        justifyContent: "center",
+        paddingHorizontal: spacing.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 8,
+        backgroundColor: colors.surface,
+      },
+      selectionButtonActive: {
+        borderColor: colors.primary,
+        backgroundColor: colors.primaryMuted,
+      },
+      bulkInput: {
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 10,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        color: colors.text,
+        backgroundColor: colors.surface,
       },
       emptyState: {
         gap: spacing.sm,
@@ -683,6 +749,162 @@ export function PublisherResourcesScreen() {
     return result;
   }, [resources, search, verificationFilter, onchainStatusFilter, sortBy]);
 
+  const bulkSelection = useBulkSelection(filteredResources);
+  const selectedResources = useMemo(
+    () => resources.filter((resource) => bulkSelection.selectedIds.has(resource.id)),
+    [resources, bulkSelection.selectedIds],
+  );
+
+  const prepareBulkPriceAt = useCallback(
+    async (queue: Resource[], price: string, index: number, completed: number) => {
+      const resource = queue[index];
+      if (!resource) return;
+      try {
+        const prepared = await prepareEditPrice(resource.id, price);
+        setPendingBulkPrice({
+          resource,
+          index,
+          unsignedXdr: prepared.unsignedXdr,
+          networkPassphrase: prepared.networkPassphrase,
+        });
+      } catch (err) {
+        logError("publisherResources.bulkPrice.prepare", err);
+        setBulkBusy(false);
+        setBulkPriceQueue([]);
+        setPendingBulkPrice(null);
+        toast.error(
+          `Bulk price update stopped after ${completed} of ${queue.length} resources: ${
+            err instanceof Error ? err.message : "Could not prepare a price update."
+          }`,
+        );
+      }
+    },
+    [toast],
+  );
+
+  const handleStartBulkPrice = useCallback(() => {
+    const price = bulkPriceValue.trim();
+    const validationError = validatePrice(price);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    if (selectedResources.length === 0) return;
+    const queue = [...selectedResources];
+    setBulkPriceQueue(queue);
+    setBulkPriceCompleted(0);
+    setBulkPriceVisible(false);
+    setBulkBusy(true);
+    void prepareBulkPriceAt(queue, price, 0, 0);
+  }, [bulkPriceValue, prepareBulkPriceAt, selectedResources, toast]);
+
+  const handleBulkPriceSigned = useCallback(
+    async (signedXdr: string) => {
+      const pending = pendingBulkPrice;
+      if (!pending) return;
+      try {
+        await submitPriceEdit(pending.resource.id, signedXdr, bulkPriceValue.trim());
+        setResources((previous) =>
+          previous.map((resource) =>
+            resource.id === pending.resource.id
+              ? { ...resource, price: bulkPriceValue.trim() }
+              : resource,
+          ),
+        );
+        const completed = pending.index + 1;
+        setBulkPriceCompleted(completed);
+        setPendingBulkPrice(null);
+        if (completed === bulkPriceQueue.length) {
+          setBulkBusy(false);
+          setBulkPriceQueue([]);
+          bulkSelection.clear();
+          toast.success(`Price updated for ${completed} resources`);
+        } else {
+          await prepareBulkPriceAt(
+            bulkPriceQueue,
+            bulkPriceValue.trim(),
+            completed,
+            completed,
+          );
+        }
+      } catch (err) {
+        logError("publisherResources.bulkPrice.submit", err);
+        setPendingBulkPrice(null);
+        setBulkBusy(false);
+        setBulkPriceQueue([]);
+        toast.error(
+          `Bulk price update stopped after ${pending.index} of ${bulkPriceQueue.length} resources: ${
+            err instanceof Error ? err.message : "Could not submit a price update."
+          }`,
+        );
+      }
+    },
+    [bulkPriceQueue, bulkPriceValue, bulkSelection, pendingBulkPrice, prepareBulkPriceAt, toast],
+  );
+
+  const handleCancelBulkPrice = useCallback(() => {
+    setPendingBulkPrice(null);
+    setBulkPriceQueue([]);
+    setBulkBusy(false);
+    if (bulkPriceCompleted > 0) {
+      toast.info(`Bulk price update cancelled after ${bulkPriceCompleted} resources`);
+    }
+  }, [bulkPriceCompleted, toast]);
+
+  const handleBulkDelist = useCallback(async () => {
+    const targets = selectedResources;
+    if (targets.length === 0) return;
+    setBulkBusy(true);
+    const completedIds = new Set<string>();
+    let failed = 0;
+    let firstError: string | null = null;
+    try {
+      for (const resource of targets) {
+        try {
+          if (isOffline) {
+            await enqueueMutation({
+              kind: "delist",
+              payload: { resourceId: resource.id, title: resource.title },
+              idempotencyKey: `delist:${resource.id}`,
+            });
+          } else {
+            await delistResource(resource.id);
+            completedIds.add(resource.id);
+          }
+        } catch (err) {
+          failed += 1;
+          firstError ??= err instanceof Error ? err.message : "Unable to delist resource.";
+          logError("publisherResources.bulkDelist", err);
+        }
+      }
+      if (!isOffline && completedIds.size > 0) {
+        setResources((previous) =>
+          previous.filter((resource) => !completedIds.has(resource.id)),
+        );
+        if (failed > 0) {
+          completedIds.forEach((id) => bulkSelection.toggle(id));
+        }
+      }
+      setBulkDelistVisible(false);
+      if (failed > 0) {
+        toast.error(
+          `${completedIds.size + (isOffline ? targets.length - failed : 0)} of ${targets.length} ${
+            isOffline ? "queued" : "delisted"
+          }; ${failed} failed. ${firstError ?? ""}`.trim(),
+        );
+      } else {
+        bulkSelection.clear();
+        toast.success(
+          isOffline
+            ? `Queued ${targets.length} resources to delist`
+            : `Delisted ${targets.length} resources`,
+        );
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [bulkSelection, isOffline, selectedResources, toast]);
+
   const renderStoredKeyLoading = () => (
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
@@ -906,6 +1128,70 @@ export function PublisherResourcesScreen() {
               </View>
             </View>
 
+            <View style={styles.bulkControls}>
+              <Pressable
+                onPress={bulkSelection.toggleAllVisible}
+                disabled={bulkBusy || loading || filteredResources.length === 0}
+                style={styles.bulkButton}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  bulkSelection.allVisibleSelected
+                    ? "Clear visible resource selection"
+                    : "Select all visible resources"
+                }
+                accessibilityState={{
+                  disabled: bulkBusy || loading || filteredResources.length === 0,
+                }}
+              >
+                <Text style={styles.bulkButtonText}>
+                  {bulkSelection.allVisibleSelected ? "Clear visible" : "Select visible"}
+                </Text>
+              </Pressable>
+              {bulkSelection.selectedCount > 0 ? (
+                <>
+                  <Text style={styles.label}>
+                    {bulkSelection.selectedCount} selected
+                  </Text>
+                  <Pressable
+                    onPress={() => setBulkPriceVisible(true)}
+                    disabled={bulkBusy}
+                    style={styles.bulkButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Set price for selected resources"
+                  >
+                    <Text style={styles.bulkButtonText}>Set price</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setBulkDelistVisible(true)}
+                    disabled={bulkBusy}
+                    style={[styles.bulkButton, styles.bulkDangerButton]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delist selected resources"
+                  >
+                    <Text style={[styles.bulkButtonText, { color: colors.danger }]}>
+                      Delist
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={bulkSelection.clear}
+                    disabled={bulkBusy}
+                    style={styles.bulkButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear selected resources"
+                  >
+                    <Text style={styles.bulkButtonText}>Clear selection</Text>
+                  </Pressable>
+                </>
+              ) : null}
+              {bulkBusy ? (
+                <Text style={styles.label}>
+                  {bulkPriceQueue.length > 0
+                    ? `Price update ${bulkPriceCompleted + 1} of ${bulkPriceQueue.length}`
+                    : "Applying bulk action…"}
+                </Text>
+              ) : null}
+            </View>
+
             {error ? (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{error}</Text>
@@ -938,7 +1224,34 @@ export function PublisherResourcesScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <View>
+          <Pressable
+            testID={`bulk-row-${item.id}`}
+            onLongPress={() => bulkSelection.toggle(item.id)}
+            delayLongPress={300}
+            accessibilityRole="button"
+            accessibilityLabel={`Bulk actions for ${item.title}`}
+            accessibilityHint="Long-press to toggle selection for bulk actions"
+          >
+            <View style={styles.selectionRow}>
+              <Pressable
+                onPress={() => bulkSelection.toggle(item.id)}
+                disabled={bulkBusy}
+                style={[
+                  styles.selectionButton,
+                  bulkSelection.isSelected(item.id) && styles.selectionButtonActive,
+                ]}
+                accessibilityRole="checkbox"
+                accessibilityState={{
+                  checked: bulkSelection.isSelected(item.id),
+                  disabled: bulkBusy,
+                }}
+                accessibilityLabel={`Select ${item.title}`}
+              >
+                <Text style={styles.bulkButtonText}>
+                  {bulkSelection.isSelected(item.id) ? "Selected" : "Select"}
+                </Text>
+              </Pressable>
+            </View>
             <ResourceCard
               resource={item}
               onCopyUrl={toast.info}
@@ -959,7 +1272,7 @@ export function PublisherResourcesScreen() {
             >
               <Text style={styles.manageButtonText}>Manage resource ›</Text>
             </Pressable>
-          </View>
+          </Pressable>
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={() =>
@@ -1051,6 +1364,105 @@ export function PublisherResourcesScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={bulkDelistVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!bulkBusy) setBulkDelistVisible(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={typography.title}>Delist selected resources?</Text>
+            <Text style={[typography.body, styles.modalBody]}>
+              {selectedResources.length} selected resources will be removed from the public
+              catalog. This action cannot be undone.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setBulkDelistVisible(false)}
+                disabled={bulkBusy}
+                style={[shared.button, styles.modalCancelButton]}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel bulk delist"
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void handleBulkDelist()}
+                disabled={bulkBusy}
+                style={[shared.button, styles.modalConfirmButton]}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm bulk delist"
+                accessibilityState={{ disabled: bulkBusy, busy: bulkBusy }}
+              >
+                {bulkBusy ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={shared.buttonText}>Delist {selectedResources.length}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={bulkPriceVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBulkPriceVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={typography.title}>Set price for selected resources</Text>
+            <Text style={[typography.body, styles.modalBody]}>
+              A separate Stellar transaction will be prepared and signed for each of the{" "}
+              {selectedResources.length} selected resources.
+            </Text>
+            <TextInput
+              value={bulkPriceValue}
+              onChangeText={setBulkPriceValue}
+              placeholder="New price"
+              placeholderTextColor={colors.textSubtle}
+              keyboardType="decimal-pad"
+              style={styles.bulkInput}
+              accessibilityLabel="Bulk price"
+            />
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setBulkPriceVisible(false)}
+                style={[shared.button, styles.modalCancelButton]}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel bulk price"
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleStartBulkPrice}
+                style={[shared.button, styles.modalConfirmButton]}
+                accessibilityRole="button"
+                accessibilityLabel="Continue bulk price update"
+              >
+                <Text style={shared.buttonText}>Continue</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {pendingBulkPrice ? (
+        <SignTransactionSheet
+          visible
+          unsignedXdr={pendingBulkPrice.unsignedXdr}
+          networkPassphrase={pendingBulkPrice.networkPassphrase}
+          action={`update the price for ${pendingBulkPrice.resource.title}`}
+          onSigned={handleBulkPriceSigned}
+          onCancel={handleCancelBulkPrice}
+        />
+      ) : null}
     </SafeAreaView>
   );
 

@@ -10,8 +10,16 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SettingsScreen } from "./SettingsScreen";
 import { getDefaultApiBaseUrl } from "../api/apiSettings";
 import { RootNavigator, type RootStackParamList } from "../navigation";
+import { AppLockProvider } from "../hooks/useAppLock";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { renderWithProviders, setupFetchMock } from "../test-utils";
+
+jest.mock("expo-local-authentication", () => ({
+  hasHardwareAsync: jest.fn().mockResolvedValue(true),
+  isEnrolledAsync: jest.fn().mockResolvedValue(true),
+  authenticateAsync: jest.fn().mockResolvedValue({ success: true }),
+  supportedAuthenticationTypesAsync: jest.fn().mockResolvedValue([]),
+}));
 
 jest.mock("@react-navigation/native", () => ({
   ...jest.requireActual("@react-navigation/native"),
@@ -50,7 +58,11 @@ afterEach(() => {
 });
 
 async function renderSettings() {
-  const screen = renderWithProviders(<SettingsScreen />);
+  const screen = renderWithProviders(
+    <AppLockProvider>
+      <SettingsScreen />
+    </AppLockProvider>
+  );
   await screen.findByDisplayValue(getDefaultApiBaseUrl());
   return screen;
 }
@@ -60,7 +72,9 @@ async function routeNames() {
   render(
     <ThemeProvider>
       <NavigationContainer ref={ref}>
-        <RootNavigator showOnboarding={false} />
+        <AppLockProvider>
+          <RootNavigator showOnboarding={false} />
+        </AppLockProvider>
       </NavigationContainer>
     </ThemeProvider>
   );

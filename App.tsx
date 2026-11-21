@@ -19,6 +19,7 @@ import { OfflineBanner } from "./src/components/OfflineBanner";
 import { ToastProvider, useToast } from "./src/components/ToastProvider";
 import { useNetworkStatus } from "./src/hooks/useNetworkStatus";
 import { useReceiptSync } from "./src/hooks/useReceiptSync";
+import { AppLockProvider } from "./src/hooks/useAppLock";
 import { STORAGE_KEYS } from "./src/services/storage";
 
 const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
@@ -79,12 +80,14 @@ function AppContent() {
     <>
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <OfflineBanner isOffline={isOffline} />
-      <NavigationContainer
-        theme={getNavigationTheme(colors, colorScheme)}
-        linking={createLinkingOptions()}
-      >
-        <RootNavigator showOnboarding={showOnboarding} />
-      </NavigationContainer>
+      <AppLockProvider>
+        <NavigationContainer
+          theme={getNavigationTheme(colors, colorScheme)}
+          linking={createLinkingOptions()}
+        >
+          <RootNavigator showOnboarding={showOnboarding} />
+        </NavigationContainer>
+      </AppLockProvider>
     </>
   );
 }
