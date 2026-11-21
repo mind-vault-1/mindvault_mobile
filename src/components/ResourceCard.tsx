@@ -16,6 +16,7 @@ import { getResourceTypeLabel } from "../types";
 import { useEditPrice, validatePrice } from "../hooks/useEditPrice";
 import { isImageCached, rememberImage } from "../utils/imageCache";
 import { shareResource } from "../utils/shareResource";
+import { hapticImpact } from "../utils/haptics";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { SignTransactionSheet } from "./SignTransactionSheet";
@@ -227,6 +228,7 @@ export function ResourceCard({
 
   async function handleCopy() {
     await Clipboard.setStringAsync(resource.accessUrl);
+    void hapticImpact();
     onCopyUrl("Resource URL copied");
   }
 

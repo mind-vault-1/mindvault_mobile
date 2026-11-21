@@ -37,6 +37,7 @@ import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import type { Resource } from "../types";
+import { hapticImpact } from "../utils/haptics";
 
 type Navigation = NativeStackNavigationProp<RootStackParamList, "PublishResource">;
 
@@ -273,6 +274,7 @@ export function PublishResourceScreen() {
 
   async function copyAccessUrl(url: string) {
     await Clipboard.setStringAsync(url);
+    void hapticImpact();
     toast.success("Access URL copied");
   }
 

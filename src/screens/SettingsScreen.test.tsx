@@ -211,3 +211,21 @@ describe("local data", () => {
     expect(screen.getByText(/Wallet and API keys are not affected here/)).toBeTruthy();
   });
 });
+
+describe("haptics", () => {
+  it("persists the haptic feedback toggle", async () => {
+    const screen = await renderSettings();
+    const toggle = screen.getByLabelText("Haptic feedback");
+
+    expect(toggle.props.value).toBe(true);
+
+    await act(async () => {
+      fireEvent(toggle, "valueChange", false);
+    });
+
+    await waitFor(async () =>
+      expect(await AsyncStorage.getItem("@mindvault_haptics_enabled")).toBe("false")
+    );
+    expect(screen.getByLabelText("Haptic feedback").props.value).toBe(false);
+  });
+});

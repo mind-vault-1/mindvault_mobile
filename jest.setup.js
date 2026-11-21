@@ -10,6 +10,12 @@ jest.mock("@react-native-community/netinfo", () => ({
   addEventListener: jest.fn(() => jest.fn()),
   fetch: jest.fn(() => Promise.resolve({ isConnected: true })),
 }));
+jest.mock("expo-haptics", () => ({
+  notificationAsync: jest.fn(() => Promise.resolve()),
+  impactAsync: jest.fn(() => Promise.resolve()),
+  NotificationFeedbackType: { Success: "success", Error: "error" },
+  ImpactFeedbackStyle: { Light: "light" },
+}));
 jest.mock("@stellar/stellar-sdk", () => {
   // Deterministic fake ed25519 public key for testing
   const VALID_PUBLIC_KEY =
