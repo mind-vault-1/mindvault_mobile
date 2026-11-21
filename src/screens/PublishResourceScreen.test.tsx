@@ -3,7 +3,7 @@ import React from "react";
 import { ActivityIndicator } from "react-native";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
-import { publishLink } from "../api/publish";
+import { pollPublishStatus, publishLink } from "../api/publish";
 import { signPaymentTransaction } from "../api/payment";
 import { ToastProvider } from "../components/ToastProvider";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
@@ -25,6 +25,7 @@ jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue
 jest.mock("../api/publish", () => ({
   ...jest.requireActual("../api/publish"),
   publishLink: jest.fn(),
+  pollPublishStatus: jest.fn(),
 }));
 jest.mock("../api/payment", () => ({
   signPaymentTransaction: jest.fn(),
@@ -56,6 +57,7 @@ jest.mock("../components/SignTransactionSheet", () => {
 });
 
 const mockedPublishLink = publishLink as jest.MockedFunction<typeof publishLink>;
+const mockedPollPublishStatus = pollPublishStatus as jest.MockedFunction<typeof pollPublishStatus>;
 const mockedSign = signPaymentTransaction as jest.MockedFunction<typeof signPaymentTransaction>;
 const mockedUseNetworkStatus = useNetworkStatus as jest.MockedFunction<typeof useNetworkStatus>;
 const mockedEnqueueMutation = enqueueMutation as jest.MockedFunction<typeof enqueueMutation>;
@@ -109,6 +111,7 @@ function fillForm(screen: Awaited<ReturnType<typeof renderScreen>>) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockedUseNetworkStatus.mockReturnValue({ isOffline: false });
+  mockedPollPublishStatus.mockResolvedValue(undefined);
 });
 
 it("shows validation errors and does not submit an invalid form", async () => {
@@ -151,6 +154,58 @@ it("publishes and shows the new resource with its access URL", async () => {
 
   fireEvent.press(screen.getByRole("button", { name: "View resource" }));
   expect(mockNavigate).toHaveBeenCalledWith("ResourceDetail", { resourceId: "res-1" });
+});
+
+it("shows the rejection reason reported by publish status polling", async () => {
+  mockedPublishLink.mockResolvedValue({ type: "published", resource });
+  mockedPollPublishStatus.mockImplementation(async (_id, onStatus) => {
+    onStatus({ status: "rejected", verified: false, error: "Metadata mismatch" });
+  });
+  const screen = await renderScreen();
+
+  fillForm(screen);
+  fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+
+  expect(await screen.findByText("Verification failed: Metadata mismatch")).toBeTruthy();
+  expect(screen.getByText("3. Verification Rejected")).toBeTruthy();
+  expect(mockedPollPublishStatus).toHaveBeenCalledWith(
+    "res-1",
+    expect.any(Function),
+    expect.any(Function)
+  );
+});
+
+it("shows the on-chain transaction hash when sync finishes", async () => {
+  mockedPublishLink.mockResolvedValue({ type: "published", resource });
+  mockedPollPublishStatus.mockImplementation(async (_id, onStatus) => {
+    onStatus({ status: "on-chain", verified: true, txHash: "abcdef1234567890abcdef" });
+  });
+  const screen = await renderScreen();
+
+  fillForm(screen);
+  fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+
+  expect(
+    await screen.findByLabelText("On-chain transaction abcdef1234567890abcdef")
+  ).toBeTruthy();
+  expect(screen.getByText("Tx: abcdef12…abcdef")).toBeTruthy();
+});
+
+it("cancels publish status polling when the screen unmounts", async () => {
+  mockedPublishLink.mockResolvedValue({ type: "published", resource });
+  let isCancelled: (() => boolean) | undefined;
+  mockedPollPublishStatus.mockImplementation(async (_id, _onStatus, cancelled) => {
+    isCancelled = cancelled;
+  });
+  const screen = await renderScreen();
+
+  fillForm(screen);
+  fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+  await screen.findByText(resource.accessUrl);
+
+  expect(isCancelled?.()).toBe(false);
+  screen.unmount();
+  expect(isCancelled?.()).toBe(true);
 });
 
 it("pays the verification fee and then publishes", async () => {
