@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.3.0](https://github.com/mind-vault-1/mindvault_mobile/compare/v1.2.0...v1.3.0) (2026-11-21)
+
+
+### Features
+
+* batch contributions - documentation, tips, and saved searches ([#292](https://github.com/mind-vault-1/mindvault_mobile/issues/292)-[#295](https://github.com/mind-vault-1/mindvault_mobile/issues/295)) ([fa878da](https://github.com/mind-vault-1/mindvault_mobile/commit/fa878da28e773a69d455226ee4b5a21f1ae5cc76))
+* batch contributions - documentation, tips, and saved searches ([#292](https://github.com/mind-vault-1/mindvault_mobile/issues/292)-[#295](https://github.com/mind-vault-1/mindvault_mobile/issues/295)) ([#299](https://github.com/mind-vault-1/mindvault_mobile/issues/299)) ([fa878da](https://github.com/mind-vault-1/mindvault_mobile/commit/fa878da28e773a69d455226ee4b5a21f1ae5cc76))
+* expo-aware deps, receipt coverage and clear-local-data fix ([#322](https://github.com/mind-vault-1/mindvault_mobile/issues/322)-[#324](https://github.com/mind-vault-1/mindvault_mobile/issues/324)) ([531d01f](https://github.com/mind-vault-1/mindvault_mobile/commit/531d01fff93104552a7eb6c310b623f033854913)), closes [#323](https://github.com/mind-vault-1/mindvault_mobile/issues/323)
+* offline mutation queue, receipt sync, secret redaction and biometric re-auth ([#273](https://github.com/mind-vault-1/mindvault_mobile/issues/273)-[#276](https://github.com/mind-vault-1/mindvault_mobile/issues/276)) ([#277](https://github.com/mind-vault-1/mindvault_mobile/issues/277)) ([68ffd34](https://github.com/mind-vault-1/mindvault_mobile/commit/68ffd34ba300032ae225033b3a833042cbac1b72))
+* publisher key rotation, E2E flows, flaky quarantine and previews ([#278](https://github.com/mind-vault-1/mindvault_mobile/issues/278)-[#281](https://github.com/mind-vault-1/mindvault_mobile/issues/281)) ([209b9de](https://github.com/mind-vault-1/mindvault_mobile/commit/209b9de22d30bc6c0f5b167ef3261d20d53ecaf2)), closes [#279](https://github.com/mind-vault-1/mindvault_mobile/issues/279) [#280](https://github.com/mind-vault-1/mindvault_mobile/issues/280)
+
+
+### Bug Fixes
+
+* **batch5:** address typecheck issues and hook ordering ([a3496cf](https://github.com/mind-vault-1/mindvault_mobile/commit/a3496cfe639b3e95e5582508a889b76a1fe1db40))
+* **batch5:** resolve lint, stabilize tests, and update onboarding expectations ([68f565a](https://github.com/mind-vault-1/mindvault_mobile/commit/68f565aa85d1f9106d12aa31f217bb2c3c59c7e1))
+
 ## [1.2.0](https://github.com/mind-vault-1/mindvault_mobile/compare/v1.1.0...v1.2.0) (2026-10-23)
 
 
