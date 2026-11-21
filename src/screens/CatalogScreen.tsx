@@ -512,6 +512,12 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   const [registryFailed, setRegistryFailed] = useState(false);
   const toast = useToast();
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  // Ref mirror of lastUpdatedAt so the useFocusEffect callback can read the
+  // current value without being listed as a dep — which would otherwise cause
+  // the callback to be recreated (and immediately re-fire) after every
+  // successful fetch, potentially triggering back-to-back refreshes.
+  const lastUpdatedAtRef = useRef<Date | null>(null);
+  useEffect(() => { lastUpdatedAtRef.current = lastUpdatedAt; }, [lastUpdatedAt]);
   const [isRestoring, setIsRestoring] = useState(true);
   const [recent, setRecent] = useState<RecentResource[]>([]);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
@@ -641,10 +647,17 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
 
   useFocusEffect(
     useCallback(() => {
-      if (lastUpdatedAt && new Date().getTime() - lastUpdatedAt.getTime() > 60000) {
+      // Read the timestamp from the ref so this callback does not need
+      // lastUpdatedAt in its dep array.  If lastUpdatedAt were a dep,
+      // useFocusEffect would re-fire immediately after every successful fetch
+      // (because loadData sets lastUpdatedAt → new ref → callback recreated →
+      // effect re-runs), making the 60-second guard coincidental rather than
+      // reliable.
+      const ts = lastUpdatedAtRef.current;
+      if (ts && Date.now() - ts.getTime() > 60_000) {
         void loadData(true);
       }
-    }, [lastUpdatedAt, loadData])
+    }, [loadData])
   );
 
   const currentFilters = useMemo(() => {
