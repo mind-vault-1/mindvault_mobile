@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/mind-vault-1/mindvault_mobile/compare/v1.3.0...v1.4.0) (2026-11-21)
+
+
+### Features
+
+* **batch-17:** publish status, lease display, a11y, publisher detail ([#311](https://github.com/mind-vault-1/mindvault_mobile/issues/311)-[#314](https://github.com/mind-vault-1/mindvault_mobile/issues/314)) ([#339](https://github.com/mind-vault-1/mindvault_mobile/issues/339)) ([54c36fa](https://github.com/mind-vault-1/mindvault_mobile/commit/54c36fabaa9a0186f8d1d1175e7f3c4fb80b270f))
+* **haptics:** complete haptics on payments, scans and copy ([#344](https://github.com/mind-vault-1/mindvault_mobile/issues/344)) ([#345](https://github.com/mind-vault-1/mindvault_mobile/issues/345)) ([07288dd](https://github.com/mind-vault-1/mindvault_mobile/commit/07288dd26eb2b4c3feeaf670fce10c47c6f1b26f))
+
 ## [1.3.0](https://github.com/mind-vault-1/mindvault_mobile/compare/v1.2.0...v1.3.0) (2026-11-21)
 
 
