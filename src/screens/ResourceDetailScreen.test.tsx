@@ -4,6 +4,8 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { ActivityIndicator, AppState, ScrollView, type AppStateStatus } from "react-native";
 
 import { fetchResource, ResourceFetchError } from "../api/resources";
+import { fetchLeaseStatus } from "../api/leases";
+import { getPublicKey } from "../services/wallet";
 import { prepareResourceAccess } from "../api/payment";
 import { fetchVerification, type VerificationDetails } from "../api/verification";
 import { shareResource } from "../utils/shareResource";
@@ -23,6 +25,11 @@ jest.mock("../api/verification", () => ({
   ...jest.requireActual("../api/verification"),
   fetchVerification: jest.fn(),
 }));
+jest.mock("../api/leases", () => ({
+  ...jest.requireActual("../api/leases"),
+  fetchLeaseStatus: jest.fn(),
+}));
+jest.mock("../services/wallet", () => ({ getPublicKey: jest.fn() }));
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
 jest.mock("../utils/shareResource", () => ({ shareResource: jest.fn().mockResolvedValue("shared") }));
 jest.mock("../utils/stellarExpert", () => ({
@@ -50,6 +57,8 @@ jest.mock("../theme/ThemeProvider", () => {
 });
 
 const mockedFetchResource = fetchResource as jest.MockedFunction<typeof fetchResource>;
+const mockedFetchLeaseStatus = fetchLeaseStatus as jest.MockedFunction<typeof fetchLeaseStatus>;
+const mockedGetPublicKey = getPublicKey as jest.MockedFunction<typeof getPublicKey>;
 const mockedFetchVerification = fetchVerification as jest.MockedFunction<typeof fetchVerification>;
 const mockedShareResource = shareResource as jest.MockedFunction<typeof shareResource>;
 const mockedOpenExternalUrl = openExternalUrl as jest.MockedFunction<typeof openExternalUrl>;
@@ -102,6 +111,8 @@ function makeVerification(
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockedFetchLeaseStatus.mockResolvedValue({ hasActiveLease: false, state: "None", expiresAt: null });
+  mockedGetPublicKey.mockResolvedValue(null);
   mockedShareResource.mockResolvedValue("shared");
   mockedOpenExternalUrl.mockResolvedValue(undefined);
   mockedFetchVerification.mockResolvedValue(makeVerification());
@@ -144,6 +155,66 @@ it("renders title, price, status badges, and timestamp", async () => {
   expect(screen.getByLabelText("Verification: verified")).toBeTruthy();
   expect(screen.getByLabelText("On-chain: registered")).toBeTruthy();
   expect(screen.getByText(/Last updated.*2025/)).toBeTruthy();
+});
+
+it("fetches lease status for the current holder and offers Open while active", async () => {
+  mockedFetchResource.mockResolvedValue(resource);
+  mockedGetPublicKey.mockResolvedValue("G-HOLDER-ADDRESS");
+  mockedFetchLeaseStatus.mockResolvedValue({
+    hasActiveLease: true,
+    state: "Active",
+    expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000 + 15 * 60 * 1000).toISOString(),
+    tier: 0,
+  });
+  const screen = renderScreen();
+
+  expect(await screen.findByRole("button", { name: "Open resource" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: `Unlock for ${resource.price} USDC` })).toBeNull();
+  expect(screen.getByText(/Access until/)).toBeTruthy();
+  await waitFor(() =>
+    expect(mockedFetchLeaseStatus).toHaveBeenCalledWith(resource.id, "G-HOLDER-ADDRESS")
+  );
+});
+
+it("shows an expired lease badge and offers Unlock again", async () => {
+  mockedFetchResource.mockResolvedValue(resource);
+  mockedFetchLeaseStatus.mockResolvedValue({
+    hasActiveLease: false,
+    state: "Expired",
+    expiresAt: new Date(Date.now() - 60_000).toISOString(),
+  });
+  const screen = renderScreen();
+
+  expect(await screen.findByText("Lease expired")).toBeTruthy();
+  expect(screen.getByRole("button", { name: `Unlock for ${resource.price} USDC` })).toBeTruthy();
+});
+
+it("transitions an expiring lease to the expired state", async () => {
+  mockedFetchResource.mockResolvedValue(resource);
+  mockedFetchLeaseStatus.mockResolvedValue({
+    hasActiveLease: true,
+    state: "Active",
+    expiresAt: new Date(Date.now() + 1500).toISOString(),
+    tier: 0,
+  });
+  jest.useFakeTimers();
+  try {
+    const screen = renderScreen();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("button", { name: "Open resource" })).toBeTruthy();
+
+    await act(async () => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(screen.getByText("Lease expired")).toBeTruthy();
+    expect(screen.getByRole("button", { name: `Unlock for ${resource.price} USDC` })).toBeTruthy();
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 it("copies the access URL and shows a toast", async () => {
