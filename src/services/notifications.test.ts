@@ -16,6 +16,7 @@ jest.mock("expo-notifications", () => ({
 
 jest.mock("react-native", () => ({
   Linking: { openURL: jest.fn().mockResolvedValue(undefined) },
+  Platform: { OS: "ios" },
 }));
 
 const mockedNotifications = Notifications as jest.Mocked<typeof Notifications>;
