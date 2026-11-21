@@ -1,13 +1,15 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { Account, Keypair, TransactionBuilder, Networks, Asset, Operation } from "@stellar/stellar-sdk";
-import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
+import { copySensitive } from "../utils/clipboard";
+import { useToast } from "../components/ToastProvider";
 
 export function DevSignerScreen() {
   const { colors, typography, shared, spacing } = useAppTheme();
+  const toast = useToast();
   
   const [secretKey, setSecretKey] = useState("");
   const [signedXdr, setSignedXdr] = useState("");
@@ -29,8 +31,8 @@ export function DevSignerScreen() {
   const handleCopyXdr = async () => {
     if (!signedXdr) return;
     try {
-      await Clipboard.setStringAsync(signedXdr);
-      Alert.alert("Copied", "Signed XDR copied to clipboard.");
+      await copySensitive(signedXdr);
+      toast.info("Signed XDR copied. Clipboard will be cleared in 60 seconds.");
     } catch {
       Alert.alert("Copy failed", "Unable to copy the signed XDR.");
     }
