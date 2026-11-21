@@ -438,3 +438,20 @@ describe("registerPublisher", () => {
     ).rejects.toThrow("Internal server error");
   });
 });
+
+describe("fetchLeaderboard", () => {
+  it("requests the leaderboard endpoint and returns the rows", async () => {
+    const rows = [{ id: "p1", name: "Ada", walletAddress: "G1", joinedAt: "x", totalResources: 1, listedResources: 1, verifiedResources: 0, totalSales: 2, totalEarned: "1.0000" }];
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => rows,
+      text: async () => JSON.stringify(rows),
+    }) as unknown as typeof fetch;
+    const { fetchLeaderboard } = require("./publishers");
+    await expect(fetchLeaderboard()).resolves.toEqual(rows);
+    expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(`${getApiBaseUrl()}/publishers/leaderboard`);
+    global.fetch = originalFetch;
+  });
+});

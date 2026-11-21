@@ -94,6 +94,28 @@ export async function fetchPublicPublisher(
   }
 }
 
+/** One row of `GET /publishers/leaderboard`; amounts have four decimals. */
+export interface LeaderboardEntry {
+  id: string;
+  name: string;
+  walletAddress: string;
+  joinedAt: string;
+  totalResources: number;
+  listedResources: number;
+  verifiedResources: number;
+  totalSales: number;
+  totalEarned: string;
+}
+
+/** Loads the public publisher leaderboard, already sorted by earnings (highest first). */
+export async function fetchLeaderboard(signal?: AbortSignal): Promise<LeaderboardEntry[]> {
+  const { data } = await request<LeaderboardEntry[]>(`${getApiBaseUrl()}/publishers/leaderboard`, {
+    signal,
+    fallbackMessage: "Failed to load leaderboard",
+  });
+  return Array.isArray(data) ? data : [];
+}
+
 /**
  * Shows just enough of a key for a publisher to recognise the active one
  * without exposing the secret on screen or in a screenshot.

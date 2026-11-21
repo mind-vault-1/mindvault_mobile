@@ -521,6 +521,26 @@ export function SettingsScreen() {
             style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
             accessibilityRole="header"
           >
+            Publisher Leaderboard
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            See which publishers earn the most on MindVault.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("Leaderboard")}
+            accessibilityRole="button"
+            accessibilityLabel="Open publisher leaderboard"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>View Leaderboard</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text
+            style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
+            accessibilityRole="header"
+          >
             Local Data
           </Text>
           <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
