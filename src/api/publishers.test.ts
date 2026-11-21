@@ -1,6 +1,7 @@
 import {
   fetchAnalytics,
   fetchMe,
+  fetchPublicPublisher,
   maskApiKey,
   registerPublisher,
   revokeApiKey,
@@ -48,6 +49,78 @@ beforeEach(() => {
 
 afterEach(() => {
   global.fetch = originalFetch;
+});
+
+describe("fetchPublicPublisher", () => {
+  const listing = (id: string, walletAddress: string) => ({
+    id,
+    title: `Resource ${id}`,
+    price: "1.00",
+    resourceType: "file",
+    walletAddress,
+    verificationStatus: "verified",
+    onchainStatus: "registered",
+    listed: true,
+    accessUrl: `https://example.com/resources/${id}`,
+  });
+
+  function mockRoutes(routes: Record<string, { status: number; body: unknown }>) {
+    const fetchMock = jest.fn(async (url: string) => {
+      const path = url.slice(getApiBaseUrl().length).split("?")[0];
+      const { status, body } = routes[path];
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+        headers: { get: () => "application/json" },
+      };
+    });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+    return fetchMock;
+  }
+
+  it("loads the profile and only the resources owned by that wallet", async () => {
+    const fetchMock = mockRoutes({
+      [`/publishers/wallet/${profile.walletAddress}`]: { status: 200, body: profile },
+      "/resources": {
+        status: 200,
+        body: [listing("r1", profile.walletAddress), listing("r2", "GOTHERWALLET")],
+      },
+    });
+
+    const result = await fetchPublicPublisher(profile.walletAddress);
+
+    expect(result?.publisher).toEqual(profile);
+    expect(result?.resources.map((resource) => resource.id)).toEqual(["r1"]);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `${getApiBaseUrl()}/publishers/wallet/${profile.walletAddress}`,
+      `${getApiBaseUrl()}/resources?owner=${profile.walletAddress}&limit=100`,
+    ]);
+  });
+
+  it("resolves to null when no publisher owns the wallet", async () => {
+    mockRoutes({
+      [`/publishers/wallet/${profile.walletAddress}`]: {
+        status: 404,
+        body: { error: "No publisher found for this wallet" },
+      },
+      "/resources": { status: 200, body: [] },
+    });
+
+    await expect(fetchPublicPublisher(profile.walletAddress)).resolves.toBeNull();
+  });
+
+  it("rethrows other errors with the server message", async () => {
+    mockRoutes({
+      [`/publishers/wallet/${profile.walletAddress}`]: { status: 200, body: profile },
+      "/resources": { status: 400, body: { error: "Invalid query params" } },
+    });
+
+    await expect(fetchPublicPublisher(profile.walletAddress)).rejects.toThrow(
+      "Invalid query params"
+    );
+  });
 });
 
 describe("fetchMe", () => {

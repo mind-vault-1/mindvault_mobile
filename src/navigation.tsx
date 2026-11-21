@@ -13,6 +13,7 @@ import { DevSignerScreen } from "./screens/DevSignerScreen";
 import { PublisherResourcesScreen } from "./screens/PublisherResourcesScreen";
 import { PublisherProfileScreen } from "./screens/PublisherProfileScreen";
 import { PublisherAnalyticsScreen } from "./screens/PublisherAnalyticsScreen";
+import { PublisherPublicScreen } from "./screens/PublisherPublicScreen";
 import { PurchaseHistoryScreen } from "./screens/PurchaseHistoryScreen";
 import { ReceiptDetailScreen } from "./screens/ReceiptDetailScreen";
 import { PublishResourceScreen } from "./screens/PublishResourceScreen";
@@ -30,6 +31,7 @@ export type RootStackParamList = {
   PublisherResourceDetail: { resourceId: string };
   PublisherProfile: undefined;
   PublisherAnalytics: undefined;
+  PublisherPublic: { address: string };
   PurchaseHistory: undefined;
   ReceiptDetail: { txHash: string };
   PublishResource: undefined;
@@ -105,6 +107,11 @@ export function RootNavigator({ showOnboarding }: RootNavigatorProps) {
         name="PublisherAnalytics"
         component={PublisherAnalyticsScreen}
         options={{ title: "Publisher Analytics" }}
+      />
+      <Stack.Screen
+        name="PublisherPublic"
+        component={PublisherPublicScreen}
+        options={{ title: "Publisher" }}
       />
       <Stack.Screen
         name="PurchaseHistory"

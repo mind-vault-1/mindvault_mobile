@@ -31,7 +31,7 @@ import { getResourceTypeLabel } from "../types";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
-import { openExternalUrl, stellarExpertAccountUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
+import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 import { shareResource } from "../utils/shareResource";
 import { hapticImpact } from "../utils/haptics";
 
@@ -343,12 +343,6 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     }
   }
 
-  function handleOpenOwner() {
-    if (!resource) return;
-    const url = stellarExpertAccountUrl({ accountId: resource.walletAddress });
-    openExternalUrl(url).catch(() => toast.error("Unable to open explorer"));
-  }
-
   function handleOpenTx() {
     if (!resource?.onchainTxHash) return;
     const url = stellarExpertTxUrl({ txHash: resource.onchainTxHash });
@@ -492,11 +486,11 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         <View style={styles.infoRow}>
           <Text style={styles.label}>Owner</Text>
           <Pressable
-            onPress={handleOpenOwner}
+            onPress={() => navigation.navigate("PublisherPublic", { address: resource.walletAddress })}
             style={styles.linkTarget}
             accessibilityRole="link"
             accessibilityLabel={`Owner: ${resource.walletAddress}`}
-            accessibilityHint="Opens the owner's account in Stellar Explorer"
+            accessibilityHint="Opens the publisher's profile"
           >
             <Text style={[typography.body, styles.linkText]}>
               {shortenAddress(resource.walletAddress)}
