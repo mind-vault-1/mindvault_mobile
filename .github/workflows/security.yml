@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: trufflesecurity/trufflehog@v3.82.13
+      - uses: trufflesecurity/trufflehog@v3.99.9
         with:
           # Only verified (live) secrets fail the job, which keeps false
           # positives down; see docs/SECURITY.md for how to suppress one.
