@@ -20,6 +20,10 @@ jest.mock("../services/secureStorage", () => ({
   clearApiKey: jest.fn(),
 }));
 
+jest.mock("../services/notifications", () => ({
+  notifyPublishComplete: jest.fn().mockResolvedValue(true),
+}));
+
 const { Keypair, StrKey } = jest.requireActual("@stellar/stellar-sdk");
 const PAY_TO: string = Keypair.random().publicKey();
 const ASSET: string = StrKey.encodeContract(Buffer.alloc(32, 7));

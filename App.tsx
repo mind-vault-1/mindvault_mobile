@@ -21,6 +21,7 @@ import { useNetworkStatus } from "./src/hooks/useNetworkStatus";
 import { useReceiptSync } from "./src/hooks/useReceiptSync";
 import { AppLockProvider } from "./src/hooks/useAppLock";
 import { STORAGE_KEYS } from "./src/services/storage";
+import { setupNotifications } from "./src/services/notifications";
 
 const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
 
@@ -30,6 +31,19 @@ function AppContent() {
   const [showOnboarding, setShowOnboarding] = useState(true);
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const toast = useToast();
+
+  useEffect(() => {
+    let active = true;
+    let dispose: (() => void) | undefined;
+    void setupNotifications().then((cleanup) => {
+      if (active) dispose = cleanup;
+      else cleanup();
+    });
+    return () => {
+      active = false;
+      dispose?.();
+    };
+  }, []);
 
   // Reconciles local receipts with the server in the background.
   useReceiptSync(apiUrlReady);

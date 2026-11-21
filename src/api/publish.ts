@@ -10,6 +10,7 @@ import {
 } from "./payment";
 import { publisherFetch } from "./resources";
 import type { Resource } from "../types";
+import { notifyPublishComplete } from "../services/notifications";
 
 export const TITLE_MAX_LENGTH = 120;
 export const DESCRIPTION_MAX_LENGTH = 2000;
@@ -196,6 +197,9 @@ export async function pollPublishStatus(
     onStatus(current);
 
     if (current.status === "on-chain" || current.status === "rejected" || isCancelled()) {
+      if (current.status === "on-chain" || current.status === "rejected") {
+          void notifyPublishComplete(resourceId, current.status).catch(() => undefined);
+      }
       break;
     }
 

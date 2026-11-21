@@ -52,7 +52,8 @@
         {
           "cameraPermission": "Allow MindVault to access your camera to scan QR codes."
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "extra": {
       "apiUrl": "http://localhost:4021",
