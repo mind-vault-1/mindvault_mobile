@@ -37,3 +37,21 @@ jest.mock("@stellar/stellar-sdk", () => {
     Transaction: jest.fn(),
   };
 });
+
+// Native/ESM-only modules pulled in by screens; individual tests override these as needed.
+jest.mock("@walletconnect/react-native-compat", () => ({}));
+jest.mock("@walletconnect/sign-client", () => ({
+  __esModule: true,
+  default: { init: jest.fn() },
+}));
+jest.mock("react-native-qrcode-svg", () => "QRCode");
+jest.mock("expo-media-library", () => ({
+  requestPermissionsAsync: jest.fn(),
+  saveToLibraryAsync: jest.fn(),
+}));
+jest.mock("expo-file-system", () => ({
+  cacheDirectory: "file:///cache/",
+  EncodingType: { Base64: "base64" },
+  writeAsStringAsync: jest.fn(),
+  deleteAsync: jest.fn(),
+}));

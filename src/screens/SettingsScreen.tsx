@@ -521,6 +521,26 @@ export function SettingsScreen() {
             style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
             accessibilityRole="header"
           >
+            Wallet
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            Connect a Stellar wallet such as LOBSTR through WalletConnect.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("Wallet")}
+            accessibilityRole="button"
+            accessibilityLabel="Open wallet"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>Manage Wallet</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text
+            style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
+            accessibilityRole="header"
+          >
             Publisher Leaderboard
           </Text>
           <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>

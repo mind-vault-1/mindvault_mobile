@@ -14,6 +14,7 @@ import { PublisherResourcesScreen } from "./screens/PublisherResourcesScreen";
 import { PublisherProfileScreen } from "./screens/PublisherProfileScreen";
 import { PublisherAnalyticsScreen } from "./screens/PublisherAnalyticsScreen";
 import { PublisherPublicScreen } from "./screens/PublisherPublicScreen";
+import { WalletScreen } from "./screens/WalletScreen";
 import { LeaderboardScreen } from "./screens/LeaderboardScreen";
 import { PurchaseHistoryScreen } from "./screens/PurchaseHistoryScreen";
 import { ReceiptDetailScreen } from "./screens/ReceiptDetailScreen";
@@ -35,6 +36,7 @@ export type RootStackParamList = {
   PublisherAnalytics: undefined;
   PublisherPublic: { address: string };
   Leaderboard: undefined;
+  Wallet: undefined;
   PurchaseHistory: undefined;
   ReceiptDetail: { txHash: string };
   PublishResource: undefined;
@@ -116,6 +118,7 @@ export function RootNavigator({ showOnboarding }: RootNavigatorProps) {
         component={PublisherPublicScreen}
         options={{ title: "Publisher" }}
       />
+      <Stack.Screen name="Wallet" component={WalletScreen} options={{ title: "Wallet" }} />
       <Stack.Screen
         name="Leaderboard"
         component={LeaderboardScreen}
