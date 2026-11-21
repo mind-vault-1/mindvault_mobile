@@ -204,10 +204,21 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
   const [scanned, setScanned] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const announcedReadyRef = useRef(false);
 
   const [pasteModalVisible, setPasteModalVisible] = useState(false);
   const [pasteValue, setPasteValue] = useState("");
   const [pasteError, setPasteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Announce when scanner is ready for the first time
+    if (permission?.granted && !announcedReadyRef.current) {
+      announcedReadyRef.current = true;
+      AccessibilityInfo.announceForAccessibility(
+        "Scanner ready. Point camera at a QR code or use Paste Link Instead."
+      );
+    }
+  }, [permission?.granted]);
 
   useEffect(() => {
     return () => {
@@ -244,7 +255,9 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
     }
 
     // Non-blocking inline error — auto-resumes scanning after 2.5 s
-    AccessibilityInfo.announceForAccessibility("Unrecognized QR code. Point at a MindVault resource code.");
+    AccessibilityInfo.announceForAccessibility(
+      "Unrecognized QR code. Try again or use Paste Link Instead button."
+    );
     setScanError("Unrecognized QR code. Point at a MindVault resource code.");
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     retryTimerRef.current = setTimeout(() => {

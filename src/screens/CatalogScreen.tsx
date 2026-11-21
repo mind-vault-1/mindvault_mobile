@@ -948,17 +948,29 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                   Payment-protected digital resources on Stellar
                 </Text>
                 {registryCount !== null ? (
-                  <Text style={styles.registry}>
+                  <Text
+                    style={styles.registry}
+                    accessibilityLabel={
+                      `${registryCount} resource${registryCount === 1 ? "" : "s"} registered on-chain`
+                    }
+                  >
                     {registryCount} resource{registryCount === 1 ? "" : "s"}{" "}
                     on-chain
                   </Text>
                 ) : registryFailed ? (
-                  <Text style={styles.registry}>
+                  <Text
+                    style={styles.registry}
+                    accessibilityLabel="On-chain resource count unavailable"
+                  >
                     On-chain count unavailable
                   </Text>
                 ) : null}
                 {lastUpdatedAt ? (
-                  <Text style={styles.lastUpdated} key={relativeTimeKey}>
+                  <Text
+                    style={styles.lastUpdated}
+                    key={relativeTimeKey}
+                    accessibilityLabel={`Catalog updated ${getRelativeTimeString(lastUpdatedAt)}`}
+                  >
                     Updated {getRelativeTimeString(lastUpdatedAt)}
                   </Text>
                 ) : null}
@@ -967,9 +979,15 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                 style={styles.settingsButton}
                 onPress={() => navigation.navigate("Settings")}
                 accessibilityRole="button"
-                accessibilityLabel="Open settings"
+                accessibilityLabel="Settings"
+                accessibilityHint="Opens app settings"
               >
-                <Text style={styles.settingsButtonText}>⚙</Text>
+                <Text
+                  style={styles.settingsButtonText}
+                  importantForAccessibility="no"
+                >
+                  ⚙
+                </Text>
               </Pressable>
             </View>
 
