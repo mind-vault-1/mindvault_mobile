@@ -14,6 +14,10 @@ React Native companion app for [MindVault](https://github.com/mindvault) — bro
 
 New here? Read the [architecture guide](docs/ARCHITECTURE.md) for the layers, data flow, storage keys and the signing and payment flows.
 
+## Privacy
+
+The [privacy and data-handling notes](docs/PRIVACY.md) list every value the app stores, how long it is kept and how to delete it, plus what leaves the device and what never does. Settings links to them from the **Local Data** section. Update them in the same PR as any change that stores new data or sends data somewhere new.
+
 ## Prerequisites
 
 - Node.js 18+

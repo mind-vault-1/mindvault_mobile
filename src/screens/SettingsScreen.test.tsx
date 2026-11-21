@@ -1,6 +1,6 @@
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { Alert, Share } from "react-native";
+import { Alert, Linking, Share } from "react-native";
 import {
   NavigationContainer,
   createNavigationContainerRef,
@@ -223,6 +223,22 @@ describe("local data", () => {
   it("explains that keys are handled by the wallet wipe only", async () => {
     const screen = await renderSettings();
     expect(screen.getByText(/Wallet and API keys are not affected here/)).toBeTruthy();
+  });
+
+  it("links to the privacy policy next to the clear buttons", async () => {
+    const canOpenURL = jest.spyOn(Linking, "canOpenURL").mockResolvedValue(true);
+    const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+    const screen = await renderSettings();
+
+    fireEvent.press(screen.getByLabelText("Privacy policy"));
+
+    await waitFor(() =>
+      expect(openURL).toHaveBeenCalledWith(
+        "https://github.com/mind-vault-1/mindvault_mobile/blob/main/docs/PRIVACY.md"
+      )
+    );
+    canOpenURL.mockRestore();
+    openURL.mockRestore();
   });
 });
 
