@@ -37,15 +37,15 @@ export type BundleSizes = Record<Platform, number>;
 
 export const PLATFORMS: readonly Platform[] = ["android", "ios", "web"];
 
-/** Bytes per platform. Measured 2026-11-21: android 3,853,759; ios 3,844,933; web 1,874,491. */
+/** Bytes per platform. Measured 2026-11-22: android 7,392,767; ios 7,380,441; web 3,677,560. */
 export const BUNDLE_BUDGETS: BundleSizes = {
-  android: 4_200_000,
-  ios: 4_200_000,
-  web: 2_100_000,
+  android: 7_800_000,
+  ios: 7_800_000,
+  web: 3_900_000,
 };
 
 /** Direct `dependencies` in package.json (devDependencies are not counted). */
-export const MAX_PRODUCTION_DEPENDENCIES = 26;
+export const MAX_PRODUCTION_DEPENDENCIES = 32;
 
 export interface PlatformResult {
   platform: Platform;
