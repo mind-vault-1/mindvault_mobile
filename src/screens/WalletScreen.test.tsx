@@ -2,6 +2,8 @@ import React from "react";
 import { act, fireEvent, render } from "@testing-library/react-native";
 
 import { WalletScreen } from "./WalletScreen";
+import * as horizon from "../api/horizon";
+import { resetNetworkForTests, setNetwork } from "../config/network";
 import { ToastProvider } from "../components/ToastProvider";
 import * as wc from "../services/walletconnect";
 import { ThemeProvider } from "../theme/ThemeProvider";
@@ -10,6 +12,13 @@ jest.mock("../services/walletconnect", () => ({
   getConnectedAccount: jest.fn(),
   startConnection: jest.fn(),
   disconnectWallet: jest.fn(),
+  signXdrWithWallet: jest.fn(),
+}));
+jest.mock("../api/horizon", () => ({
+  fundWithFriendbot: jest.fn(),
+  hasUsdcTrustline: jest.fn(),
+  buildAddUsdcTrustlineXdr: jest.fn(),
+  submitSignedTransaction: jest.fn(),
 }));
 jest.mock("react-native-qrcode-svg", () => "QRCode");
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
@@ -19,6 +28,7 @@ jest.mock("react-native-safe-area-context", () => ({
 }));
 
 const mocked = wc as jest.Mocked<typeof wc>;
+const mockedHorizon = horizon as jest.Mocked<typeof horizon>;
 const ADDRESS = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7";
 const account = { topic: "t", address: ADDRESS, chainId: "stellar:testnet", walletName: "LOBSTR" };
 
@@ -34,7 +44,12 @@ async function renderScreen() {
   return screen;
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  resetNetworkForTests();
+  mockedHorizon.hasUsdcTrustline.mockResolvedValue(true);
+  mockedHorizon.fundWithFriendbot.mockResolvedValue({ funded: true });
+});
 
 describe("WalletScreen", () => {
   it("shows the restored connected account", async () => {
@@ -90,5 +105,50 @@ describe("WalletScreen", () => {
     });
     expect(mocked.disconnectWallet).toHaveBeenCalled();
     expect(await findByLabelText("Connect wallet")).toBeTruthy();
+  });
+
+  it("funds a testnet account with Friendbot", async () => {
+    mocked.getConnectedAccount.mockResolvedValue(account);
+    const { findByLabelText, findByText } = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(await findByLabelText("Fund with Friendbot"));
+    });
+
+    expect(mockedHorizon.fundWithFriendbot).toHaveBeenCalledWith(
+      ADDRESS,
+      expect.objectContaining({ id: "testnet" })
+    );
+    expect(await findByText("Testnet account funded")).toBeTruthy();
+  });
+
+  it("hides testnet funding tools on mainnet", async () => {
+    setNetwork("mainnet");
+    mocked.getConnectedAccount.mockResolvedValue(account);
+    const { findByText, queryByLabelText } = await renderScreen();
+
+    await findByText("Connected wallet");
+    expect(queryByLabelText("Fund with Friendbot")).toBeNull();
+    expect(queryByLabelText("Add USDC trustline")).toBeNull();
+  });
+
+  it("adds a missing USDC trustline through the connected wallet", async () => {
+    mocked.getConnectedAccount.mockResolvedValue(account);
+    mockedHorizon.hasUsdcTrustline.mockResolvedValue(false);
+    mockedHorizon.buildAddUsdcTrustlineXdr.mockResolvedValue("unsigned-xdr");
+    mocked.signXdrWithWallet.mockResolvedValue("signed-xdr");
+    mockedHorizon.submitSignedTransaction.mockResolvedValue("tx-hash");
+    const { findByLabelText, findByText } = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(await findByLabelText("Add USDC trustline"));
+    });
+
+    expect(mocked.signXdrWithWallet).toHaveBeenCalledWith("unsigned-xdr");
+    expect(mockedHorizon.submitSignedTransaction).toHaveBeenCalledWith(
+      "signed-xdr",
+      expect.objectContaining({ id: "testnet" })
+    );
+    expect(await findByText("USDC trustline added")).toBeTruthy();
   });
 });
