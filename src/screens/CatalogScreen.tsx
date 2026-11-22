@@ -61,8 +61,6 @@ import { getRelativeTimeString } from "../utils/time";
 
 const CATALOG_FILTERS_KEY = STORAGE_KEYS.catalogFilters;
 const SEARCH_DEBOUNCE_MS = 300;
-/** Estimated height of one catalog card + separator for getItemLayout (#352). */
-const CATALOG_ITEM_HEIGHT = 120;
 
 interface PersistedFilters {
   search: string;
@@ -953,13 +951,6 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         updateCellsBatchingPeriod={50}
         windowSize={7}
         removeClippedSubviews
-        // getItemLayout avoids dynamic measurement on every scroll frame (#352).
-        // CATALOG_ITEM_HEIGHT accounts for the card + separator.
-        getItemLayout={(_data, index) => ({
-          length: CATALOG_ITEM_HEIGHT,
-          offset: CATALOG_ITEM_HEIGHT * index,
-          index,
-        })}
         // Lets a suggestion be tapped without the first tap only dismissing the keyboard.
         keyboardShouldPersistTaps="handled"
         refreshControl={
