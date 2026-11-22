@@ -20,6 +20,7 @@ describe("parsePriceRange", () => {
       isInvalid: false,
       isActive: false,
     });
+    expect(parsePriceRange("1oops", "-2")).toMatchObject({ min: null, max: null });
   });
 
   it("is active when a single bound is set", () => {

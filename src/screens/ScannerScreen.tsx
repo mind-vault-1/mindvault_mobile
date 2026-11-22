@@ -1,8 +1,17 @@
-// @ts-nocheck
 import * as Clipboard from "expo-clipboard";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  AccessibilityInfo,
+  Alert,
+  Linking,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -10,16 +19,8 @@ import type { RootStackParamList } from "../navigation";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
-
-/**
- * Matches a MindVault resource URL anchored to its scheme and host.
- * Accepts:
- *   - https://example.com/resources/<id>
- *   - http://example.com/resources/<id>
- *   - mindvault://resources/<id>  (deep-link, host is optional)
- */
-const RESOURCE_URL_RE =
-  /^(?:https?:\/\/[^\/?#\s]+|mindvault:\/\/[^\/?#\s]*)\/resources\/([^\/?#\s]+)/i;
+import { parseResourceId } from "../utils/resourceLinks";
+import { hapticImpact } from "../utils/haptics";
 
 interface ScannerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Scanner">;
@@ -204,10 +205,21 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
   const [scanned, setScanned] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const announcedReadyRef = useRef(false);
 
   const [pasteModalVisible, setPasteModalVisible] = useState(false);
   const [pasteValue, setPasteValue] = useState("");
   const [pasteError, setPasteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Announce when scanner is ready for the first time
+    if (permission?.granted && !announcedReadyRef.current) {
+      announcedReadyRef.current = true;
+      AccessibilityInfo.announceForAccessibility(
+        "Scanner ready. Point camera at a QR code or use Paste Link Instead."
+      );
+    }
+  }, [permission?.granted]);
 
   useEffect(() => {
     return () => {
@@ -221,13 +233,16 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
     if (scanned) return;
     setScanned(true);
 
-    const match = data.match(RESOURCE_URL_RE);
-    if (match) {
-      navigation.replace("ResourceDetail", { resourceId: match[1] });
+    const resourceId = parseResourceId(data);
+    if (resourceId) {
+      void hapticImpact();
+      AccessibilityInfo.announceForAccessibility(`Scanned MindVault resource ${resourceId}`);
+      navigation.replace("ResourceDetail", { resourceId });
       return;
     }
 
     if (data.startsWith("http://") || data.startsWith("https://")) {
+      AccessibilityInfo.announceForAccessibility(`Scanned link ${data}`);
       Alert.alert("Open URL", data, [
         { text: "Cancel", onPress: () => setScanned(false) },
         {
@@ -242,6 +257,9 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
     }
 
     // Non-blocking inline error — auto-resumes scanning after 2.5 s
+    AccessibilityInfo.announceForAccessibility(
+      "Unrecognized QR code. Try again or use Paste Link Instead button."
+    );
     setScanError("Unrecognized QR code. Point at a MindVault resource code.");
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     retryTimerRef.current = setTimeout(() => {
@@ -277,10 +295,11 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
       return;
     }
 
-    const match = trimmed.match(RESOURCE_URL_RE);
-    if (match) {
+    const resourceId = parseResourceId(trimmed);
+    if (resourceId) {
+      void hapticImpact();
       closePasteModal();
-      navigation.replace("ResourceDetail", { resourceId: match[1] });
+      navigation.replace("ResourceDetail", { resourceId });
       return;
     }
 
@@ -309,8 +328,8 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
       onRequestClose={closePasteModal}
     >
       <View style={styles.modalOverlay}>
-        <View style={styles.modalSheet}>
-          <Text style={typography.title}>Enter Resource Link</Text>
+        <View style={styles.modalSheet} accessibilityRole="none">
+          <Text style={typography.title} accessibilityRole="header">Enter Resource Link</Text>
           <Text style={styles.modalLabel}>MindVault Resource URL</Text>
           <TextInput
             value={pasteValue}
@@ -324,20 +343,29 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
+            accessibilityLabel="MindVault Resource URL input"
+            accessibilityHint="Type or paste a complete MindVault resource link"
           />
           <Pressable
             onPress={() => void handlePasteFromClipboard()}
             style={styles.modalPasteInlineButton}
+            accessibilityRole="button"
+            accessibilityLabel="Paste from Clipboard"
+            accessibilityHint="Pastes clipboard text into the resource URL field"
           >
             <Text style={styles.modalPasteInlineText}>Paste from Clipboard</Text>
           </Pressable>
           {pasteError ? (
-            <Text style={styles.modalErrorText}>{pasteError}</Text>
+            <Text style={styles.modalErrorText} accessibilityRole="alert" accessibilityLiveRegion="polite">
+              {pasteError}
+            </Text>
           ) : null}
           <View style={styles.modalActions}>
             <Pressable
               onPress={closePasteModal}
               style={[shared.button, styles.modalCancelButton]}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel link input"
             >
               <Text style={styles.modalCancelText}>Cancel</Text>
             </Pressable>
@@ -350,6 +378,9 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
                 pasteValue.trim().length === 0 ? styles.modalDisabledButton : null,
               ]}
               disabled={pasteValue.trim().length === 0}
+              accessibilityRole="button"
+              accessibilityLabel="Go to resource"
+              accessibilityState={{ disabled: pasteValue.trim().length === 0 }}
             >
               <Text style={shared.buttonText}>Go</Text>
             </Pressable>
@@ -362,7 +393,9 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
   if (!permission) {
     return (
       <SafeAreaView style={styles.centered} edges={["top", "left", "right"]}>
-        <Text style={typography.body}>Requesting camera permission…</Text>
+        <Text style={typography.body} accessibilityRole="text" accessibilityLiveRegion="polite">
+          Requesting camera permission…
+        </Text>
       </SafeAreaView>
     );
   }
@@ -370,13 +403,16 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
   if (!permission.granted) {
     return (
       <SafeAreaView style={styles.centered} edges={["top", "left", "right"]}>
-        <Text style={styles.heading}>Camera access is required</Text>
+        <Text style={styles.heading} accessibilityRole="header">Camera access is required</Text>
         <Text style={[typography.body, styles.permissionBody]}>
           MindVault needs camera permission to scan QR codes.
         </Text>
         <Pressable
           style={[shared.button, shared.primaryButton]}
           onPress={requestPermission}
+          accessibilityRole="button"
+          accessibilityLabel="Grant Permission"
+          accessibilityHint="Requests camera access to allow scanning resource QR codes"
         >
           <Text style={[shared.buttonText, shared.primaryButtonText]}>
             Grant Permission
@@ -395,21 +431,27 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
       />
       <View style={styles.overlay}>
-        <View style={styles.viewfinder}>
+        <View style={styles.viewfinder} accessible={true} accessibilityLabel="Camera viewfinder frame">
           <View style={[styles.corner, styles.cornerTopLeft]} />
           <View style={[styles.corner, styles.cornerTopRight]} />
           <View style={[styles.corner, styles.cornerBottomLeft]} />
           <View style={[styles.corner, styles.cornerBottomRight]} />
         </View>
-        <Text style={styles.hint}>
+        <Text style={styles.hint} accessibilityLiveRegion="polite">
           {scanError ? "" : "Point at a QR code"}
         </Text>
         {scanError ? (
-          <View style={styles.errorBanner}>
+          <View style={styles.errorBanner} accessibilityRole="alert" accessibilityLiveRegion="polite">
             <Text style={styles.errorText}>{scanError}</Text>
           </View>
         ) : null}
-        <Pressable style={styles.pasteButton} onPress={openPasteModal}>
+        <Pressable
+          style={styles.pasteButton}
+          onPress={openPasteModal}
+          accessibilityRole="button"
+          accessibilityLabel="Paste Link Instead"
+          accessibilityHint="Opens input to manually paste a resource link"
+        >
           <Text style={styles.pasteButtonText}>Paste Link Instead</Text>
         </Pressable>
       </View>

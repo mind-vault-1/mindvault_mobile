@@ -3,32 +3,23 @@
  *
  * Normalizes any thrown value into a `{ message, stack }` shape and logs it to
  * the console in development only. No third-party services are contacted.
+ * Every message, stack, context and object passes through the shared
+ * `redact()` helper before it is persisted or displayed.
  */
+
+import { isSensitiveKey, redact } from "./redact";
 
 export interface NormalizedError {
   message: string;
   stack?: string;
 }
 
-const SENSITIVE_KEY_PATTERN =
-  /(api[-_ ]?key|authorization|bearer|password|private[-_ ]?key|secret|token|xdr)/i;
-
 const MESSAGE_KEYS = new Set(["message", "error", "detail", "title", "description"]);
-
-function redactSensitiveValues(message: string): string {
-  return message
-    .replace(/\bS[A-Z2-7]{55}\b/g, "[redacted]")
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi, "Bearer [redacted]")
-    .replace(
-      /\b(api[-_ ]?key|authorization|password|private[-_ ]?key|secret|token|xdr)\s*[:=]\s*([^\s,;]+)/gi,
-      "$1: [redacted]"
-    );
-}
 
 function cleanMessage(message: string): string | null {
   const trimmed = message.trim();
   if (!trimmed) return null;
-  return redactSensitiveValues(trimmed);
+  return redact(trimmed);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -51,7 +42,7 @@ function collectMessages(value: unknown, parentKey?: string): string[] {
   const nestedMessages: string[] = [];
 
   for (const [key, nestedValue] of Object.entries(value)) {
-    if (SENSITIVE_KEY_PATTERN.test(key)) {
+    if (isSensitiveKey(key)) {
       continue;
     }
 
@@ -122,17 +113,45 @@ export async function extractApiErrorMessage(
 /** Reduce any thrown value (Error, string, object, …) to a message + stack. */
 export function normalizeError(error: unknown): NormalizedError {
   if (error instanceof Error) {
-    return { message: error.message, stack: error.stack };
+    return {
+      message: redact(error.message),
+      stack: error.stack ? redact(error.stack) : undefined,
+    };
   }
 
   if (typeof error === "string") {
-    return { message: error };
+    return { message: redact(error) };
   }
 
   try {
-    return { message: JSON.stringify(error) };
+    const serialized = JSON.stringify(redact(error));
+    return { message: redact(serialized ?? String(error)) };
   } catch {
-    return { message: String(error) };
+    return { message: redact(String(error)) };
+  }
+}
+
+interface ErrorLogEntry {
+  context: string;
+  error: NormalizedError;
+  timestamp: string;
+}
+
+// Ring buffer of the last MAX_LOG_ENTRIES redacted errors, kept in memory only
+// so a user can attach them to a diagnostics report.
+let errorLog: ErrorLogEntry[] = [];
+
+const MAX_LOG_ENTRIES = 100;
+
+function addToErrorLog(context: string, error: NormalizedError): void {
+  errorLog.push({
+    context: redact(context),
+    error,
+    timestamp: new Date().toISOString(),
+  });
+
+  if (errorLog.length > MAX_LOG_ENTRIES) {
+    errorLog.shift();
   }
 }
 
@@ -143,13 +162,29 @@ export function normalizeError(error: unknown): NormalizedError {
  */
 export function logError(context: string, error: unknown): NormalizedError {
   const normalized = normalizeError(error);
+  const safeContext = redact(context);
+
+  addToErrorLog(safeContext, normalized);
 
   if (__DEV__) {
-    console.error(`[MindVault] ${context}: ${normalized.message}`);
+    console.error(`[MindVault] ${safeContext}: ${normalized.message}`);
     if (normalized.stack) {
       console.error(normalized.stack);
     }
   }
 
   return normalized;
+}
+
+export function getErrorLog(): string {
+  return errorLog
+    .map(
+      (entry) =>
+        `[${entry.timestamp}] ${entry.context}: ${entry.error.message}\n${entry.error.stack || ""}`
+    )
+    .join("\n\n");
+}
+
+export function clearErrorLog(): void {
+  errorLog = [];
 }

@@ -12,6 +12,7 @@ import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { useTransferOwnership } from "../hooks/useTransferOwnership";
+import { SignTransactionSheet } from "./SignTransactionSheet";
 import type { Resource } from "../types";
 import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 
@@ -141,11 +142,14 @@ export function TransferOwnershipModal({
     destinationAddress,
     setDestinationAddress,
     isValidAddress,
+    pendingTransaction,
     start,
+    submitSigned,
+    cancelSigning,
     reset,
   } = useTransferOwnership();
 
-  const isProcessing = ["preparing", "signing", "submitting"].includes(step);
+  const isProcessing = ["preparing", "submitting"].includes(step);
   const isDone = step === "done";
 
   function handleOpenExplorer() {
@@ -166,14 +170,15 @@ export function TransferOwnershipModal({
   }
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleClose}
-    >
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
+    <>
+      <Modal
+        visible={visible && !pendingTransaction}
+        transparent
+        animationType="slide"
+        onRequestClose={handleClose}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.sheet}>
           <Text style={typography.title}>Transfer Ownership</Text>
           <Text style={[typography.body, styles.subtitle]}>
             Resource: {resource.title}
@@ -254,8 +259,17 @@ export function TransferOwnershipModal({
               </Pressable>
             </View>
           )}
+          </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+      <SignTransactionSheet
+        visible={visible && pendingTransaction !== null}
+        unsignedXdr={pendingTransaction?.unsignedXdr ?? ""}
+        networkPassphrase={pendingTransaction?.networkPassphrase}
+        action="transfer ownership of this resource"
+        onCancel={cancelSigning}
+        onSigned={submitSigned}
+      />
+    </>
   );
 }

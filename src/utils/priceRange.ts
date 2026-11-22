@@ -24,8 +24,10 @@ export const INVALID_PRICE_RANGE_MESSAGE =
   "Minimum price is higher than maximum price. The price filter is off until you fix the range.";
 
 function parseBound(value: string): number | null {
-  const parsed = Number.parseFloat(value);
-  return Number.isNaN(parsed) ? null : parsed;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 export function parsePriceRange(minPrice: string, maxPrice: string): PriceRange {

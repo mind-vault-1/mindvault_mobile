@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   ScrollView,
   StyleSheet,
@@ -6,7 +7,12 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  Modal,
+  Share,
+  ActivityIndicator,
+  Switch,
 } from "react-native";
+import Constants from "expo-constants";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -21,6 +27,40 @@ import {
   validateApiBaseUrl,
 } from "../api/apiSettings";
 import { initializeApiBaseUrl } from "../api/resources";
+import {
+  getNetwork,
+  getNetworkConfig,
+  NETWORK_IDS,
+  setNetwork,
+  subscribeNetwork,
+  type StellarNetworkId,
+} from "../config/network";
+import { checkHealth, type ServerHealth } from "../api/health";
+import { collectDiagnostics, formatDiagnostics } from "../services/diagnostics";
+import {
+  clearStorageGroup,
+  formatBytes,
+  getStorageGroupSizes,
+  STORAGE_GROUPS,
+  STORAGE_KEYS,
+  type StorageGroup,
+  type StorageGroupId,
+} from "../services/storage";
+import { getAuditLog } from "../services/auditLog";
+import {
+  areHapticsEnabled,
+  hapticImpact,
+  setHapticsEnabled,
+} from "../utils/haptics";
+import {
+  APP_LOCK_TIMEOUT_OPTIONS,
+  useAppLock,
+} from "../hooks/useAppLock";
+import { openExternalUrl } from "../utils/stellarExpert";
+
+/** docs/PRIVACY.md on the default branch: what is stored, what leaves the device, how to delete it. */
+const PRIVACY_POLICY_URL =
+  "https://github.com/mind-vault-1/mindvault_mobile/blob/main/docs/PRIVACY.md";
 
 export function SettingsScreen() {
   const { colors, shared } = useAppTheme();
@@ -30,6 +70,111 @@ export function SettingsScreen() {
   const [apiUrl, setApiUrl] = useState("");
   const [savedUrl, setSavedUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  const [network, setNetworkState] = useState<StellarNetworkId>(getNetwork());
+  const {
+    enabled: appLockEnabled,
+    timeoutMinutes: appLockTimeout,
+    error: appLockError,
+    setEnabled: setAppLockEnabled,
+    setTimeoutMinutes: setAppLockTimeout,
+  } = useAppLock();
+
+  const [auditLogPreview, setAuditLogPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    void areHapticsEnabled().then(setHapticsEnabledState);
+  }, []);
+
+  useEffect(() => subscribeNetwork(setNetworkState), []);
+
+  const handleNetworkChange = useCallback(
+    (next: StellarNetworkId) => {
+      if (next === network) return;
+      const apply = () => {
+        setNetwork(next);
+        setNetworkState(next);
+        Alert.alert("Network changed", `Now using ${getNetworkConfig(next).label}.`);
+      };
+      if (next === "mainnet") {
+        Alert.prompt(
+          "Switch to mainnet?",
+          "Type MAINNET to confirm you want to use the public network.",
+          (value) => {
+            if (value?.trim() === "MAINNET") apply();
+          },
+          "plain-text"
+        );
+        return;
+      }
+      apply();
+    },
+    [network]
+  );
+
+  const handleHapticsChange = useCallback(async (enabled: boolean) => {
+    setHapticsEnabledState(enabled);
+    await setHapticsEnabled(enabled);
+    if (enabled) void hapticImpact();
+  }, []);
+
+  const handleAppLockChange = useCallback(async (enabled: boolean) => {
+    const saved = await setAppLockEnabled(enabled);
+    if (!saved) {
+      Alert.alert(
+        "App lock unavailable",
+        "Set up device biometrics and try again. Your existing setting has not changed.",
+      );
+    }
+  }, [setAppLockEnabled]);
+
+  const handleReopenOnboarding = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEYS.onboarding);
+      navigation.navigate("Onboarding");
+    } catch {
+      Alert.alert("Error", "Failed to reopen onboarding");
+    }
+  }, [navigation]);
+
+  const handleViewAuditLog = useCallback(async () => {
+    try {
+      const log = await getAuditLog();
+      if (log.length === 0) {
+        Alert.alert("Audit Log", "No sensitive actions have been recorded yet.");
+        return;
+      }
+      const preview = log.map((entry) => {
+        const lines = [
+          `${entry.action.replace(/_/g, " ")} - ${entry.timestamp}`,
+          `Outcome: ${entry.outcome}`,
+        ];
+        if (entry.metadata?.walletAddress) {
+          lines.push(`Wallet: ${entry.metadata.walletAddress}`);
+        }
+        if (entry.metadata?.errorMessage) {
+          lines.push(`Error: ${entry.metadata.errorMessage}`);
+        }
+        return lines.join("\n");
+      }).join("\n\n");
+      setAuditLogPreview(preview);
+    } catch {
+      Alert.alert("Error", "Failed to load audit log");
+    }
+  }, []);
+
+  const handleExportAuditLog = useCallback(async () => {
+    if (!auditLogPreview) return;
+    try {
+      await Share.share({
+        message: auditLogPreview,
+        title: "MindVault Audit Log",
+      });
+      setAuditLogPreview(null);
+    } catch {
+      Alert.alert("Error", "Failed to share audit log");
+    }
+  }, [auditLogPreview]);
 
   const loadUrl = useCallback(async () => {
     const url = await loadApiBaseUrl();
@@ -81,7 +226,102 @@ export function SettingsScreen() {
     }
   };
 
+  const [health, setHealth] = useState<ServerHealth | null>(null);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+
+  const runHealthCheck = useCallback(async (baseUrl: string) => {
+    setIsCheckingHealth(true);
+    try {
+      setHealth(await checkHealth(baseUrl));
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  }, []);
+
+  // Re-check whenever the saved API URL changes, so About always describes the server in use.
+  useEffect(() => {
+    if (savedUrl) void runHealthCheck(savedUrl);
+  }, [savedUrl, runHealthCheck]);
+
+  const appVersion = Constants.expoConfig?.version ?? "unknown";
+  const serverStatus = isCheckingHealth
+    ? "Checking…"
+    : !health
+      ? "Unknown"
+      : health.status === "up"
+        ? `Up (${health.latencyMs} ms)`
+        : `Down — ${health.error}`;
+  const serverStatusColor =
+    health?.status === "up" ? colors.success : health?.status === "down" ? colors.danger : colors.textMuted;
+
   const isDirty = apiUrl.trim() !== savedUrl;
+  const isDefault =
+    apiUrl.trim() === getDefaultApiBaseUrl() && savedUrl === getDefaultApiBaseUrl();
+
+  const [dataSizes, setDataSizes] = useState<Partial<Record<StorageGroupId, number | null>>>({});
+  const [clearingGroup, setClearingGroup] = useState<StorageGroupId | null>(null);
+
+  const refreshDataSizes = useCallback(async () => {
+    try {
+      setDataSizes(await getStorageGroupSizes());
+    } catch {
+      setDataSizes({});
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshDataSizes();
+  }, [refreshDataSizes]);
+
+  const sizeLabel = (id: StorageGroupId) => {
+    const size = dataSizes[id];
+    return typeof size === "number" ? formatBytes(size) : "size unknown";
+  };
+
+  const clearGroup = async (group: StorageGroup) => {
+    setClearingGroup(group.id);
+    try {
+      await clearStorageGroup(group.id);
+      Alert.alert("Cleared", `${group.label} removed from this device.`);
+    } catch {
+      Alert.alert("Error", `Failed to clear ${group.label.toLowerCase()}.`);
+    } finally {
+      setClearingGroup(null);
+      void refreshDataSizes();
+    }
+  };
+
+  const confirmClearGroup = (group: StorageGroup) => {
+    Alert.alert(
+      `Clear ${group.label.toLowerCase()}?`,
+      `${group.description}\n\nThis removes ${sizeLabel(group.id)} from this device and cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Clear", style: "destructive", onPress: () => void clearGroup(group) },
+      ]
+    );
+  };
+
+  // The report is shown in full before anything leaves the device.
+  const [diagnosticsPreview, setDiagnosticsPreview] = useState<string | null>(null);
+
+  const handlePreviewDiagnostics = async () => {
+    try {
+      setDiagnosticsPreview(formatDiagnostics(await collectDiagnostics()));
+    } catch {
+      Alert.alert("Error", "Failed to collect diagnostics");
+    }
+  };
+
+  const handleShareDiagnostics = async () => {
+    if (!diagnosticsPreview) return;
+    try {
+      await Share.share({ message: diagnosticsPreview, title: "MindVault Diagnostics" });
+      setDiagnosticsPreview(null);
+    } catch {
+      Alert.alert("Error", "Failed to share diagnostics");
+    }
+  };
 
   return (
     <SafeAreaView style={shared.screen}>
@@ -98,6 +338,103 @@ export function SettingsScreen() {
         </View>
 
         <ThemeToggle />
+
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.hapticsRow}>
+            <View style={styles.hapticsCopy}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                Haptic feedback
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Tactile confirmation for payments, scans and copy actions.
+              </Text>
+            </View>
+            <Switch
+              value={hapticsEnabled}
+              onValueChange={(value) => void handleHapticsChange(value)}
+              accessibilityLabel="Haptic feedback"
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.surface}
+            />
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.hapticsRow}>
+            <View style={styles.hapticsCopy}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                Lock after inactivity
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Require device authentication before returning to wallet and publisher screens.
+              </Text>
+            </View>
+            <Switch
+              value={appLockEnabled}
+              onValueChange={(value) => void handleAppLockChange(value)}
+              accessibilityLabel="Lock after inactivity"
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.surface}
+            />
+          </View>
+          {appLockEnabled ? (
+            <View style={{ marginTop: 16, gap: 8 }}>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Lock after
+              </Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {APP_LOCK_TIMEOUT_OPTIONS.map((minutes) => {
+                  const selected = minutes === appLockTimeout;
+                  return (
+                    <TouchableOpacity
+                      key={minutes}
+                      onPress={() => void setAppLockTimeout(minutes)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      accessibilityLabel={`${minutes} minutes`}
+                      style={{
+                        borderRadius: 999,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        backgroundColor: selected ? colors.primaryMuted : colors.neutralBg,
+                      }}
+                    >
+                      <Text style={{ color: selected ? colors.primary : colors.text }}>
+                        {minutes} min
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+          {appLockError ? (
+            <Text
+              style={[styles.infoText, { color: colors.danger, marginTop: 8 }]}
+              accessibilityRole="alert"
+            >
+              {appLockError}
+            </Text>
+          ) : null}
+        </View>
 
         <View style={[styles.infoCard, { backgroundColor: colors.neutralBg }]}>
           <Text style={[styles.infoText, { color: colors.textMuted }]}>
@@ -126,8 +463,8 @@ export function SettingsScreen() {
               { color: colors.textMuted, marginBottom: 12 },
             ]}
           >
-            The base URL used for all API requests. Restart the app after
-            changing.
+            The base URL used for all API requests. Changes apply
+            immediately and are kept across app restarts.
           </Text>
           <TextInput
             style={[
@@ -152,10 +489,12 @@ export function SettingsScreen() {
               style={[
                 shared.button,
                 { flex: 1, backgroundColor: colors.neutralBg },
-                !isDirty && styles.disabledButton,
+                isDefault && styles.disabledButton,
               ]}
               onPress={handleReset}
-              disabled={isSaving}
+              disabled={isSaving || isDefault}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isSaving || isDefault }}
             >
               <Text style={[shared.buttonText, { color: colors.textMuted }]}>
                 Reset to Default
@@ -195,20 +534,362 @@ export function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.infoCard, { backgroundColor: colors.warningBg, marginTop: 16 }]}>
-          <Text style={[styles.title, { fontSize: 16, color: colors.warning, marginBottom: 8 }]}>
-            Developer Options
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
+            Purchase History
           </Text>
-          <Text style={[styles.infoText, { color: colors.warning, marginBottom: 16 }]}>
-            These tools are for testing purposes only.
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            Review the receipts for resources you have unlocked, and export them for your records.
           </Text>
           <TouchableOpacity
-            style={[shared.button, { backgroundColor: colors.warning }]}
-            onPress={() => navigation.navigate("DevSigner")}
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("PurchaseHistory")}
+            accessibilityRole="button"
+            accessibilityLabel="Open purchase history"
           >
-            <Text style={[shared.buttonText, { color: "#ffffff" }]}>Open Dev Signer PoC</Text>
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>View Purchase History</Text>
           </TouchableOpacity>
         </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text
+            style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
+            accessibilityRole="header"
+          >
+            Wallet
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            Connect a Stellar wallet such as LOBSTR through WalletConnect.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("Wallet")}
+            accessibilityRole="button"
+            accessibilityLabel="Open wallet"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>Manage Wallet</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text
+            style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
+            accessibilityRole="header"
+          >
+            Publisher Leaderboard
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            See which publishers earn the most on MindVault.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("Leaderboard")}
+            accessibilityRole="button"
+            accessibilityLabel="Open publisher leaderboard"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>View Leaderboard</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text
+            style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
+            accessibilityRole="header"
+          >
+            Local Data
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
+            Clear data stored on this device. Wallet and API keys are not affected here; use
+            the wallet wipe to remove them.
+          </Text>
+          <TouchableOpacity
+            style={{ minHeight: 44, justifyContent: "center", marginBottom: 12 }}
+            onPress={() =>
+              openExternalUrl(PRIVACY_POLICY_URL).catch(() =>
+                Alert.alert("Error", "Unable to open the privacy policy")
+              )
+            }
+            accessibilityRole="link"
+            accessibilityLabel="Privacy policy"
+            accessibilityHint="Opens what the app stores, what it sends, and how to delete it"
+          >
+            <Text style={[styles.infoText, { color: colors.primary, fontWeight: "600" }]}>
+              Privacy policy: what is stored and how to delete it
+            </Text>
+          </TouchableOpacity>
+          {STORAGE_GROUPS.map((group) => {
+            const busy = clearingGroup === group.id;
+            return (
+              <View key={group.id} style={styles.dataRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.infoText, { color: colors.text, fontWeight: "600" }]}>
+                    {group.label}
+                  </Text>
+                  <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                    {sizeLabel(group.id)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[shared.button, { backgroundColor: colors.dangerBg }, busy && styles.disabledButton]}
+                  onPress={() => confirmClearGroup(group)}
+                  disabled={clearingGroup !== null}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Clear ${group.label.toLowerCase()}, ${sizeLabel(group.id)}`}
+                  accessibilityHint="Asks for confirmation before removing this data"
+                  accessibilityState={{ disabled: clearingGroup !== null, busy }}
+                >
+                  {busy ? (
+                    <ActivityIndicator color={colors.danger} />
+                  ) : (
+                    <Text style={[shared.buttonText, { color: colors.danger }]}>Clear</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text
+            style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
+            accessibilityRole="header"
+          >
+            Audit Log
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
+            Redacted record of sensitive actions like key rotation, wallet wipe and signing.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={handleViewAuditLog}
+            accessibilityRole="button"
+            accessibilityLabel="View audit log"
+            accessibilityHint="Shows redacted sensitive action history"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>View Audit Log</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
+            Learn
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            Reopen the onboarding guide to learn about MindVault, USDC and Stellar testnet.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={handleReopenOnboarding}
+            accessibilityRole="button"
+            accessibilityLabel="Reopen onboarding guide"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>View Onboarding</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
+            Support
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            Export diagnostic information to help us troubleshoot issues.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={() => void handlePreviewDiagnostics()}
+            accessibilityRole="button"
+            accessibilityLabel="Share diagnostics"
+            accessibilityHint="Shows the report so you can review it before sharing"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>Share Diagnostics</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Modal
+          visible={diagnosticsPreview !== null}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setDiagnosticsPreview(null)}
+        >
+          <View style={styles.previewOverlay}>
+            <View style={[styles.previewSheet, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.title, { fontSize: 16, color: colors.text }]}>
+                Review before sharing
+              </Text>
+              <ScrollView style={styles.previewBody}>
+                <Text
+                  selectable
+                  style={[styles.previewText, { color: colors.text }]}
+                  accessibilityLabel="Diagnostics report"
+                >
+                  {diagnosticsPreview}
+                </Text>
+              </ScrollView>
+              <View style={styles.previewActions}>
+                <TouchableOpacity
+                  style={[shared.button, styles.previewButton, { backgroundColor: colors.neutralBg }]}
+                  onPress={() => setDiagnosticsPreview(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel"
+                >
+                  <Text style={[shared.buttonText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[shared.button, styles.previewButton, { backgroundColor: colors.primary }]}
+                  onPress={() => void handleShareDiagnostics()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Share"
+                >
+                  <Text style={[shared.buttonText, { color: "#ffffff" }]}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={auditLogPreview !== null}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setAuditLogPreview(null)}
+        >
+          <View style={styles.previewOverlay}>
+            <View style={[styles.previewSheet, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.title, { fontSize: 16, color: colors.text }]}>
+                Audit Log
+              </Text>
+              <ScrollView style={styles.previewBody}>
+                <Text
+                  selectable
+                  style={[styles.previewText, { color: colors.text }]}
+                  accessibilityLabel="Audit log entries"
+                >
+                  {auditLogPreview}
+                </Text>
+              </ScrollView>
+              <View style={styles.previewActions}>
+                <TouchableOpacity
+                  style={[shared.button, styles.previewButton, { backgroundColor: colors.neutralBg }]}
+                  onPress={() => setAuditLogPreview(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
+                  <Text style={[shared.buttonText, { color: colors.text }]}>Close</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[shared.button, styles.previewButton, { backgroundColor: colors.primary }]}
+                  onPress={() => void handleExportAuditLog()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Share"
+                >
+                  <Text style={[shared.buttonText, { color: "#ffffff" }]}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <View
+          style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}
+          accessibilityLabel="Stellar network"
+        >
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
+            Stellar network
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
+            Current: {getNetworkConfig(network).label}
+          </Text>
+          {NETWORK_IDS.map((id) => (
+            <TouchableOpacity
+              key={id}
+              style={[
+                shared.button,
+                styles.networkButton,
+                { backgroundColor: id === network ? colors.primary : colors.neutralBg },
+              ]}
+              onPress={() => handleNetworkChange(id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Select ${getNetworkConfig(id).label.toLowerCase()}`}
+              accessibilityState={{ selected: id === network }}
+            >
+              <Text
+                style={[
+                  shared.buttonText,
+                  id === network ? shared.buttonText : { color: colors.text },
+                ]}
+              >
+                {getNetworkConfig(id).label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View
+          style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 16 }]}
+          accessibilityLabel="About"
+        >
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
+            About
+          </Text>
+          {[
+            { label: "App version", value: appVersion, color: colors.text },
+            { label: "Network", value: network, color: colors.text },
+            { label: "API URL", value: savedUrl, color: colors.text },
+            { label: "Server status", value: serverStatus, color: serverStatusColor },
+          ].map((row) => (
+            <View
+              key={row.label}
+              style={styles.aboutRow}
+              accessible
+              accessibilityLabel={`${row.label}: ${row.value}`}
+            >
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>{row.label}</Text>
+              <Text
+                style={[styles.infoText, styles.aboutValue, { color: row.color }]}
+                selectable
+              >
+                {row.value}
+              </Text>
+            </View>
+          ))}
+          <TouchableOpacity
+            style={[
+              shared.button,
+              { backgroundColor: colors.primary, marginTop: 12 },
+              isCheckingHealth && styles.disabledButton,
+            ]}
+            onPress={() => void runHealthCheck(savedUrl)}
+            disabled={isCheckingHealth || !savedUrl}
+            accessibilityRole="button"
+            accessibilityLabel="Check server status again"
+            accessibilityState={{ disabled: isCheckingHealth || !savedUrl, busy: isCheckingHealth }}
+          >
+            {isCheckingHealth ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text style={[shared.buttonText, { color: "#ffffff" }]}>Check again</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {__DEV__ ? (
+          <View style={[styles.infoCard, { backgroundColor: colors.warningBg, marginTop: 16 }]}>
+            <Text style={[styles.title, { fontSize: 16, color: colors.warning, marginBottom: 8 }]}>
+              Developer Options
+            </Text>
+            <Text style={[styles.infoText, { color: colors.warning, marginBottom: 16 }]}>
+              These tools are for testing purposes only.
+            </Text>
+            <TouchableOpacity
+              style={[shared.button, { backgroundColor: colors.warning }]}
+              onPress={() => navigation.navigate("DevSigner")}
+              accessibilityRole="button"
+              accessibilityLabel="Open Dev Signer PoC"
+            >
+              <Text style={[shared.buttonText, { color: "#ffffff" }]}>Open Dev Signer PoC</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -240,6 +921,42 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
   },
+  hapticsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  hapticsCopy: {
+    flex: 1,
+  },
+  previewOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  previewSheet: {
+    maxHeight: "80%",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: 32,
+    gap: 12,
+  },
+  previewBody: {
+    flexGrow: 0,
+  },
+  previewText: {
+    fontFamily: "monospace",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  previewActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  previewButton: {
+    flex: 1,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
@@ -260,5 +977,25 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  dataRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 6,
+  },
+  networkButton: {
+    marginBottom: 8,
+  },
+  aboutRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingVertical: 4,
+  },
+  aboutValue: {
+    flexShrink: 1,
+    textAlign: "right",
+    fontWeight: "600",
   },
 });

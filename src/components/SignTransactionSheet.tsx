@@ -1,0 +1,275 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Linking,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+
+import { DEFAULT_NETWORK_PASSPHRASE, signTransactionXdr } from "../api/resources";
+import { authenticate, isAvailable } from "../services/biometrics";
+import type { ThemeColors } from "../theme";
+import { useAppTheme } from "../theme/ThemeProvider";
+import { buildSep7TransactionUri, parseSep7Callback } from "../utils/sep7";
+import { validateStellarSecret } from "../utils/validateStellarSecret";
+
+interface SignTransactionSheetProps {
+  visible: boolean;
+  unsignedXdr: string;
+  networkPassphrase?: string;
+  onSigned: (signedXdr: string) => void | Promise<void>;
+  onCancel: () => void;
+  /**
+   * Custom signer for payloads that aren't a plain envelope signature (e.g. an
+   * x402 payment that signs a Soroban auth entry). It gets the secret for this
+   * one call only. Defaults to signing `unsignedXdr`.
+   */
+  sign?: (secret: string) => Promise<string>;
+  /** Names the action in the biometric prompt, e.g. "lease this resource". */
+  action?: string;
+}
+
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
+    sheet: {
+      gap: 12,
+      padding: 20,
+      paddingBottom: 32,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      backgroundColor: colors.surface,
+    },
+    label: { color: colors.text, fontSize: 13, fontWeight: "600" },
+    network: { color: colors.textMuted, fontSize: 12 },
+    notice: { color: colors.textMuted, fontSize: 12 },
+    warning: { color: colors.warning, backgroundColor: colors.warningBg, padding: 10, borderRadius: 8 },
+    walletPanel: { gap: 8, padding: 12, borderRadius: 12, backgroundColor: colors.neutralBg },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      color: colors.text,
+    },
+    invalid: { borderColor: colors.danger },
+    error: { color: colors.danger, fontSize: 12 },
+    actions: { flexDirection: "row", gap: 8 },
+    button: { flex: 1 },
+    secondary: { backgroundColor: colors.neutralBg },
+    secondaryText: { color: colors.text, textAlign: "center", fontWeight: "600" },
+    disabled: { opacity: 0.5 },
+  });
+}
+
+export function SignTransactionSheet({
+  visible,
+  unsignedXdr,
+  networkPassphrase = DEFAULT_NETWORK_PASSPHRASE,
+  onSigned,
+  onCancel,
+  sign: customSign,
+  action = "sign this transaction",
+}: SignTransactionSheetProps) {
+  const { colors, shared, typography } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const [secret, setSecret] = useState("");
+  const [touched, setTouched] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [signError, setSignError] = useState<string | null>(null);
+  const [biometricsUnavailable, setBiometricsUnavailable] = useState(false);
+  const [walletStatus, setWalletStatus] = useState<string | null>(null);
+  const validation = useMemo(() => validateStellarSecret(secret), [secret]);
+  const isNonProduction = /test|future network/i.test(networkPassphrase);
+  const canUseSep7 = !customSign && Boolean(unsignedXdr.trim());
+
+  useEffect(() => {
+    if (!visible) {
+      setSecret("");
+      setTouched(false);
+      setBusy(false);
+      setSignError(null);
+      setBiometricsUnavailable(false);
+      setWalletStatus(null);
+      return;
+    }
+    let cancelled = false;
+    void isAvailable().then((available) => {
+      if (!cancelled) setBiometricsUnavailable(!available);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || !canUseSep7) return;
+    let cancelled = false;
+
+    const handleCallback = (url: string) => {
+      const result = parseSep7Callback(url);
+      if (!result || cancelled) return;
+      if (result.status === "signed" && result.signedXdr) {
+        setWalletStatus("Signed in your wallet — returning to MindVault…");
+        void onSigned(result.signedXdr);
+      } else if (result.status === "rejected") {
+        setWalletStatus("Signing was declined in your wallet. You can try again or use a secret key.");
+      } else {
+        setWalletStatus("The wallet returned an incomplete result. Try again or use a secret key.");
+      }
+    };
+
+    const subscription = Linking.addEventListener("url", ({ url }) => handleCallback(url));
+    void Linking.getInitialURL()
+      .then((url) => {
+        if (url) handleCallback(url);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
+  }, [visible, canUseSep7, onSigned]);
+
+  function cancel() {
+    setSecret("");
+    setTouched(false);
+    onCancel();
+  }
+
+  async function openSep7Wallet() {
+    if (!canUseSep7) return;
+    setWalletStatus("Opening your wallet… Return here after signing.");
+    try {
+      await Linking.openURL(buildSep7TransactionUri(unsignedXdr, { message: `MindVault ${action}` }));
+    } catch {
+      setWalletStatus("No wallet app could be opened. Use a secret key below, or install a Stellar wallet.");
+    }
+  }
+
+  async function sign() {
+    setTouched(true);
+    if (!validation.isValid || (!customSign && !unsignedXdr)) return;
+
+    setBusy(true);
+    setSignError(null);
+    // Re-authenticate the device owner before signing. Devices without
+    // biometrics fall back to the secret-entry flow below.
+    const outcome = await authenticate(`Authenticate to ${action}`);
+    if (outcome === "cancelled" || outcome === "failed") {
+      setSignError(
+        outcome === "cancelled"
+          ? "Biometric authentication was not completed."
+          : "Biometric authentication failed. Try again."
+      );
+      setBusy(false);
+      return;
+    }
+    let signedXdr: string;
+    try {
+      signedXdr = customSign
+        ? await customSign(secret)
+        : signTransactionXdr(unsignedXdr, secret, networkPassphrase);
+    } catch (err) {
+      // e.g. a malformed transaction, a passphrase that doesn't match it, or a
+      // failed payment simulation (whose message is safe and actionable).
+      setSignError(
+        customSign && err instanceof Error && err.message
+          ? err.message
+          : "Couldn't sign this transaction. Check the key and network, then try again."
+      );
+      setSecret("");
+      setBusy(false);
+      return;
+    }
+    try {
+      setSecret("");
+      await onSigned(signedXdr);
+    } finally {
+      setSecret("");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={cancel}>
+      <View style={styles.overlay}>
+        <View style={styles.sheet}>
+          <Text style={typography.heading}>Sign transaction</Text>
+          <Text style={styles.network}>Network passphrase: {networkPassphrase}</Text>
+          {isNonProduction ? (
+            <Text style={styles.warning}>Development/test network — do not use a production account.</Text>
+          ) : null}
+          {canUseSep7 ? (
+            <View style={styles.walletPanel}>
+              <Text style={styles.notice}>
+                Prefer a wallet app? Open a SEP-7 signing request, then return here once it is signed.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open wallet app (SEP-7)"
+                onPress={() => void openSep7Wallet()}
+                disabled={busy}
+                style={[shared.button, styles.button, styles.secondary]}
+              >
+                <Text style={styles.secondaryText}>Sign with wallet app</Text>
+              </Pressable>
+              {walletStatus ? (
+                <Text accessibilityLiveRegion="polite" style={styles.notice}>{walletStatus}</Text>
+              ) : null}
+            </View>
+          ) : null}
+          {biometricsUnavailable ? (
+            <Text style={styles.notice}>
+              Biometric authentication is unavailable on this device — enter your secret key to
+              continue.
+            </Text>
+          ) : null}
+          <Text style={styles.label}>Stellar secret key</Text>
+          <TextInput
+            value={secret}
+            onChangeText={setSecret}
+            onBlur={() => setTouched(true)}
+            secureTextEntry
+            autoCapitalize="characters"
+            autoCorrect={false}
+            editable={!busy}
+            placeholder="S…"
+            placeholderTextColor={colors.textSubtle}
+            accessibilityLabel="Stellar secret key"
+            style={[styles.input, touched && !validation.isValid ? styles.invalid : null]}
+          />
+          {touched && !validation.isValid ? (
+            <Text accessibilityRole="alert" style={styles.error}>{validation.errorMessage}</Text>
+          ) : null}
+          {signError ? (
+            <Text accessibilityRole="alert" style={styles.error}>{signError}</Text>
+          ) : null}
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={cancel}
+              disabled={busy}
+              style={[shared.button, styles.button, styles.secondary]}
+            >
+              <Text style={styles.secondaryText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void sign()}
+              disabled={busy || !validation.isValid}
+              style={[shared.button, styles.button, (busy || !validation.isValid) && styles.disabled]}
+            >
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={shared.buttonText}>Sign</Text>}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}

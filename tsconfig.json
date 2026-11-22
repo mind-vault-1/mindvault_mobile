@@ -5,6 +5,7 @@
     "jsx": "react-native",
     "lib": ["ES2019", "DOM"],
     "target": "ES2019",
+    "module": "ESNext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "noEmit": true,

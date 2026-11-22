@@ -8,27 +8,190 @@ on:
     # no open PR — direct pushes/merges to main.
     branches: ["main"]
   pull_request:
-    branches: ["*"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Job names `typecheck` and `ci` are required status checks on main.
+# Renaming a job means updating branch protection in the same change.
 jobs:
-  ci:
+  typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
 
       - run: npm ci
 
-      - run: npm run typecheck
+      # Validates Expo dependency versions and project config.
+      # Runs on hosted Linux runners and needs no native build credentials
+      # (no Xcode signing, no Android keystore, no EAS token).
+      - name: Validate Expo dependencies
+        run: npm run validate-deps
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # Node 22 runs the TypeScript flaky-test reporter via
+          # --experimental-strip-types; no extra dependency is installed.
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
 
       - name: Lint
         run: npm run lint
+
+      # Tests quarantined in .github/flaky-quarantine.json are skipped by both
+      # attempts, so a known flake cannot block the required check. The
+      # manifest requires an owner and a tracked issue per entry.
+      - name: Resolve quarantined tests
+        id: quarantine
+        run: |
+          set -euo pipefail
+          mkdir -p .flaky
+          patterns=$(node --experimental-strip-types scripts/flaky.ts --ignore-list)
+          echo "patterns=$patterns" >> "$GITHUB_OUTPUT"
+
+      # The suite runs twice so a test that failed and then passed is detected
+      # as flaky. A second failure still fails the job below.
+      - name: Test (attempt 1)
+        id: test-first
         continue-on-error: true
+        run: |
+          set -euo pipefail
+          args=(--ci --json --outputFile=.flaky/run-1.json)
+          if [ -n "${{ steps.quarantine.outputs.patterns }}" ]; then
+            args+=("--testPathIgnorePatterns=${{ steps.quarantine.outputs.patterns }}")
+          fi
+          npx jest "${args[@]}"
+
+      - name: Test (attempt 2 - retry)
+        id: test-second
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          args=(--ci --json --outputFile=.flaky/run-2.json)
+          if [ -n "${{ steps.quarantine.outputs.patterns }}" ]; then
+            args+=("--testPathIgnorePatterns=${{ steps.quarantine.outputs.patterns }}")
+          fi
+          npx jest "${args[@]}"
+
+      # Records every retry in the report, and fails when a flaky test is not
+      # quarantined with an owner and a tracked issue.
+      - name: Flaky test report
+        if: always()
+        run: node --experimental-strip-types scripts/flaky.ts --reports .flaky/run-1.json .flaky/run-2.json
+
+      - name: Upload flaky test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flaky-test-report
+          path: .flaky/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Fail when the retried run still fails
+        if: steps.test-second.outcome == 'failure'
+        run: |
+          echo "::error::The test suite failed on both attempts; see the Jest output above."
+          exit 1
+
+  # Job name `bundle` is a stable, required-status-check-friendly name.
+  # Renaming it means updating branch protection in the same change.
+  # Runs `expo export` for all platforms without native build credentials:
+  # no Xcode signing, no Android keystore, no EAS token. Catches Metro
+  # bundling regressions that typecheck alone cannot detect. It also enforces
+  # the bundle-size and dependency budgets in scripts/check-bundle-size.ts.
+  bundle:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # Node 22 runs scripts/check-bundle-size.ts via --experimental-strip-types.
+          node-version: 22
+          cache: npm
+
+      # npm is cached by setup-node above. Metro keeps its transform cache in
+      # the OS temp dir; its entries are content-keyed, so any previous run's
+      # cache is safe to restore.
+      - name: Cache Metro
+        uses: actions/cache@v6
+        with:
+          path: /tmp/metro-cache
+          key: ${{ runner.os }}-metro-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-metro-${{ hashFiles('package-lock.json') }}-
+            ${{ runner.os }}-metro-
+
+      - run: npm ci
+
+      - name: Export bundles (android, ios, web)
+        run: npx expo export --platform android --platform ios --platform web
+
+      # Sizes from the latest main run, for the delta. Only pushes to main save
+      # them; a PR falls back to the newest main entry when its base has none.
+      - name: Restore main bundle sizes
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6
+        with:
+          path: bundle-sizes.json
+          key: bundle-sizes-${{ github.event.pull_request.base.sha }}
+          restore-keys: bundle-sizes-
+
+      # Reads the main sizes from bundle-sizes.json before writing this run's.
+      - name: Check bundle size and dependency budgets
+        run: >-
+          node --experimental-strip-types scripts/check-bundle-size.ts
+          --baseline bundle-sizes.json --out bundle-sizes.json --report bundle-size.md
+
+      # Fork PRs get a read-only token, so they see the same table in the job
+      # summary instead of a comment.
+      - name: Comment bundle size on the PR
+        if: >-
+          always() &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          [ -f bundle-size.md ] || exit 0
+          body="<!-- bundle-size -->"$'\n'"$(cat bundle-size.md)"
+          comment_id=$(gh api "repos/$REPO/issues/$NUMBER/comments" --paginate \
+            --jq '.[] | select((.body // "") | contains("<!-- bundle-size -->")) | .id' | tail -n 1)
+          if [ -n "$comment_id" ]; then
+            jq -n --arg body "$body" '{body: $body}' |
+              gh api --method PATCH "repos/$REPO/issues/comments/$comment_id" --input -
+          else
+            jq -n --arg body "$body" '{body: $body}' |
+              gh api --method POST "repos/$REPO/issues/$NUMBER/comments" --input -
+          fi
+
+      - name: Save main bundle sizes
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v6
+        with:
+          path: bundle-sizes.json
+          key: bundle-sizes-${{ github.sha }}

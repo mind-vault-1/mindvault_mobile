@@ -1,10 +1,13 @@
-// @ts-nocheck
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
+  type ListRenderItemInfo,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import {
@@ -20,20 +24,42 @@ import {
   getApiBaseUrl,
 } from "../api/resources";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { HomeSections } from "../components/HomeSections";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
+import { useToast } from "../components/ToastProvider";
 import type { RootStackParamList } from "../navigation";
-import type { CatalogFilters, Resource, VerificationStatus } from "../types";
+import {
+  clearRecentResources,
+  getRecentResources,
+  recordRecentResource,
+} from "../services/recent";
+import type { RecentResource } from "../services/recent";
+import {
+  addSearchQuery,
+  clearSearchHistory,
+  filterSearchSuggestions,
+  getSearchHistory,
+  removeSearchQuery,
+} from "../services/searchHistory";
+import {
+  deleteSearch,
+  getSavedSearches,
+  saveSearch,
+  type SavedSearch,
+} from "../services/savedSearches";
+import { STORAGE_KEYS } from "../services/storage";
+import type { CatalogFilters, CatalogSort, Resource, VerificationStatus } from "../types";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import {
   INVALID_PRICE_RANGE_MESSAGE,
-  filterByPriceRange,
   parsePriceRange,
 } from "../utils/priceRange";
+import { getRelativeTimeString } from "../utils/time";
 
-const CATALOG_FILTERS_KEY = "@mindvault_catalog_filters";
+const CATALOG_FILTERS_KEY = STORAGE_KEYS.catalogFilters;
 const SEARCH_DEBOUNCE_MS = 300;
 
 interface PersistedFilters {
@@ -42,10 +68,17 @@ interface PersistedFilters {
   resourceType: ResourceTypeFilter;
   minPrice: string;
   maxPrice: string;
+  sort: CatalogSort;
+  owner: string;
 }
 
 interface CatalogScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Catalog">;
+  route?: { params?: { owner?: string } };
+}
+
+function shortOwner(owner: string): string {
+  return owner.length > 12 ? `${owner.slice(0, 6)}…${owner.slice(-4)}` : owner;
 }
 
 type VerificationFilter = "all" | VerificationStatus;
@@ -53,6 +86,7 @@ type ResourceTypeFilter = "all" | "file" | "link";
 
 const DEFAULT_VERIFICATION: VerificationFilter = "all";
 const DEFAULT_RESOURCE_TYPE: ResourceTypeFilter = "all";
+const DEFAULT_SORT: CatalogSort = "newest";
 
 const VERIFICATION_OPTIONS: { value: VerificationFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -67,11 +101,56 @@ const RESOURCE_TYPE_OPTIONS: { value: ResourceTypeFilter; label: string }[] = [
   { value: "link", label: "Link" },
 ];
 
-function formatLastUpdated(value: Date): string {
-  return value.toLocaleString([], {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+const SORT_OPTIONS: { value: CatalogSort; label: string }[] = [
+  { value: "newest", label: "Newest" },
+  { value: "price_asc", label: "Price: Low to high" },
+  { value: "price_desc", label: "Price: High to low" },
+  { value: "title", label: "Title" },
+];
+
+
+const DEFAULT_PERSISTED_FILTERS: PersistedFilters = {
+  search: "",
+  verification: DEFAULT_VERIFICATION,
+  resourceType: DEFAULT_RESOURCE_TYPE,
+  minPrice: "",
+  maxPrice: "",
+  sort: DEFAULT_SORT,
+  owner: "",
+};
+
+/**
+ * Validates a persisted filter blob field by field so an old or corrupted
+ * value can never break the screen. Any invalid (or missing) field falls
+ * back to its default.
+ */
+function sanitizePersistedFilters(raw: unknown): PersistedFilters {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { ...DEFAULT_PERSISTED_FILTERS };
+  }
+
+  const saved = raw as Record<string, unknown>;
+  const isVerification = VERIFICATION_OPTIONS.some(
+    (option) => option.value === saved.verification,
+  );
+  const isResourceType = RESOURCE_TYPE_OPTIONS.some(
+    (option) => option.value === saved.resourceType,
+  );
+  const isSort = SORT_OPTIONS.some((option) => option.value === saved.sort);
+
+  return {
+    search: typeof saved.search === "string" ? saved.search : "",
+    verification: isVerification
+      ? (saved.verification as VerificationFilter)
+      : DEFAULT_VERIFICATION,
+    resourceType: isResourceType
+      ? (saved.resourceType as ResourceTypeFilter)
+      : DEFAULT_RESOURCE_TYPE,
+    minPrice: typeof saved.minPrice === "string" ? saved.minPrice : "",
+    maxPrice: typeof saved.maxPrice === "string" ? saved.maxPrice : "",
+    sort: isSort ? (saved.sort as CatalogSort) : DEFAULT_SORT,
+    owner: typeof saved.owner === "string" ? saved.owner.trim() : "",
+  };
 }
 
 function createStyles(colors: ThemeColors) {
@@ -215,6 +294,128 @@ function createStyles(colors: ThemeColors) {
       fontWeight: "600",
       color: colors.primary,
     },
+    recentSection: {
+      gap: spacing.sm,
+    },
+    suggestions: {
+      gap: spacing.xs,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: spacing.sm,
+    },
+    suggestionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    suggestionButton: {
+      flex: 1,
+      minHeight: 44,
+      justifyContent: "center",
+      paddingHorizontal: spacing.sm,
+    },
+    suggestionText: {
+      fontSize: 15,
+      color: colors.text,
+    },
+    suggestionRemove: {
+      minHeight: 44,
+      minWidth: 44,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    suggestionRemoveText: {
+      fontSize: 14,
+      color: colors.textMuted,
+    },
+    recentHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    recentRow: {
+      gap: spacing.sm,
+      paddingRight: spacing.lg,
+    },
+    recentItem: {
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      maxWidth: 220,
+    },
+    recentTitle: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    recentPrice: {
+      fontSize: 12,
+      color: colors.textMuted,
+    },
+    savedSearchButton: {
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      minHeight: 44,
+      justifyContent: "center",
+    },
+    saveSearchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    saveSearchInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      fontSize: 14,
+      color: colors.text,
+    },
+    saveSearchAction: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    savedSearchChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.xs,
+    },
+    savedSearchDelete: {
+      minWidth: 32,
+      minHeight: 44,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    savedSearchDeleteText: {
+      fontSize: 20,
+      color: colors.textMuted,
+    },
+    savedSearchName: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.text,
+      marginBottom: spacing.xs,
+    },
+    savedSearchSummary: {
+      fontSize: 12,
+      color: colors.textMuted,
+    },
     apiHint: {
       fontSize: 11,
       color: colors.textSubtle,
@@ -261,34 +462,53 @@ function createStyles(colors: ThemeColors) {
       fontWeight: "700",
       fontSize: 15,
     },
-    toast: {
-      position: "absolute",
-      bottom: spacing.xl,
-      left: spacing.lg,
-      right: spacing.lg,
-      backgroundColor: colors.text,
-      borderRadius: 12,
-      paddingVertical: 12,
-      paddingHorizontal: 16,
+    footerContainer: {
+      paddingVertical: spacing.md,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: spacing.xs,
     },
-    toastText: {
-      color: colors.background,
-      textAlign: "center",
-      fontSize: 14,
-      fontWeight: "500",
+    footerErrorRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    footerErrorText: {
+      fontSize: 13,
+      color: colors.danger,
+    },
+    footerRetryButton: {
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 6,
+      backgroundColor: colors.dangerBg,
+    },
+    footerRetryText: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: colors.danger,
     },
   });
 }
 
-export function CatalogScreen({ navigation }: CatalogScreenProps) {
+export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
   const { colors, shared, typography, colorScheme } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const filtersRestored = useRef(false);
+  const routeOwner = route?.params?.owner?.trim() || undefined;
+  const routeOwnerRef = useRef(routeOwner);
 
   const [resources, setResources] = useState<Resource[]>([]);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [registryCount, setRegistryCount] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  // Price bounds are debounced like search so typing "12.50" sends one request.
+  const [debouncedMinPrice, setDebouncedMinPrice] = useState("");
+  const [debouncedMaxPrice, setDebouncedMaxPrice] = useState("");
   const [verification, setVerification] =
     useState<VerificationFilter>(DEFAULT_VERIFICATION);
   const [resourceType, setResourceType] = useState<ResourceTypeFilter>(
@@ -296,29 +516,52 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   );
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
+  const [sort, setSort] = useState<CatalogSort>(DEFAULT_SORT);
+  const [owner, setOwner] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registryFailed, setRegistryFailed] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
+  const [recent, setRecent] = useState<RecentResource[]>([]);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [relativeTimeKey, setRelativeTimeKey] = useState(0);
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+  const [saveSearchName, setSaveSearchName] = useState("");
+  const [isSavingSearch, setIsSavingSearch] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRelativeTimeKey((prev) => prev + 1);
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     async function restoreFilters() {
+      let restored = { ...DEFAULT_PERSISTED_FILTERS };
       try {
         const raw = await AsyncStorage.getItem(CATALOG_FILTERS_KEY);
         if (raw) {
-          const saved: PersistedFilters = JSON.parse(raw);
-          setSearch(saved.search);
-          setDebouncedSearch(saved.search);
-          setVerification(saved.verification);
-          setResourceType(saved.resourceType);
-          setMinPrice(saved.minPrice);
-          setMaxPrice(saved.maxPrice);
+          restored = sanitizePersistedFilters(JSON.parse(raw));
         }
       } catch {
+        // Invalid JSON or a storage failure — keep the defaults.
       } finally {
+        setSearch(restored.search);
+        setDebouncedSearch(restored.search);
+        setVerification(restored.verification);
+        setResourceType(restored.resourceType);
+        setMinPrice(restored.minPrice);
+        setMaxPrice(restored.maxPrice);
+        setDebouncedMinPrice(restored.minPrice);
+        setDebouncedMaxPrice(restored.maxPrice);
+        setSort(restored.sort);
+        // A publisher link opened this screen: it wins over the saved owner.
+        setOwner(routeOwnerRef.current ?? restored.owner);
         filtersRestored.current = true;
         setIsRestoring(false);
       }
@@ -329,18 +572,37 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   useEffect(() => {
     async function persistFilters() {
       if (!filtersRestored.current) return;
-      const data: PersistedFilters = { search, verification, resourceType, minPrice, maxPrice };
+      const data: PersistedFilters = { search, verification, resourceType, minPrice, maxPrice, sort, owner };
       try {
         await AsyncStorage.setItem(CATALOG_FILTERS_KEY, JSON.stringify(data));
       } catch {
       }
     }
     persistFilters();
-  }, [search, verification, resourceType, minPrice, maxPrice]);
+  }, [search, verification, resourceType, minPrice, maxPrice, sort, owner]);
+
+  // "More from this publisher" re-targets an already-mounted catalog.
+  useEffect(() => {
+    routeOwnerRef.current = routeOwner;
+    if (routeOwner && filtersRestored.current) setOwner(routeOwner);
+  }, [routeOwner]);
+
+  const removeOwner = useCallback(() => {
+    setOwner("");
+    routeOwnerRef.current = undefined;
+    // Drop the param too, otherwise it would re-apply on the next focus.
+    if (routeOwner) navigation.setParams?.({ owner: undefined });
+  }, [navigation, routeOwner]);
+
+  const requestIdRef = useRef(0);
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRestoring) return;
-    
+
+    // Only the latest request may update state; older, slower responses
+    // (or their errors) are discarded.
+    const requestId = ++requestIdRef.current;
+
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -356,33 +618,128 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     if (resourceType !== DEFAULT_RESOURCE_TYPE) {
       filters.resourceType = resourceType;
     }
+    if (sort !== DEFAULT_SORT) filters.sort = sort;
+    if (owner) filters.owner = owner;
+    const range = parsePriceRange(debouncedMinPrice, debouncedMaxPrice);
+    if (!range.isInvalid) {
+      if (range.min !== null) filters.minPrice = String(range.min);
+      if (range.max !== null) filters.maxPrice = String(range.max);
+    }
 
     try {
-      let registryResult: { resourceCount: number } | null = null;
-      try {
-        registryResult = await fetchRegistryStatus();
-        setRegistryFailed(false);
-      } catch {
-        setRegistryFailed(true);
-        registryResult = null;
-      }
-      const [catalog] = await Promise.all([
+      const [catalogResult, registryResult] = await Promise.all([
         fetchCatalog(Object.keys(filters).length > 0 ? filters : undefined),
+        // The registry count is supplementary: a failure must not fail the
+        // catalog load, it only hides the count.
+        fetchRegistryStatus().catch(() => null),
       ]);
-      setResources(catalog);
+
+      if (requestId !== requestIdRef.current) return;
+
+      const items = Array.isArray(catalogResult) ? catalogResult : (catalogResult?.items ?? []);
+      const total = Array.isArray(catalogResult)
+        ? catalogResult.length
+        : typeof catalogResult?.total === "number"
+        ? catalogResult.total
+        : items.length;
+      const next = Array.isArray(catalogResult) ? null : (catalogResult?.nextOffset ?? null);
+
+      setResources(items);
+      setTotalCount(total);
+      setNextOffset(next);
+      setLoadMoreError(null);
+      setRegistryFailed(registryResult === null);
       setRegistryCount(registryResult?.resourceCount ?? null);
       setLastUpdatedAt(new Date());
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+
       const message =
         err instanceof Error
           ? err.message
           : "Something went wrong loading the catalog.";
       setError(message);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [debouncedSearch, verification, resourceType, isRestoring]);
+  }, [debouncedSearch, verification, resourceType, debouncedMinPrice, debouncedMaxPrice, sort, owner, isRestoring]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (lastUpdatedAt && new Date().getTime() - lastUpdatedAt.getTime() > 60000) {
+        void loadData(true);
+      }
+    }, [lastUpdatedAt, loadData])
+  );
+
+  const currentFilters = useMemo(() => {
+    const filters: CatalogFilters = {};
+    if (debouncedSearch.trim()) filters.search = debouncedSearch.trim();
+    if (verification !== DEFAULT_VERIFICATION) {
+      filters.verificationStatus = verification;
+    }
+    if (resourceType !== DEFAULT_RESOURCE_TYPE) {
+      filters.resourceType = resourceType;
+    }
+    if (sort !== DEFAULT_SORT) filters.sort = sort;
+    if (owner) filters.owner = owner;
+    const range = parsePriceRange(debouncedMinPrice, debouncedMaxPrice);
+    if (!range.isInvalid) {
+      if (range.min !== null) filters.minPrice = String(range.min);
+      if (range.max !== null) filters.maxPrice = String(range.max);
+    }
+    return filters;
+  }, [debouncedSearch, verification, resourceType, debouncedMinPrice, debouncedMaxPrice, sort, owner]);
+
+  const loadMore = useCallback(async () => {
+    if (loading || loadingMore || nextOffset === null) {
+      return;
+    }
+
+    // A filter change, search or refresh starts a new first-page request and
+    // bumps the id; a next page that arrives after that belongs to the old
+    // results and must not be appended.
+    const requestId = requestIdRef.current;
+    setLoadingMore(true);
+    setLoadMoreError(null);
+
+    try {
+      const response = await fetchCatalog({
+        ...currentFilters,
+        offset: nextOffset,
+      });
+      if (requestId !== requestIdRef.current) return;
+
+      const newItems = Array.isArray(response) ? response : (response?.items ?? []);
+      const total = Array.isArray(response)
+        ? response.length
+        : typeof response?.total === "number"
+        ? response.total
+        : 0;
+      const next = Array.isArray(response) ? null : (response?.nextOffset ?? null);
+
+      setResources((prev) => {
+        const existingIds = new Set(prev.map((item) => item.id));
+        const filteredNewItems = newItems.filter((item) => !existingIds.has(item.id));
+        return [...prev, ...filteredNewItems];
+      });
+
+      if (!Array.isArray(response) && typeof response?.total === "number") {
+        setTotalCount(total);
+      }
+      setNextOffset(next);
+    } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+      const message =
+        err instanceof Error ? err.message : "Failed to load more resources.";
+      setLoadMoreError(message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loading, loadingMore, nextOffset, currentFilters]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
@@ -390,21 +747,69 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
   }, [search]);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedMinPrice(minPrice);
+      setDebouncedMaxPrice(maxPrice);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [minPrice, maxPrice]);
+
+  useEffect(() => {
     void loadData();
   }, [loadData]);
 
   useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 2500);
-    return () => clearTimeout(timer);
-  }, [toast]);
+    void getRecentResources().then(setRecent);
+    void getSearchHistory().then(setSearchHistory);
+    void getSavedSearches().then(setSavedSearches);
+  }, []);
+
+  const rememberSearch = useCallback((query: string) => {
+    if (!query.trim()) return;
+    void addSearchQuery(query).then(setSearchHistory);
+  }, []);
+
+  const handleSearchSubmit = useCallback(() => {
+    rememberSearch(search);
+  }, [rememberSearch, search]);
+
+  const handleSearchBlur = useCallback(() => {
+    setSearchFocused(false);
+    rememberSearch(search);
+  }, [rememberSearch, search]);
+
+  const applySuggestion = useCallback(
+    (query: string) => {
+      setSearch(query);
+      // A picked suggestion runs straight away instead of waiting for the debounce.
+      setDebouncedSearch(query);
+      rememberSearch(query);
+    },
+    [rememberSearch],
+  );
+
+  const removeSuggestion = useCallback((query: string) => {
+    void removeSearchQuery(query).then(setSearchHistory);
+  }, []);
+
+  const clearAllSuggestions = useCallback(() => {
+    setSearchHistory([]);
+    void clearSearchHistory();
+  }, []);
+
+  const suggestions = useMemo(
+    () => (searchFocused ? filterSearchSuggestions(searchHistory, search) : []),
+    [searchFocused, searchHistory, search],
+  );
 
   const hasActiveFilters =
     search.trim() !== "" ||
     verification !== DEFAULT_VERIFICATION ||
     resourceType !== DEFAULT_RESOURCE_TYPE ||
     minPrice.trim() !== "" ||
-    maxPrice.trim() !== "";
+    maxPrice.trim() !== "" ||
+    sort !== DEFAULT_SORT ||
+    owner !== "";
 
   const clearFilters = useCallback(() => {
     setSearch("");
@@ -412,17 +817,140 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     setResourceType(DEFAULT_RESOURCE_TYPE);
     setMinPrice("");
     setMaxPrice("");
+    setSort(DEFAULT_SORT);
+    removeOwner();
+  }, [removeOwner]);
+
+  const openResource = useCallback(
+    (resource: RecentResource) => {
+      // Record first, so the row is already right when the user comes back.
+      void recordRecentResource({
+        id: resource.id,
+        title: resource.title,
+        price: resource.price,
+      }).then(setRecent);
+      navigation.navigate("ResourceDetail", { resourceId: resource.id });
+    },
+    [navigation],
+  );
+
+  const renderCatalogItem = useCallback(
+    ({ item }: ListRenderItemInfo<Resource>) => (
+      <Pressable
+        onPress={() => openResource(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${item.title}`}
+        accessibilityHint="Opens the resource detail"
+      >
+        <ResourceCard resource={item} onCopyUrl={toast.info} />
+      </Pressable>
+    ),
+    [openResource, toast],
+  );
+
+  const clearRecent = useCallback(() => {
+    setRecent([]);
+    void clearRecentResources();
   }, []);
+
+  const applySavedSearch = useCallback((saved: SavedSearch) => {
+    setSearch(saved.search);
+    setDebouncedSearch(saved.search);
+    setVerification(saved.verification);
+    setResourceType(saved.resourceType);
+    setMinPrice(saved.minPrice);
+    setMaxPrice(saved.maxPrice);
+    setSort(saved.sort);
+  }, []);
+
+  const saveCurrentSearch = useCallback(async () => {
+    const name = saveSearchName.trim();
+    if (!name || isSavingSearch) return;
+    setIsSavingSearch(true);
+    try {
+      const newSearch = await saveSearch({
+        name,
+        search,
+        verification,
+        resourceType,
+        minPrice,
+        maxPrice,
+        sort,
+      });
+      setSavedSearches((prev) => [...prev, newSearch]);
+      setSaveSearchName("");
+      toast?.show(`Search "${name}" saved successfully`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save search";
+      toast?.show(message, "error");
+    } finally {
+      setIsSavingSearch(false);
+    }
+  }, [saveSearchName, isSavingSearch, search, verification, resourceType, minPrice, maxPrice, sort, toast]);
+
+  const deleteSavedSearch = useCallback((saved: SavedSearch) => {
+    Alert.alert("Delete saved search", `Delete "${saved.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          void deleteSearch(saved.id).then((deleted) => {
+            if (!deleted) return;
+            setSavedSearches((prev) => prev.filter((entry) => entry.id !== saved.id));
+            toast?.show(`Search "${saved.name}" deleted`);
+          });
+        },
+      },
+    ]);
+  }, [toast]);
+
+  const handleSeeAll = useCallback(
+    (sectionSort?: CatalogSort, sectionFilter?: { verificationStatus?: "verified" }) => {
+      if (sectionSort) {
+        setSort(sectionSort);
+      }
+      if (sectionFilter?.verificationStatus) {
+        setVerification(sectionFilter.verificationStatus);
+      }
+    },
+    []
+  );
 
   const priceRange = useMemo(
     () => parsePriceRange(minPrice, maxPrice),
     [minPrice, maxPrice],
   );
 
-  const filteredResources = useMemo(
-    () => filterByPriceRange(resources, priceRange),
-    [resources, priceRange],
-  );
+  function renderFooter() {
+    if (loadingMore) {
+      return (
+        <View
+          style={styles.footerContainer}
+          accessibilityRole="progressbar"
+          accessibilityLabel="Loading more resources"
+        >
+          <ActivityIndicator color={colors.primary} size="small" />
+        </View>
+      );
+    }
+    if (loadMoreError) {
+      return (
+        <View style={[styles.footerContainer, styles.footerErrorRow]}>
+          <Text style={styles.footerErrorText}>{loadMoreError}</Text>
+          <Pressable
+            onPress={() => void loadMore()}
+            style={styles.footerRetryButton}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading more resources"
+          >
+            <Text style={styles.footerRetryText}>Retry</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    return null;
+  }
 
   function renderEmpty() {
     if (loading) return null;
@@ -445,9 +973,16 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <FlatList
-        data={loading ? null : filteredResources}
+        data={loading ? null : resources}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
+        windowSize={7}
+        removeClippedSubviews
+        // Lets a suggestion be tapped without the first tap only dismissing the keyboard.
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -458,23 +993,35 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
           <View style={styles.header}>
             <View style={styles.headerRow}>
               <View style={{ flex: 1 }}>
-                <Text style={typography.title}>MindVault</Text>
+                <Text style={typography.title} accessibilityRole="header">MindVault</Text>
                 <Text style={typography.subtitle}>
                   Payment-protected digital resources on Stellar
                 </Text>
                 {registryCount !== null ? (
-                  <Text style={styles.registry}>
+                  <Text
+                    style={styles.registry}
+                    accessibilityLabel={
+                      `${registryCount} resource${registryCount === 1 ? "" : "s"} registered on-chain`
+                    }
+                  >
                     {registryCount} resource{registryCount === 1 ? "" : "s"}{" "}
                     on-chain
                   </Text>
                 ) : registryFailed ? (
-                  <Text style={styles.registry}>
+                  <Text
+                    style={styles.registry}
+                    accessibilityLabel="On-chain resource count unavailable"
+                  >
                     On-chain count unavailable
                   </Text>
                 ) : null}
                 {lastUpdatedAt ? (
-                  <Text style={styles.lastUpdated}>
-                    Last updated {formatLastUpdated(lastUpdatedAt)}
+                  <Text
+                    style={styles.lastUpdated}
+                    key={relativeTimeKey}
+                    accessibilityLabel={`Catalog updated ${getRelativeTimeString(lastUpdatedAt)}`}
+                  >
+                    Updated {getRelativeTimeString(lastUpdatedAt)}
                   </Text>
                 ) : null}
               </View>
@@ -482,9 +1029,15 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
                 style={styles.settingsButton}
                 onPress={() => navigation.navigate("Settings")}
                 accessibilityRole="button"
-                accessibilityLabel="Open settings"
+                accessibilityLabel="Settings"
+                accessibilityHint="Opens app settings"
               >
-                <Text style={styles.settingsButtonText}>⚙</Text>
+                <Text
+                  style={styles.settingsButtonText}
+                  importantForAccessibility="no"
+                >
+                  ⚙
+                </Text>
               </Pressable>
             </View>
 
@@ -498,11 +1051,209 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
               autoCorrect={false}
               clearButtonMode="while-editing"
               accessibilityLabel="Search resources"
+              accessibilityHint={
+                searchHistory.length > 0
+                  ? "Recent searches are listed below while this field is focused"
+                  : undefined
+              }
+              returnKeyType="search"
+              onFocus={() => setSearchFocused(true)}
+              onBlur={handleSearchBlur}
+              onSubmitEditing={handleSearchSubmit}
             />
 
+            {suggestions.length > 0 ? (
+              <View
+                style={styles.suggestions}
+                testID="search-suggestions"
+                accessibilityLabel="Recent searches"
+              >
+                <View style={styles.recentHeader}>
+                  <Text style={styles.filterLabel} accessibilityRole="header">
+                    Recent searches
+                  </Text>
+                  <Pressable
+                    onPress={clearAllSuggestions}
+                    style={styles.clearButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear all recent searches"
+                  >
+                    <Text style={styles.clearButtonText}>Clear all</Text>
+                  </Pressable>
+                </View>
+                {suggestions.map((query) => (
+                  <View key={query} style={styles.suggestionRow}>
+                    <Pressable
+                      onPress={() => applySuggestion(query)}
+                      style={styles.suggestionButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Search for ${query}`}
+                      accessibilityHint="Runs this recent search"
+                    >
+                      <Text style={styles.suggestionText} numberOfLines={1}>
+                        {query}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => removeSuggestion(query)}
+                      style={styles.suggestionRemove}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${query} from recent searches`}
+                    >
+                      <Text style={styles.suggestionRemoveText}>✕</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {recent.length > 0 && search.trim() === "" ? (
+              <View style={styles.recentSection}>
+                <View style={styles.recentHeader}>
+                  <Text style={styles.filterLabel} accessibilityRole="header">Recently viewed</Text>
+                  <Pressable
+                    onPress={clearRecent}
+                    style={styles.clearButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear recently viewed"
+                  >
+                    <Text style={styles.clearButtonText}>Clear</Text>
+                  </Pressable>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.recentRow}
+                >
+                  {recent.map((entry) => (
+                    <Pressable
+                      key={entry.id}
+                      onPress={() => openResource(entry)}
+                      style={styles.recentItem}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open recently viewed ${entry.title}`}
+                      accessibilityHint="Opens the resource detail"
+                    >
+                      <Text style={styles.recentTitle} numberOfLines={1}>
+                        {entry.title}
+                      </Text>
+                      <Text style={styles.recentPrice}>{entry.price} USDC</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
+
+            {hasActiveFilters ? (
+              <View style={styles.recentSection}>
+                <Text style={styles.filterLabel} accessibilityRole="header">Save this search</Text>
+                <View style={styles.saveSearchRow}>
+                  <TextInput
+                    value={saveSearchName}
+                    onChangeText={setSaveSearchName}
+                    placeholder="Search name"
+                    placeholderTextColor={colors.textSubtle}
+                    style={styles.saveSearchInput}
+                    accessibilityLabel="Saved search name"
+                    onSubmitEditing={() => { void saveCurrentSearch(); }}
+                  />
+                  <Pressable
+                    onPress={() => { void saveCurrentSearch(); }}
+                    disabled={!saveSearchName.trim() || isSavingSearch}
+                    style={[
+                      styles.saveSearchAction,
+                      (!saveSearchName.trim() || isSavingSearch) && styles.clearButtonDisabled,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Save current search"
+                    accessibilityState={{ disabled: !saveSearchName.trim() || isSavingSearch }}
+                  >
+                    <Text style={styles.clearButtonText}>Save</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+
+            {savedSearches.length > 0 && search.trim() === "" ? (
+              <View style={styles.recentSection}>
+                <Text style={styles.filterLabel} accessibilityRole="header">Saved searches</Text>
+                <View style={styles.chipRow} accessibilityLabel="Saved searches">
+                  {savedSearches.map((saved) => (
+                    <View key={saved.id} style={styles.savedSearchChip}>
+                      <Pressable
+                        onPress={() => applySavedSearch(saved)}
+                        style={styles.savedSearchButton}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Apply saved search: ${saved.name}`}
+                      >
+                        <Text style={styles.savedSearchName} numberOfLines={1}>
+                          {saved.name}
+                        </Text>
+                        <Text style={styles.savedSearchSummary} numberOfLines={1}>
+                          {[saved.search, saved.verification !== "all" && saved.verification, saved.resourceType !== "all" && saved.resourceType]
+                            .filter(Boolean)
+                            .join(" • ")}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => deleteSavedSearch(saved)}
+                        style={styles.savedSearchDelete}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete saved search: ${saved.name}`}
+                      >
+                        <Text style={styles.savedSearchDeleteText}>×</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {!hasActiveFilters && search.trim() === "" && (
+              <HomeSections onSeeAll={handleSeeAll} />
+            )}
+
             <View style={styles.filters}>
+              {owner ? (
+                <View style={styles.filterGroup}>
+                  <Text style={styles.filterLabel} accessibilityRole="header">Publisher</Text>
+                  <View style={styles.chipRow}>
+                    <Pressable
+                      onPress={removeOwner}
+                      style={[styles.chip, styles.chipActive]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Publisher ${shortOwner(owner)}. Remove publisher filter`}
+                    >
+                      <Text style={[styles.chipText, styles.chipTextActive]}>
+                        {shortOwner(owner)} ✕
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Verification</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">Sort</Text>
+                <View style={styles.chipRow} accessibilityRole="radiogroup" accessibilityLabel="Sort catalog">
+                  {SORT_OPTIONS.map((option) => {
+                    const active = sort === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => setSort(option.value)}
+                        style={[styles.chip, active && styles.chipActive]}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: active }}
+                        accessibilityLabel={option.label}
+                      >
+                        <Text style={[styles.chipText, active && styles.chipTextActive]}>{option.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterLabel} accessibilityRole="header">Verification</Text>
                 <View
                   style={styles.chipRow}
                   accessibilityRole="radiogroup"
@@ -539,7 +1290,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
               </View>
 
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Type</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">Type</Text>
                 <View
                   style={styles.chipRow}
                   accessibilityRole="radiogroup"
@@ -576,7 +1327,7 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
               </View>
 
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Price (USDC)</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">Price (USDC)</Text>
                 <View style={styles.priceRow}>
                   <View style={styles.priceField}>
                     <TextInput
@@ -631,9 +1382,8 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
               {!loading && resources.length > 0 ? (
                 <View style={styles.resultsRow}>
                   <Text style={styles.resultsCount}>
-                    Showing {filteredResources.length} of {resources.length}{" "}
-                    resource
-                    {resources.length === 1 ? "" : "s"}
+                    Showing {resources.length} of {totalCount || resources.length} resource
+                    {(totalCount || resources.length) === 1 ? "" : "s"}
                   </Text>
                   <Pressable
                     onPress={clearFilters}
@@ -667,17 +1417,12 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
             ) : null}
           </View>
         }
-        renderItem={({ item }) => (
-          <ResourceCard
-            resource={item}
-            onCopyUrl={setToast}
-            onPress={() =>
-              navigation.navigate("ResourceDetail", { resourceId: item.id })
-            }
-          />
-        )}
+        renderItem={renderCatalogItem}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={renderEmpty}
+        onEndReached={() => void loadMore()}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={renderFooter}
       />
 
       <Pressable
@@ -689,11 +1434,6 @@ export function CatalogScreen({ navigation }: CatalogScreenProps) {
         <Text style={styles.fabText}>Scan QR</Text>
       </Pressable>
 
-      {toast ? (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      ) : null}
     </SafeAreaView>
   );
 }

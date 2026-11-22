@@ -1,21 +1,25 @@
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useMemo, useState } from "react";
-import { validateStellarSecret } from "../utils/validateStellarSecret";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
-  Share,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 
+import { getApiBaseUrl } from "../api/resources";
 import type { Resource } from "../types";
 import { getResourceTypeLabel } from "../types";
 import { useEditPrice, validatePrice } from "../hooks/useEditPrice";
+import { isImageCached, rememberImage } from "../utils/imageCache";
+import { shareResource } from "../utils/shareResource";
+import { hapticImpact } from "../utils/haptics";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { SignTransactionSheet } from "./SignTransactionSheet";
 
 interface ResourceCardProps {
   resource: Resource;
@@ -27,6 +31,8 @@ interface ResourceCardProps {
   onPriceUpdated?: (resourceId: string, newPrice: string) => void;
   /** Called when the user taps "Transfer Ownership" */
   onTransferOwnership?: (resource: Resource) => void;
+  /** Called when the user taps "Delist" */
+  onDelist?: (resource: Resource) => void;
 }
 
 function shortenAddress(address: string): string {
@@ -58,6 +64,77 @@ function onchainStyle(status: Resource["onchainStatus"], colors: ThemeColors) {
   }
 }
 
+/**
+ * The image to show for a resource: the server's `thumbnailUrl` when it sends one,
+ * otherwise the public thumbnail endpoint for image resources.
+ */
+export function getResourceThumbnailUri(resource: Resource): string | null {
+  if (resource.thumbnailUrl) return resource.thumbnailUrl;
+  if (resource.mimeType?.toLowerCase().startsWith("image/")) {
+    return `${getApiBaseUrl()}/resources/${encodeURIComponent(resource.id)}/thumbnail`;
+  }
+  return null;
+}
+
+const TYPE_ICONS: Record<string, string> = {
+  file: "📄",
+  link: "🔗",
+};
+
+/**
+ * A fixed-aspect-ratio image with a themed placeholder while it loads. The box
+ * size never changes, so swapping the placeholder for the image causes no layout
+ * shift. A thumbnail already in the image cache renders straight away (also
+ * offline); if it fails to load, the resource-type icon is shown instead.
+ */
+export function ResourceThumbnail({
+  uri,
+  title,
+  resourceType,
+}: {
+  uri: string;
+  title: string;
+  resourceType: string;
+}) {
+  const { colors } = useAppTheme();
+  const [status, setStatus] = useState<"loading" | "loaded" | "failed">(() =>
+    isImageCached(uri) ? "loaded" : "loading"
+  );
+
+  if (status === "failed") {
+    return (
+      <View
+        style={[styles.thumbnail, { backgroundColor: colors.neutralBg }]}
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={`${getResourceTypeLabel(resourceType)} icon for ${title}`}
+      >
+        <Text style={styles.fallbackIcon}>{TYPE_ICONS[resourceType] ?? "📎"}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.thumbnail, { backgroundColor: colors.neutralBg }]}>
+      {status === "loading" ? <ActivityIndicator color={colors.textSubtle} /> : null}
+      <Image
+        source={{ uri }}
+        style={StyleSheet.absoluteFill}
+        resizeMode="cover"
+        progressiveRenderingEnabled
+        fadeDuration={150}
+        accessibilityRole="image"
+        accessibilityLabel={`Thumbnail of ${title}`}
+        onLoad={() => {
+          rememberImage(uri);
+          setStatus("loaded");
+        }}
+        onError={() => setStatus("failed")}
+      />
+    </View>
+  );
+}
+
 export function ResourceCard({
   resource,
   onCopyUrl,
@@ -66,16 +143,24 @@ export function ResourceCard({
   editablePrice = false,
   onPriceUpdated,
   onTransferOwnership,
+  onDelist,
 }: ResourceCardProps) {
   const { colors, shared, typography } = useAppTheme();
   const verification = verificationStyle(resource.verificationStatus, colors);
   const onchain = onchainStyle(resource.onchainStatus, colors);
-  const { status, error, editPrice, resetError } = useEditPrice();
+  const thumbnailUri = getResourceThumbnailUri(resource);
+  const {
+    status,
+    error,
+    pendingTransaction,
+    preparePriceEdit,
+    submitSigned,
+    cancelSigning,
+    resetError,
+  } = useEditPrice();
   const [editing, setEditing] = useState(false);
   const [newPrice, setNewPrice] = useState(resource.price);
   const [priceTouched, setPriceTouched] = useState(false);
-  const [secretKey, setSecretKey] = useState("");
-  const [secretKeyTouched, setSecretKeyTouched] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Sync newPrice from resource.price when it changes and not actively editing
@@ -126,28 +211,33 @@ export function ResourceCard({
           backgroundColor: colors.neutralBg,
           marginTop: 8,
         },
+        registerButton: {
+          backgroundColor: colors.neutralBg,
+          marginTop: 8,
+        },
+        delistButton: {
+          backgroundColor: colors.dangerBg,
+          marginTop: 8,
+        },
+        delistButtonText: {
+          color: colors.danger,
+        },
       }),
     [colors]
   );
 
   async function handleCopy() {
     await Clipboard.setStringAsync(resource.accessUrl);
+    void hapticImpact();
     onCopyUrl("Resource URL copied");
   }
 
   async function handleShare() {
-    try {
-      await Share.share({
-        title: resource.title,
-        message: `${resource.title}\n${resource.accessUrl}`,
-        url: resource.accessUrl,
-      });
-    } catch {
+    const outcome = await shareResource(resource.title, resource.accessUrl);
+    if (outcome === "error") {
       onCopyUrl("Unable to share resource. Please try copying the URL instead.");
     }
   }
-
-  const secretKeyValidation = useMemo(() => validateStellarSecret(secretKey), [secretKey]);
 
   // Inline price validation error (shown after the field has been touched)
   const priceValidationError = priceTouched ? validatePrice(newPrice) : null;
@@ -162,17 +252,14 @@ export function ResourceCard({
       return;
     }
 
-    if (!secretKeyValidation.isValid) {
-      setSecretKeyTouched(true);
-      return;
-    }
+    await preparePriceEdit(resource.id, newPrice);
+  }
 
-    const ok = await editPrice(resource.id, newPrice, secretKey);
+  async function handleSignedPrice(signedXdr: string) {
+    const ok = await submitSigned(signedXdr);
     if (ok) {
       setSuccessMessage("Price updated successfully.");
       setEditing(false);
-      setSecretKey("");
-      setSecretKeyTouched(false);
       setPriceTouched(false);
       // Notify parent so it can update its local state (issue #65)
       onPriceUpdated?.(resource.id, newPrice);
@@ -182,13 +269,7 @@ export function ResourceCard({
   const isBusy = status !== "idle";
   const isSaveDisabled =
     isBusy ||
-    validatePrice(newPrice) !== null ||
-    !secretKeyValidation.isValid;
-
-  const secretKeyFieldError =
-    secretKeyTouched && secretKey.length > 0 && !secretKeyValidation.isValid
-      ? secretKeyValidation.errorMessage
-      : null;
+    validatePrice(newPrice) !== null;
 
   const statusLabel =
     status === "preparing"
@@ -199,8 +280,22 @@ export function ResourceCard({
       ? "Submitting transaction…"
       : null;
 
+  const canRegister =
+    Boolean(onRegister) &&
+    resource.verificationStatus === "verified" &&
+    (resource.onchainStatus === "none" || resource.onchainStatus === "failed");
+
   return (
     <View style={shared.card}>
+      {thumbnailUri ? (
+        // Keyed by URI, so a new image starts with its own placeholder and error state.
+        <ResourceThumbnail
+          key={thumbnailUri}
+          uri={thumbnailUri}
+          title={resource.title}
+          resourceType={resource.resourceType}
+        />
+      ) : null}
       <Text style={typography.cardTitle}>{resource.title}</Text>
 
       {resource.publisherName ? (
@@ -210,6 +305,14 @@ export function ResourceCard({
       <Text style={typography.caption}>
         Owner: {shortenAddress(resource.walletAddress)}
       </Text>
+      {resource.onchainTxHash ? (
+        <Text
+          style={typography.caption}
+          accessibilityLabel={`Transaction: ${resource.onchainTxHash}`}
+        >
+          Tx: {shortenAddress(resource.onchainTxHash)}
+        </Text>
+      ) : null}
 
       <View style={styles.badges}>
         <View style={[shared.badge, { backgroundColor: colors.neutralBg }]}>
@@ -217,12 +320,20 @@ export function ResourceCard({
             {getResourceTypeLabel(resource.resourceType)}
           </Text>
         </View>
-        <View style={[shared.badge, { backgroundColor: verification.backgroundColor }]}>
+        <View
+          style={[shared.badge, { backgroundColor: verification.backgroundColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`Verification: ${resource.verificationStatus}`}
+        >
           <Text style={[shared.badgeText, { color: verification.color }]}>
             {resource.verificationStatus}
           </Text>
         </View>
-        <View style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}>
+        <View
+          style={[shared.badge, { backgroundColor: onchain.backgroundColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`On-chain: ${resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}`}
+        >
           <Text style={[shared.badgeText, { color: onchain.color }]}>
             {resource.onchainStatus === "none" ? "not on-chain" : resource.onchainStatus}
           </Text>
@@ -253,7 +364,7 @@ export function ResourceCard({
         </View>
       </View>
 
-      {editablePrice ? (
+      {editablePrice || canRegister || onTransferOwnership || onDelist ? (
         editing ? (
           <View style={styles.editor}>
             <TextInput
@@ -283,29 +394,12 @@ export function ResourceCard({
                 {priceValidationError}
               </Text>
             ) : null}
-            <TextInput
-              value={secretKey}
-              onChangeText={(text) => {
-                setSecretKey(text);
-                if (!secretKeyTouched) setSecretKeyTouched(true);
-              }}
-              onBlur={() => setSecretKeyTouched(true)}
-              placeholder="Stellar secret key"
-              placeholderTextColor={colors.textSubtle}
-              secureTextEntry
-              style={dynamicStyles.input}
-              editable={!isBusy}
-              accessibilityLabel="Stellar secret key"
-              accessibilityHint="Enter your Stellar secret key to sign the price update transaction"
-            />
             <View style={styles.actionRow}>
               <Pressable
                 onPress={() => {
                   setEditing(false);
                   setPriceTouched(false);
                   setNewPrice(resource.price);
-                  setSecretKey("");
-                  setSecretKeyTouched(false);
                   resetError();
                 }}
                 style={[shared.button, dynamicStyles.secondaryButton]}
@@ -350,15 +444,6 @@ export function ResourceCard({
                 {statusLabel}
               </Text>
             ) : null}
-            {secretKeyFieldError ? (
-              <Text
-                style={dynamicStyles.errorText}
-                accessibilityLiveRegion="assertive"
-                accessibilityRole="alert"
-              >
-                {secretKeyFieldError}
-              </Text>
-            ) : null}
             {error ? (
               <Text
                 style={dynamicStyles.errorText}
@@ -380,19 +465,33 @@ export function ResourceCard({
           </View>
         ) : (
           <View style={styles.publisherActions}>
-            <Pressable
-              onPress={() => {
-                setNewPrice(resource.price);
-                setPriceTouched(false);
-                setEditing(true);
-              }}
-              style={[shared.button, styles.editButton]}
-              accessibilityRole="button"
-              accessibilityLabel={`Edit price for ${resource.title}`}
-              accessibilityHint="Opens the price editor for this resource"
-            >
-              <Text style={shared.buttonText}>Edit price</Text>
-            </Pressable>
+            {editablePrice ? (
+              <Pressable
+                onPress={() => {
+                  setNewPrice(resource.price);
+                  setPriceTouched(false);
+                  setEditing(true);
+                }}
+                style={[shared.button, styles.editButton]}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit price for ${resource.title}`}
+                accessibilityHint="Opens the price editor for this resource"
+              >
+                <Text style={shared.buttonText}>Edit price</Text>
+              </Pressable>
+            ) : null}
+
+            {canRegister ? (
+              <Pressable
+                onPress={() => onRegister?.(resource)}
+                style={[shared.button, dynamicStyles.registerButton]}
+                accessibilityRole="button"
+                accessibilityLabel={`Register ${resource.title} on-chain`}
+                accessibilityHint="Opens the on-chain registration flow for this resource"
+              >
+                <Text style={shared.buttonText}>Register on-chain</Text>
+              </Pressable>
+            ) : null}
 
             {onTransferOwnership ? (
               <Pressable
@@ -403,6 +502,18 @@ export function ResourceCard({
                 accessibilityHint="Opens the ownership transfer flow for this resource"
               >
                 <Text style={shared.buttonText}>Transfer Ownership</Text>
+              </Pressable>
+            ) : null}
+
+            {onDelist ? (
+              <Pressable
+                onPress={() => onDelist(resource)}
+                style={[shared.button, dynamicStyles.delistButton]}
+                accessibilityRole="button"
+                accessibilityLabel={`Delist ${resource.title}`}
+                accessibilityHint="Opens a confirmation before removing this resource from the catalog"
+              >
+                <Text style={[shared.buttonText, dynamicStyles.delistButtonText]}>Delist</Text>
               </Pressable>
             ) : null}
           </View>
@@ -418,11 +529,30 @@ export function ResourceCard({
           {successMessage}
         </Text>
       ) : null}
+      <SignTransactionSheet
+        visible={pendingTransaction !== null}
+        unsignedXdr={pendingTransaction?.unsignedXdr ?? ""}
+        networkPassphrase={pendingTransaction?.networkPassphrase}
+        action="update this resource's price"
+        onCancel={cancelSigning}
+        onSigned={handleSignedPrice}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  thumbnail: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: 12,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fallbackIcon: {
+    fontSize: 32,
+  },
   badges: {
     flexDirection: "row",
     flexWrap: "wrap",

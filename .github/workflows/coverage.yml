@@ -1,0 +1,79 @@
+name: Coverage
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout contribution
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Measure contribution coverage
+        run: npm test -- --ci --coverage
+
+      - name: Measure main baseline (pull requests)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          path: baseline
+
+      - name: Install baseline dependencies
+        if: github.event_name == 'pull_request'
+        working-directory: baseline
+        run: npm ci
+
+      - name: Measure main coverage
+        if: github.event_name == 'pull_request'
+        working-directory: baseline
+        run: npm test -- --ci --coverage
+
+      - name: Enforce ratcheting threshold and publish summary
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const current = JSON.parse(fs.readFileSync("coverage/coverage-summary.json", "utf8")).total;
+          const baselinePath = path.join("baseline", "coverage", "coverage-summary.json");
+          const baseline = process.env.EVENT_NAME === "pull_request" && fs.existsSync(baselinePath)
+            ? JSON.parse(fs.readFileSync(baselinePath, "utf8")).total
+            : current;
+          const metrics = ["lines", "statements", "functions", "branches"];
+          const rows = metrics.map((metric) => {
+            const base = baseline[metric].pct;
+            const actual = current[metric].pct;
+            const minimum = Math.max(0, Math.floor((base - 1) * 100) / 100);
+            return { metric, base, actual, minimum, pass: actual >= minimum };
+          });
+          const summary = [
+            "## Coverage report",
+            "",
+            "| Metric | main baseline | Required (baseline − 1 pp) | This branch | Result |",
+            "| --- | ---: | ---: | ---: | --- |",
+            ...rows.map((r) => `| ${r.metric} | ${r.base}% | ${r.minimum}% | ${r.actual}% | ${r.pass ? "PASS" : "FAIL"} |`),
+            "",
+            "Coverage excludes test files, declaration files, generated files, configuration modules, constants modules and barrel exports.",
+            "The threshold follows main automatically and permits at most a one-percentage-point regression."
+          ].join("\n");
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+          console.log(summary);
+          if (rows.some((row) => !row.pass)) process.exit(1);
+          NODE

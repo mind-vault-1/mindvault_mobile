@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,12 +14,13 @@ import type { Resource } from "../types";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
+import { SignTransactionSheet } from "./SignTransactionSheet";
 
 interface RegisterModalProps {
   visible: boolean;
   resource: Resource | null;
   onClose: () => void;
-  onSuccess: (message: string) => void;
+  onSuccess: (message: string, txHash: string) => void;
   onError: (message: string) => void;
 }
 
@@ -117,6 +117,7 @@ export function RegisterModal({
 
   const [step, setStep] = useState<RegistrationStep>("idle");
   const [xdr, setXdr] = useState<string>("");
+  const [networkPassphrase, setNetworkPassphrase] = useState<string | undefined>();
   const [txHash, setTxHash] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
 
@@ -127,20 +128,10 @@ export function RegisterModal({
       // Step 1: Prepare registration
       setStep("preparing");
       setErrorMessage("");
-      const { xdr: unsignedXdr, networkPassphrase } = await prepareRegister(resource.id);
+      const { unsignedXdr, networkPassphrase } = await prepareRegister(resource.id);
       setXdr(unsignedXdr);
-
-      // Step 2: Sign XDR
+      setNetworkPassphrase(networkPassphrase);
       setStep("signing");
-      const signedXdr = await signXdr(unsignedXdr, networkPassphrase);
-
-      // Step 3: Submit registration
-      setStep("submitting");
-      const { txHash: hash } = await submitRegister(resource.id, signedXdr);
-      setTxHash(hash);
-
-      setStep("success");
-      onSuccess("Resource registered on-chain successfully!");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Registration failed";
       setErrorMessage(message);
@@ -149,23 +140,25 @@ export function RegisterModal({
     }
   }
 
-  async function signXdr(unsignedXdr: string, networkPassphrase?: string): Promise<string> {
-    // TODO: Implement actual signing logic based on chosen approach:
-    // Option 1: Use stellar-sdk with local keypair
-    // Option 2: Use WalletConnect for external wallet signing
-    // Option 3: Use device secure storage for key management
-    
-    // For now, this is a placeholder that simulates signing
-    // In production, replace with actual signing implementation
-    
-    // Example with stellar-sdk (requires installation):
-    // import * as StellarSdk from 'stellar-sdk';
-    // const transaction = new StellarSdk.Transaction(unsignedXdr, networkPassphrase);
-    // const keypair = StellarSdk.Keypair.fromSecret(userSecret);
-    // transaction.sign(keypair);
-    // return transaction.toXDR();
-    
-    throw new Error("XDR signing not yet implemented. Please implement signXdr function.");
+  async function handleSigned(signedXdr: string) {
+    if (!resource || signedXdr === xdr) {
+      setErrorMessage("The transaction must be signed before submission.");
+      setStep("error");
+      return;
+    }
+    try {
+      setStep("submitting");
+      const { txHash: hash } = await submitRegister(resource.id, signedXdr);
+      setTxHash(hash);
+
+      setStep("success");
+      onSuccess("Resource registered on-chain successfully!", hash);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Registration failed";
+      setErrorMessage(message);
+      setStep("error");
+      onError(message);
+    }
   }
 
   function handleOpenExplorer() {
@@ -177,6 +170,7 @@ export function RegisterModal({
   function handleClose() {
     setStep("idle");
     setXdr("");
+    setNetworkPassphrase(undefined);
     setTxHash("");
     setErrorMessage("");
     onClose();
@@ -273,20 +267,34 @@ export function RegisterModal({
   if (!resource) return null;
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={handleClose}
-    >
-      <View style={styles.overlay}>
-        <View style={styles.modal}>
-          <ScrollView style={styles.content}>
-            <Text style={typography.heading}>Register Resource On-Chain</Text>
-            {renderContent()}
-          </ScrollView>
+    <>
+      <Modal
+        visible={visible && step !== "signing"}
+        animationType="slide"
+        transparent
+        onRequestClose={handleClose}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <ScrollView style={styles.content}>
+              <Text style={typography.heading}>Register Resource On-Chain</Text>
+              {renderContent()}
+            </ScrollView>
+          </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+      <SignTransactionSheet
+        visible={visible && step === "signing"}
+        unsignedXdr={xdr}
+        networkPassphrase={networkPassphrase}
+        action="register this publisher"
+        onCancel={() => {
+          setXdr("");
+          setNetworkPassphrase(undefined);
+          setStep("idle");
+        }}
+        onSigned={handleSigned}
+      />
+    </>
   );
 }

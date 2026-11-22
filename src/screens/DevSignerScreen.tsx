@@ -1,11 +1,15 @@
-import React, { useState, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Account, Keypair, TransactionBuilder, Networks, Asset, Operation } from "@stellar/stellar-sdk";
+import { useFocusEffect } from "@react-navigation/native";
+import { useToast } from "../components/ToastProvider";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { copySensitive } from "../utils/clipboard";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
 
 export function DevSignerScreen() {
   const { colors, typography, shared, spacing } = useAppTheme();
+  const toast = useToast();
   
   const [secretKey, setSecretKey] = useState("");
   const [signedXdr, setSignedXdr] = useState("");
@@ -13,8 +17,25 @@ export function DevSignerScreen() {
   const [isSigning, setIsSigning] = useState(false);
   const [touched, setTouched] = useState(false);
 
+  // Clear the secret whenever the screen loses focus. Unmounting already
+  // discards state, so this covers navigating away while it stays mounted.
+  useFocusEffect(
+    useCallback(() => {
+      return () => setSecretKey("");
+    }, [])
+  );
+
   const validation = useMemo(() => validateStellarSecret(secretKey), [secretKey]);
   const fieldError = touched && secretKey.length > 0 && !validation.isValid ? validation.errorMessage : null;
+
+  const handleCopyXdr = async () => {
+    if (!signedXdr) return;
+    try {
+      await copySensitive(signedXdr, toast.success);
+    } catch {
+      toast.error("Unable to copy the signed XDR.");
+    }
+  };
 
   const handleSignTransaction = async () => {
     setError(null);
@@ -45,8 +66,12 @@ export function DevSignerScreen() {
 
       transaction.sign(keypair);
       setSignedXdr(transaction.toEnvelope().toXDR("base64"));
-    } catch (err: any) {
-      setError(err.message || "Failed to sign transaction. Ensure secret key is valid.");
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to sign transaction. Ensure secret key is valid."
+      );
     } finally {
       setIsSigning(false);
     }
@@ -139,6 +164,15 @@ export function DevSignerScreen() {
           <View style={[styles.xdrBox, { backgroundColor: colors.neutralBg, borderColor: colors.border }]}>
             <Text style={{ color: colors.text, fontFamily: "monospace" }}>{signedXdr}</Text>
           </View>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary, marginTop: spacing.sm }]}
+            onPress={() => void handleCopyXdr()}
+            accessibilityRole="button"
+            accessibilityLabel="Copy signed XDR"
+            accessibilityHint="Copies the signed XDR to the clipboard"
+          >
+            <Text style={shared.primaryButtonText}>Copy Signed XDR</Text>
+          </TouchableOpacity>
         </View>
       ) : null}
       

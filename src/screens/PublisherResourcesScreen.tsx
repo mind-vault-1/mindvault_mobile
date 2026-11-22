@@ -1,7 +1,9 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -16,26 +18,41 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import {
   deleteStoredApiKey,
+  delistResource,
   fetchPublisherResources,
   getApiBaseUrl,
   getStoredApiKey,
+  prepareEditPrice,
+  submitPriceEdit,
   storeApiKey,
 } from "../api/resources";
 import type { Resource } from "../types";
 import type { RootStackParamList } from "../navigation";
 import { spacing } from "../theme";
+import { STORAGE_KEYS } from "../services/storage";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { RegisterModal } from "../components/RegisterModal";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import { TransferOwnershipModal } from "../components/TransferOwnershipModal";
+import { PublisherSignupSheet } from "../components/PublisherSignupSheet";
+import { useToast } from "../components/ToastProvider";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { enqueueMutation } from "../services/mutationQueue";
+import { logError } from "../utils/errorLogger";
+import { useBulkSelection } from "../hooks/useBulkSelection";
+import { validatePrice } from "../hooks/useEditPrice";
+import { SignTransactionSheet } from "../components/SignTransactionSheet";
 
 type PublisherResourcesNavigation = NativeStackNavigationProp<
   RootStackParamList,
   "PublisherResources"
 >;
 
+const PUBLISHER_FILTERS_KEY = `${STORAGE_KEYS.catalogFilters}:publisher`;
+
 export function PublisherResourcesScreen() {
-  const { colors, shared, typography } = useAppTheme();
+  const { colors, colorScheme, shared, typography } = useAppTheme();
   const navigation = useNavigation<PublisherResourcesNavigation>();
 
   const goToPublicCatalog = useCallback(() => {
@@ -50,11 +67,34 @@ export function PublisherResourcesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [checkingStoredKey, setCheckingStoredKey] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
+  const { isOffline } = useNetworkStatus();
   const [authenticated, setAuthenticated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showSignup, setShowSignup] = useState(false);
+  const [verificationFilter, setVerificationFilter] = useState<"all" | "verified" | "pending" | "rejected">("all");
+  const [onchainStatusFilter, setOnchainStatusFilter] = useState<"all" | "registered" | "unregistered">("all");
+  const [sortBy, setSortBy] = useState<"newest" | "price_asc" | "price_desc" | "title">("newest");
   /** Issue #66: the resource currently open in the TransferOwnershipModal, or null */
   const [transferResource, setTransferResource] = useState<Resource | null>(null);
+  /** Issue #204: the resource currently open in the RegisterModal, or null */
+  const [registerResource, setRegisterResource] = useState<Resource | null>(null);
+  /** Issue #220: the resource awaiting delist confirmation, or null */
+  const [delistTarget, setDelistTarget] = useState<Resource | null>(null);
+  const [delisting, setDelisting] = useState(false);
+  const [delistError, setDelistError] = useState<string | null>(null);
+  const [bulkDelistVisible, setBulkDelistVisible] = useState(false);
+  const [bulkPriceVisible, setBulkPriceVisible] = useState(false);
+  const [bulkPriceValue, setBulkPriceValue] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkPriceQueue, setBulkPriceQueue] = useState<Resource[]>([]);
+  const [bulkPriceCompleted, setBulkPriceCompleted] = useState(0);
+  const [pendingBulkPrice, setPendingBulkPrice] = useState<{
+    resource: Resource;
+    index: number;
+    unsignedXdr: string;
+    networkPassphrase?: string;
+  } | null>(null);
 
   const styles = useMemo(() => {
     return StyleSheet.create({
@@ -220,6 +260,19 @@ export function PublisherResourcesScreen() {
       skeletons: {
         gap: 12,
       },
+      publishButton: {
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        marginBottom: spacing.sm,
+        backgroundColor: colors.primaryMuted,
+        alignItems: "center",
+      },
+      publishButtonText: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: colors.primary,
+      },
       logoutButton: {
         borderRadius: 10,
         paddingHorizontal: 12,
@@ -234,6 +287,96 @@ export function PublisherResourcesScreen() {
       },
       separator: {
         height: 0,
+      },
+      filterRow: {
+        flexDirection: "row",
+        gap: spacing.sm,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.md,
+        flexWrap: "wrap",
+      },
+      chip: {
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+      },
+      chipActive: {
+        borderColor: colors.primary,
+        backgroundColor: colors.primaryMuted,
+      },
+      chipText: {
+        fontSize: 12,
+        fontWeight: "500",
+        color: colors.textMuted,
+      },
+      chipTextActive: {
+        color: colors.primary,
+        fontWeight: "600",
+      },
+      manageButton: {
+        marginTop: spacing.sm,
+        minHeight: 44,
+        borderRadius: 10,
+        backgroundColor: colors.primaryMuted,
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      manageButtonText: {
+        fontSize: 13,
+        fontWeight: "600",
+        color: colors.primary,
+      },
+      bulkControls: {
+        flexDirection: "row",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: spacing.sm,
+        padding: spacing.md,
+        borderRadius: 12,
+        backgroundColor: colors.neutralBg,
+      },
+      bulkButton: {
+        minHeight: 40,
+        justifyContent: "center",
+        paddingHorizontal: spacing.md,
+        borderRadius: 8,
+        backgroundColor: colors.primaryMuted,
+      },
+      bulkDangerButton: {
+        backgroundColor: colors.dangerBg,
+      },
+      bulkButtonText: {
+        color: colors.primary,
+        fontWeight: "600",
+      },
+      selectionRow: {
+        alignItems: "flex-start",
+        marginBottom: spacing.xs,
+      },
+      selectionButton: {
+        minHeight: 40,
+        justifyContent: "center",
+        paddingHorizontal: spacing.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 8,
+        backgroundColor: colors.surface,
+      },
+      selectionButtonActive: {
+        borderColor: colors.primary,
+        backgroundColor: colors.primaryMuted,
+      },
+      bulkInput: {
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 10,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        color: colors.text,
+        backgroundColor: colors.surface,
       },
       emptyState: {
         gap: spacing.sm,
@@ -251,29 +394,42 @@ export function PublisherResourcesScreen() {
         textAlign: "center",
         paddingHorizontal: spacing.md,
       },
-      toast: {
-        position: "absolute",
-        bottom: spacing.xl,
-        left: spacing.md,
-        right: spacing.md,
-        backgroundColor: colors.text,
-        borderRadius: 12,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
+      modalOverlay: {
+        flex: 1,
+        backgroundColor: "rgba(0,0,0,0.5)",
+        justifyContent: "center",
+        padding: spacing.lg,
       },
-      toastText: {
-        color: colors.surface,
-        fontSize: 14,
-        fontWeight: "500",
+      modalCard: {
+        backgroundColor: colors.surface,
+        borderRadius: 20,
+        padding: spacing.lg,
+        gap: spacing.md,
+      },
+      modalBody: {
+        color: colors.textMuted,
+      },
+      modalActions: {
+        flexDirection: "row",
+        gap: spacing.sm,
+        marginTop: spacing.sm,
+      },
+      modalCancelButton: {
+        flex: 1,
+        backgroundColor: colors.neutralBg,
+        alignItems: "center",
+      },
+      modalCancelText: {
+        color: colors.text,
+        fontWeight: "600",
+      },
+      modalConfirmButton: {
+        flex: 1,
+        backgroundColor: colors.danger,
+        alignItems: "center",
       },
     });
-  }, [colors, shared, typography]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 2500);
-    return () => clearTimeout(timer);
-  }, [toast]);
+  }, [colors]);
 
   const loadResources = useCallback(
     async (key: string, isRefresh = false, searchTerm?: string) => {
@@ -313,7 +469,7 @@ export function PublisherResourcesScreen() {
           }
         }
       } catch (err) {
-        console.error("Failed to load stored API key:", err);
+        logError("publisherResources.loadStoredApiKey", err);
       } finally {
         setCheckingStoredKey(false);
       }
@@ -321,6 +477,45 @@ export function PublisherResourcesScreen() {
 
     void loadStoredKey();
   }, [loadResources]);
+
+  useEffect(() => {
+    async function restoreFilters() {
+      try {
+        const raw = await AsyncStorage.getItem(PUBLISHER_FILTERS_KEY);
+        if (raw) {
+          const filters = JSON.parse(raw);
+          if (filters.verificationFilter && ["all", "verified", "pending", "rejected"].includes(filters.verificationFilter)) {
+            setVerificationFilter(filters.verificationFilter);
+          }
+          if (filters.onchainStatusFilter && ["all", "registered", "unregistered"].includes(filters.onchainStatusFilter)) {
+            setOnchainStatusFilter(filters.onchainStatusFilter);
+          }
+          if (filters.sortBy && ["newest", "price_asc", "price_desc", "title"].includes(filters.sortBy)) {
+            setSortBy(filters.sortBy);
+          }
+        }
+      } catch {
+      }
+    }
+    void restoreFilters();
+  }, []);
+
+  useEffect(() => {
+    async function persistFilters() {
+      try {
+        await AsyncStorage.setItem(
+          PUBLISHER_FILTERS_KEY,
+          JSON.stringify({
+            verificationFilter,
+            onchainStatusFilter,
+            sortBy,
+          })
+        );
+      } catch {
+      }
+    }
+    void persistFilters();
+  }, [verificationFilter, onchainStatusFilter, sortBy]);
 
   const handleSaveApiKey = async () => {
     if (!apiKey.trim()) {
@@ -338,7 +533,7 @@ export function PublisherResourcesScreen() {
       setAuthenticated(true);
       setResources(testData);
       setApiKey("");
-      setToast("API key saved successfully");
+      toast.success("API key saved successfully");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to authenticate";
       setError(message);
@@ -360,11 +555,26 @@ export function PublisherResourcesScreen() {
       setResources([]);
       setSearch("");
       setError(null);
-      setToast("Logged out successfully");
-    } catch (err) {
+      toast.success("Logged out successfully");
+    } catch {
       setError("Failed to logout");
     }
   };
+
+  const handleSignupSuccess = useCallback(async (newApiKey: string) => {
+    const normalizedKey = newApiKey.trim();
+    try {
+      await storeApiKey(normalizedKey);
+      setStoredApiKey(normalizedKey);
+      setAuthenticated(true);
+      setShowSignup(false);
+      const loaded = await loadResources(normalizedKey);
+      if (loaded) toast.success("Publisher account created successfully");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save publisher API key";
+      setError(message);
+    }
+  }, [loadResources, toast]);
 
   const handleRefresh = async () => {
     if (storedApiKey) {
@@ -381,8 +591,8 @@ export function PublisherResourcesScreen() {
     setResources((prev) =>
       prev.map((r) => (r.id === resourceId ? { ...r, price: newPrice } : r))
     );
-    setToast("Price updated successfully");
-  }, []);
+    toast.success("Price updated successfully");
+  }, [toast]);
 
   /**
    * Issue #66: Open the TransferOwnershipModal for the given resource.
@@ -394,35 +604,310 @@ export function PublisherResourcesScreen() {
   /**
    * Issue #66: Called when ownership transfer completes successfully.
    * Removes the resource from the local list (the publisher no longer owns it)
-   * and shows a confirmation toast.
+   * and shows a confirmation toast. All state updaters are pure — the
+   * transferred resource is read from the closure, not from inside an
+   * updater function.
    */
-  const handleTransferSuccess = useCallback((_txHash: string | null) => {
-    setTransferResource((current) => {
-      if (current) {
-        setResources((prev) => prev.filter((r) => r.id !== current.id));
-        setToast("Ownership transferred successfully");
+  const handleTransferSuccess = useCallback(
+    (_txHash: string | null) => {
+      const transferredId = transferResource?.id;
+      if (transferredId) {
+        setResources((prev) => prev.filter((r) => r.id !== transferredId));
       }
-      return null;
-    });
+      setTransferResource(null);
+      toast.success("Ownership transferred successfully");
+    },
+    [transferResource, toast]
+  );
+
+  /**
+   * Issue #204: Open the RegisterModal for the given resource.
+   */
+  const handleOpenRegister = useCallback((resource: Resource) => {
+    setRegisterResource(resource);
   }, []);
 
+  /**
+   * Issue #204: Called when on-chain registration completes successfully.
+   * Updates the resource in local state to registered with the tx hash and shows a toast.
+   * The modal stays open on its success step (explorer link) until the user closes it.
+   */
+  const handleRegisterSuccess = useCallback(
+    (message: string, txHash: string) => {
+      const registeredId = registerResource?.id;
+      if (registeredId) {
+        setResources((prev) =>
+          prev.map((r) =>
+            r.id === registeredId
+              ? {
+                  ...r,
+                  onchainStatus: "registered",
+                  onchainTxHash: txHash,
+                }
+              : r
+          )
+        );
+      }
+      toast.success(message);
+    },
+    [registerResource, toast]
+  );
+
+  const handleRegisterError = useCallback((message: string) => {
+    toast.error(message);
+  }, [toast]);
+
+  /**
+   * Issue #220: Open the delist confirmation for the given resource.
+   */
+  const handleOpenDelist = useCallback((resource: Resource) => {
+    setDelistError(null);
+    setDelistTarget(resource);
+  }, []);
+
+  const handleCloseDelist = useCallback(() => {
+    setDelistTarget(null);
+    setDelistError(null);
+  }, []);
+
+  /**
+   * Issue #220: Delist the resource, then drop it from the local list. The
+   * modal stays open on failure so the server message stays visible.
+   */
+  const handleConfirmDelist = useCallback(async () => {
+    const target = delistTarget;
+    if (!target) return;
+
+    if (isOffline) {
+      // Queued offline — no spinner, just a Queued confirmation.
+      await enqueueMutation({
+        kind: "delist",
+        payload: { resourceId: target.id, title: target.title },
+        idempotencyKey: `delist:${target.id}`,
+      });
+      setDelistTarget(null);
+      toast.info("Queued — delist will complete when you're back online");
+      return;
+    }
+
+    setDelisting(true);
+    setDelistError(null);
+
+    try {
+      await delistResource(target.id);
+      setResources((prev) => prev.filter((r) => r.id !== target.id));
+      setDelistTarget(null);
+      toast.success("Resource delisted");
+    } catch (err) {
+      logError("publisherResources.delist", err);
+      setDelistError(err instanceof Error ? err.message : "Failed to delist resource");
+    } finally {
+      setDelisting(false);
+    }
+  }, [delistTarget, isOffline, toast]);
+
   const filteredResources = useMemo(() => {
+    let result = resources;
+
     const query = search.trim().toLowerCase();
-    if (!query) return resources;
-    return resources.filter((resource) =>
-      [
-        resource.title,
-        resource.publisherName,
-        resource.walletAddress,
-        resource.resourceType,
-        resource.accessUrl,
-      ].some((value) => value?.toLowerCase().includes(query))
-    );
-  }, [resources, search]);
+    if (query) {
+      result = result.filter((resource) =>
+        [
+          resource.title,
+          resource.publisherName,
+          resource.walletAddress,
+          resource.resourceType,
+          resource.accessUrl,
+        ].some((value) => value?.toLowerCase().includes(query))
+      );
+    }
+
+    if (verificationFilter !== "all") {
+      result = result.filter((r) => r.verificationStatus === verificationFilter);
+    }
+
+    if (onchainStatusFilter !== "all") {
+      const isRegistered = onchainStatusFilter === "registered";
+      result = result.filter((r) => (r.onchainStatus === "registered") === isRegistered);
+    }
+
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case "newest":
+          return new Date(b.publishedAt ?? b.updatedAt ?? 0).getTime() - new Date(a.publishedAt ?? a.updatedAt ?? 0).getTime();
+        case "price_asc":
+          return parseFloat(a.price || "0") - parseFloat(b.price || "0");
+        case "price_desc":
+          return parseFloat(b.price || "0") - parseFloat(a.price || "0");
+        case "title":
+          return a.title.localeCompare(b.title);
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [resources, search, verificationFilter, onchainStatusFilter, sortBy]);
+
+  const bulkSelection = useBulkSelection(filteredResources);
+  const selectedResources = useMemo(
+    () => resources.filter((resource) => bulkSelection.selectedIds.has(resource.id)),
+    [resources, bulkSelection.selectedIds],
+  );
+
+  const prepareBulkPriceAt = useCallback(
+    async (queue: Resource[], price: string, index: number, completed: number) => {
+      const resource = queue[index];
+      if (!resource) return;
+      try {
+        const prepared = await prepareEditPrice(resource.id, price);
+        setPendingBulkPrice({
+          resource,
+          index,
+          unsignedXdr: prepared.unsignedXdr,
+          networkPassphrase: prepared.networkPassphrase,
+        });
+      } catch (err) {
+        logError("publisherResources.bulkPrice.prepare", err);
+        setBulkBusy(false);
+        setBulkPriceQueue([]);
+        setPendingBulkPrice(null);
+        toast.error(
+          `Bulk price update stopped after ${completed} of ${queue.length} resources: ${
+            err instanceof Error ? err.message : "Could not prepare a price update."
+          }`,
+        );
+      }
+    },
+    [toast],
+  );
+
+  const handleStartBulkPrice = useCallback(() => {
+    const price = bulkPriceValue.trim();
+    const validationError = validatePrice(price);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    if (selectedResources.length === 0) return;
+    const queue = [...selectedResources];
+    setBulkPriceQueue(queue);
+    setBulkPriceCompleted(0);
+    setBulkPriceVisible(false);
+    setBulkBusy(true);
+    void prepareBulkPriceAt(queue, price, 0, 0);
+  }, [bulkPriceValue, prepareBulkPriceAt, selectedResources, toast]);
+
+  const handleBulkPriceSigned = useCallback(
+    async (signedXdr: string) => {
+      const pending = pendingBulkPrice;
+      if (!pending) return;
+      try {
+        await submitPriceEdit(pending.resource.id, signedXdr, bulkPriceValue.trim());
+        setResources((previous) =>
+          previous.map((resource) =>
+            resource.id === pending.resource.id
+              ? { ...resource, price: bulkPriceValue.trim() }
+              : resource,
+          ),
+        );
+        const completed = pending.index + 1;
+        setBulkPriceCompleted(completed);
+        setPendingBulkPrice(null);
+        if (completed === bulkPriceQueue.length) {
+          setBulkBusy(false);
+          setBulkPriceQueue([]);
+          bulkSelection.clear();
+          toast.success(`Price updated for ${completed} resources`);
+        } else {
+          await prepareBulkPriceAt(
+            bulkPriceQueue,
+            bulkPriceValue.trim(),
+            completed,
+            completed,
+          );
+        }
+      } catch (err) {
+        logError("publisherResources.bulkPrice.submit", err);
+        setPendingBulkPrice(null);
+        setBulkBusy(false);
+        setBulkPriceQueue([]);
+        toast.error(
+          `Bulk price update stopped after ${pending.index} of ${bulkPriceQueue.length} resources: ${
+            err instanceof Error ? err.message : "Could not submit a price update."
+          }`,
+        );
+      }
+    },
+    [bulkPriceQueue, bulkPriceValue, bulkSelection, pendingBulkPrice, prepareBulkPriceAt, toast],
+  );
+
+  const handleCancelBulkPrice = useCallback(() => {
+    setPendingBulkPrice(null);
+    setBulkPriceQueue([]);
+    setBulkBusy(false);
+    if (bulkPriceCompleted > 0) {
+      toast.info(`Bulk price update cancelled after ${bulkPriceCompleted} resources`);
+    }
+  }, [bulkPriceCompleted, toast]);
+
+  const handleBulkDelist = useCallback(async () => {
+    const targets = selectedResources;
+    if (targets.length === 0) return;
+    setBulkBusy(true);
+    const completedIds = new Set<string>();
+    let failed = 0;
+    let firstError: string | null = null;
+    try {
+      for (const resource of targets) {
+        try {
+          if (isOffline) {
+            await enqueueMutation({
+              kind: "delist",
+              payload: { resourceId: resource.id, title: resource.title },
+              idempotencyKey: `delist:${resource.id}`,
+            });
+          } else {
+            await delistResource(resource.id);
+            completedIds.add(resource.id);
+          }
+        } catch (err) {
+          failed += 1;
+          firstError ??= err instanceof Error ? err.message : "Unable to delist resource.";
+          logError("publisherResources.bulkDelist", err);
+        }
+      }
+      if (!isOffline && completedIds.size > 0) {
+        setResources((previous) =>
+          previous.filter((resource) => !completedIds.has(resource.id)),
+        );
+        if (failed > 0) {
+          completedIds.forEach((id) => bulkSelection.toggle(id));
+        }
+      }
+      setBulkDelistVisible(false);
+      if (failed > 0) {
+        toast.error(
+          `${completedIds.size + (isOffline ? targets.length - failed : 0)} of ${targets.length} ${
+            isOffline ? "queued" : "delisted"
+          }; ${failed} failed. ${firstError ?? ""}`.trim(),
+        );
+      } else {
+        bulkSelection.clear();
+        toast.success(
+          isOffline
+            ? `Queued ${targets.length} resources to delist`
+            : `Delisted ${targets.length} resources`,
+        );
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [bulkSelection, isOffline, selectedResources, toast]);
 
   const renderStoredKeyLoading = () => (
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
-      <StatusBar style="dark" />
+      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <View style={[styles.container, styles.emptyState]}>
         <ActivityIndicator color={colors.primary} size="large" />
         <Text style={styles.emptyBody}>Checking saved API key…</Text>
@@ -432,7 +917,7 @@ export function PublisherResourcesScreen() {
 
   const renderAuthForm = () => (
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
-      <StatusBar style="dark" />
+      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <View style={styles.container}>
         <View style={styles.authSection}>
           <Text style={typography.title}>Publisher Resources</Text>
@@ -467,6 +952,14 @@ export function PublisherResourcesScreen() {
             <Text style={[shared.buttonText, shared.primaryButtonText]}>
               {loading ? "Authenticating…" : "Authenticate"}
             </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setShowSignup(true)}
+            disabled={loading}
+            style={[shared.button, styles.secondaryButton, loading && styles.disabledButton]}
+          >
+            <Text style={styles.secondaryButtonText}>Create a publisher account</Text>
           </Pressable>
 
           <Pressable onPress={goToPublicCatalog} style={styles.secondaryButton}>
@@ -507,17 +1000,18 @@ export function PublisherResourcesScreen() {
         </View>
       </View>
 
-      {toast ? (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      ) : null}
+
+      <PublisherSignupSheet
+        visible={showSignup}
+        onClose={() => setShowSignup(false)}
+        onSuccess={handleSignupSuccess}
+      />
     </SafeAreaView>
   );
 
   const renderResourcesList = () => (
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
-      <StatusBar style="dark" />
+      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <FlatList
         data={loading ? null : filteredResources}
         keyExtractor={(item) => item.id}
@@ -548,6 +1042,156 @@ export function PublisherResourcesScreen() {
               clearButtonMode="while-editing"
             />
 
+            <View>
+              <Text style={styles.label}>Sort by</Text>
+              <View style={styles.filterRow}>
+                {(["newest", "price_asc", "price_desc", "title"] as const).map((option) => {
+                  const labels: Record<typeof option, string> = {
+                    newest: "Newest",
+                    price_asc: "Price: Low to High",
+                    price_desc: "Price: High to Low",
+                    title: "Title",
+                  };
+                  const isActive = sortBy === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      onPress={() => setSortBy(option)}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: isActive }}
+                      accessibilityLabel={labels[option]}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                        {labels[option]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View>
+              <Text style={styles.label}>Verification Status</Text>
+              <View style={styles.filterRow}>
+                {(["all", "verified", "pending", "rejected"] as const).map((option) => {
+                  const labels: Record<typeof option, string> = {
+                    all: "All",
+                    verified: "Verified",
+                    pending: "Pending",
+                    rejected: "Rejected",
+                  };
+                  const isActive = verificationFilter === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      onPress={() => setVerificationFilter(option)}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: isActive }}
+                      accessibilityLabel={labels[option]}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                        {labels[option]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View>
+              <Text style={styles.label}>On-Chain Status</Text>
+              <View style={styles.filterRow}>
+                {(["all", "registered", "unregistered"] as const).map((option) => {
+                  const labels: Record<typeof option, string> = {
+                    all: "All",
+                    registered: "Registered",
+                    unregistered: "Not Registered",
+                  };
+                  const isActive = onchainStatusFilter === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      onPress={() => setOnchainStatusFilter(option)}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: isActive }}
+                      accessibilityLabel={labels[option]}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                        {labels[option]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.bulkControls}>
+              <Pressable
+                onPress={bulkSelection.toggleAllVisible}
+                disabled={bulkBusy || loading || filteredResources.length === 0}
+                style={styles.bulkButton}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  bulkSelection.allVisibleSelected
+                    ? "Clear visible resource selection"
+                    : "Select all visible resources"
+                }
+                accessibilityState={{
+                  disabled: bulkBusy || loading || filteredResources.length === 0,
+                }}
+              >
+                <Text style={styles.bulkButtonText}>
+                  {bulkSelection.allVisibleSelected ? "Clear visible" : "Select visible"}
+                </Text>
+              </Pressable>
+              {bulkSelection.selectedCount > 0 ? (
+                <>
+                  <Text style={styles.label}>
+                    {bulkSelection.selectedCount} selected
+                  </Text>
+                  <Pressable
+                    onPress={() => setBulkPriceVisible(true)}
+                    disabled={bulkBusy}
+                    style={styles.bulkButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Set price for selected resources"
+                  >
+                    <Text style={styles.bulkButtonText}>Set price</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setBulkDelistVisible(true)}
+                    disabled={bulkBusy}
+                    style={[styles.bulkButton, styles.bulkDangerButton]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delist selected resources"
+                  >
+                    <Text style={[styles.bulkButtonText, { color: colors.danger }]}>
+                      Delist
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={bulkSelection.clear}
+                    disabled={bulkBusy}
+                    style={styles.bulkButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear selected resources"
+                  >
+                    <Text style={styles.bulkButtonText}>Clear selection</Text>
+                  </Pressable>
+                </>
+              ) : null}
+              {bulkBusy ? (
+                <Text style={styles.label}>
+                  {bulkPriceQueue.length > 0
+                    ? `Price update ${bulkPriceCompleted + 1} of ${bulkPriceQueue.length}`
+                    : "Applying bulk action…"}
+                </Text>
+              ) : null}
+            </View>
+
             {error ? (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{error}</Text>
@@ -565,19 +1209,70 @@ export function PublisherResourcesScreen() {
               </View>
             ) : null}
 
+            <Pressable
+              onPress={() => navigation.navigate("PublishResource")}
+              style={styles.publishButton}
+              accessibilityRole="button"
+              accessibilityLabel="Publish a link"
+            >
+              <Text style={styles.publishButtonText}>Publish a link</Text>
+            </Pressable>
+
             <Pressable onPress={handleLogout} style={styles.logoutButton}>
               <Text style={styles.logoutButtonText}>Logout</Text>
             </Pressable>
           </View>
         }
         renderItem={({ item }) => (
-          <ResourceCard
-            resource={item}
-            onCopyUrl={setToast}
-            editablePrice={true}
-            onPriceUpdated={handlePriceUpdated}
-            onTransferOwnership={handleOpenTransfer}
-          />
+          <Pressable
+            testID={`bulk-row-${item.id}`}
+            onLongPress={() => bulkSelection.toggle(item.id)}
+            delayLongPress={300}
+            accessibilityRole="button"
+            accessibilityLabel={`Bulk actions for ${item.title}`}
+            accessibilityHint="Long-press to toggle selection for bulk actions"
+          >
+            <View style={styles.selectionRow}>
+              <Pressable
+                onPress={() => bulkSelection.toggle(item.id)}
+                disabled={bulkBusy}
+                style={[
+                  styles.selectionButton,
+                  bulkSelection.isSelected(item.id) && styles.selectionButtonActive,
+                ]}
+                accessibilityRole="checkbox"
+                accessibilityState={{
+                  checked: bulkSelection.isSelected(item.id),
+                  disabled: bulkBusy,
+                }}
+                accessibilityLabel={`Select ${item.title}`}
+              >
+                <Text style={styles.bulkButtonText}>
+                  {bulkSelection.isSelected(item.id) ? "Selected" : "Select"}
+                </Text>
+              </Pressable>
+            </View>
+            <ResourceCard
+              resource={item}
+              onCopyUrl={toast.info}
+              editablePrice={true}
+              onPriceUpdated={handlePriceUpdated}
+              onTransferOwnership={handleOpenTransfer}
+              onRegister={handleOpenRegister}
+              onDelist={handleOpenDelist}
+            />
+            <Pressable
+              onPress={() =>
+                navigation.navigate("PublisherResourceDetail", { resourceId: item.id })
+              }
+              style={styles.manageButton}
+              accessibilityRole="button"
+              accessibilityLabel={`Manage ${item.title}`}
+              accessibilityHint="Opens stats, on-chain info and actions for this resource"
+            >
+              <Text style={styles.manageButtonText}>Manage resource ›</Text>
+            </Pressable>
+          </Pressable>
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={() =>
@@ -596,11 +1291,6 @@ export function PublisherResourcesScreen() {
         }
       />
 
-      {toast ? (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      ) : null}
 
       {transferResource ? (
         <TransferOwnershipModal
@@ -608,6 +1298,169 @@ export function PublisherResourcesScreen() {
           visible={true}
           onClose={() => setTransferResource(null)}
           onSuccess={handleTransferSuccess}
+        />
+      ) : null}
+
+      {registerResource ? (
+        <RegisterModal
+          resource={registerResource}
+          visible={true}
+          onClose={() => setRegisterResource(null)}
+          onSuccess={handleRegisterSuccess}
+          onError={handleRegisterError}
+        />
+      ) : null}
+
+      <Modal
+        visible={delistTarget !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseDelist}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard} testID="delist-modal">
+            <Text style={typography.title}>Delist resource?</Text>
+            <Text style={[typography.body, styles.modalBody]}>
+              {delistTarget?.title} will no longer be listed in the public catalog.
+            </Text>
+
+            {delistError ? (
+              <Text style={styles.errorText} accessibilityRole="alert">
+                {delistError}
+              </Text>
+            ) : null}
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={handleCloseDelist}
+                disabled={delisting}
+                style={[shared.button, styles.modalCancelButton]}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel delist"
+                accessibilityState={{ disabled: delisting }}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void handleConfirmDelist()}
+                disabled={delisting}
+                style={[
+                  shared.button,
+                  styles.modalConfirmButton,
+                  delisting ? styles.disabledButton : null,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm delist"
+                accessibilityHint="Removes this resource from the public catalog"
+                accessibilityState={{ disabled: delisting, busy: delisting }}
+              >
+                {delisting ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={shared.buttonText}>Delist</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={bulkDelistVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!bulkBusy) setBulkDelistVisible(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={typography.title}>Delist selected resources?</Text>
+            <Text style={[typography.body, styles.modalBody]}>
+              {selectedResources.length} selected resources will be removed from the public
+              catalog. This action cannot be undone.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setBulkDelistVisible(false)}
+                disabled={bulkBusy}
+                style={[shared.button, styles.modalCancelButton]}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel bulk delist"
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void handleBulkDelist()}
+                disabled={bulkBusy}
+                style={[shared.button, styles.modalConfirmButton]}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm bulk delist"
+                accessibilityState={{ disabled: bulkBusy, busy: bulkBusy }}
+              >
+                {bulkBusy ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={shared.buttonText}>Delist {selectedResources.length}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={bulkPriceVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBulkPriceVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={typography.title}>Set price for selected resources</Text>
+            <Text style={[typography.body, styles.modalBody]}>
+              A separate Stellar transaction will be prepared and signed for each of the{" "}
+              {selectedResources.length} selected resources.
+            </Text>
+            <TextInput
+              value={bulkPriceValue}
+              onChangeText={setBulkPriceValue}
+              placeholder="New price"
+              placeholderTextColor={colors.textSubtle}
+              keyboardType="decimal-pad"
+              style={styles.bulkInput}
+              accessibilityLabel="Bulk price"
+            />
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setBulkPriceVisible(false)}
+                style={[shared.button, styles.modalCancelButton]}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel bulk price"
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleStartBulkPrice}
+                style={[shared.button, styles.modalConfirmButton]}
+                accessibilityRole="button"
+                accessibilityLabel="Continue bulk price update"
+              >
+                <Text style={shared.buttonText}>Continue</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {pendingBulkPrice ? (
+        <SignTransactionSheet
+          visible
+          unsignedXdr={pendingBulkPrice.unsignedXdr}
+          networkPassphrase={pendingBulkPrice.networkPassphrase}
+          action={`update the price for ${pendingBulkPrice.resource.title}`}
+          onSigned={handleBulkPriceSigned}
+          onCancel={handleCancelBulkPrice}
         />
       ) : null}
     </SafeAreaView>

@@ -1,0 +1,140 @@
+name: Nightly smoke
+
+# Builds both platforms every night and runs the Maestro smoke flow against
+# staging, so drift between the app and the server shows up before a release.
+# Owner: mobile maintainers (see CODEOWNERS). Schedule: 02:30 UTC daily, plus
+# manual runs. Failures are reported by scripts/nightly-report.ts.
+
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+# One nightly at a time; a manual run waits instead of piling up runners.
+concurrency:
+  group: nightly-smoke
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  EXPO_PUBLIC_API_URL: ${{ vars.STAGING_API_URL }}
+  EXPO_PUBLIC_NETWORK: testnet
+  MAESTRO_VERSION: "1.39.13"
+
+jobs:
+  android:
+    # Never runs on forks: they have no staging access and should not burn minutes.
+    if: github.repository == 'mind-vault-1/mindvault_mobile'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+      - name: Build release APK
+        run: |
+          npx expo prebuild --platform android --no-install
+          cd android && ./gradlew assembleRelease --no-daemon
+      - name: Install Maestro
+        run: |
+          curl -fsSL -o maestro.zip "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          unzip -q maestro.zip -d "$HOME"
+          echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
+      - name: Write smoke flow
+        run: |
+          mkdir -p smoke
+          printf '%s\n' \
+            'appId: app.mindvault.mobile' \
+            '---' \
+            '- launchApp:' \
+            '    clearState: true' \
+            '- extendedWaitUntil:' \
+            '    visible: "MindVault"' \
+            '    timeout: 30000' \
+            '- takeScreenshot: launch' > smoke/launch.yaml
+      - name: Run smoke flow on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          script: |
+            adb install android/app/build/outputs/apk/release/app-release.apk
+            maestro test smoke/launch.yaml --format junit --output smoke/report.xml --test-output-dir smoke/out
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nightly-android
+          path: smoke/
+          retention-days: 14
+
+  ios:
+    if: github.repository == 'mind-vault-1/mindvault_mobile'
+    runs-on: macos-14
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build simulator app
+        run: |
+          npx expo prebuild --platform ios
+          xcodebuild -workspace ios/MindVault.xcworkspace -scheme MindVault -configuration Release \
+            -sdk iphonesimulator -derivedDataPath build CODE_SIGNING_ALLOWED=NO
+      - name: Install Maestro
+        run: |
+          curl -fsSL -o maestro.zip "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          unzip -q maestro.zip -d "$HOME"
+          echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
+      - name: Run smoke flow on simulator
+        run: |
+          mkdir -p smoke
+          printf '%s\n' \
+            'appId: app.mindvault.mobile' \
+            '---' \
+            '- launchApp:' \
+            '    clearState: true' \
+            '- extendedWaitUntil:' \
+            '    visible: "MindVault"' \
+            '    timeout: 30000' \
+            '- takeScreenshot: launch' > smoke/launch.yaml
+          xcrun simctl boot "iPhone 15" || true
+          xcrun simctl install booted build/Build/Products/Release-iphonesimulator/MindVault.app
+          maestro test smoke/launch.yaml --format junit --output smoke/report.xml --test-output-dir smoke/out
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nightly-ios
+          path: smoke/
+          retention-days: 14
+
+  report:
+    needs: [android, ios]
+    if: always() && github.repository == 'mind-vault-1/mindvault_mobile'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Open or update the tracking issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+          IOS_RESULT: ${{ needs.ios.result }}
+        run: node --experimental-strip-types scripts/nightly-report.ts

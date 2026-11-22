@@ -13,6 +13,8 @@ export interface Resource {
   onchainTxHash?: string;
   listed: boolean;
   accessUrl: string;
+  mimeType?: string;
+  thumbnailUrl?: string;
   publishedAt?: string;
   updatedAt?: string;
 }
@@ -23,7 +25,14 @@ export interface CatalogFilters {
   search?: string;
   verificationStatus?: "all" | VerificationStatus;
   resourceType?: "all" | "file" | "link";
+  sort?: CatalogSort;
+  minPrice?: string;
+  maxPrice?: string;
+  /** Wallet address of the publisher whose resources to show. */
+  owner?: string;
 }
+
+export type CatalogSort = "newest" | "price_asc" | "price_desc" | "title";
 
 export interface RegistryStatus {
   resourceCount: number;

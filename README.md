@@ -10,6 +10,14 @@ React Native companion app for [MindVault](https://github.com/mindvault) — bro
 - Copy resource access URLs
 - On-chain registry count in the header
 
+## Architecture
+
+New here? Read the [architecture guide](docs/ARCHITECTURE.md) for the layers, data flow, storage keys and the signing and payment flows.
+
+## Privacy
+
+The [privacy and data-handling notes](docs/PRIVACY.md) list every value the app stores, how long it is kept and how to delete it, plus what leaves the device and what never does. Settings links to them from the **Local Data** section. Update them in the same PR as any change that stores new data or sends data somewhere new.
+
 ## Prerequisites
 
 - Node.js 18+
@@ -41,6 +49,22 @@ Find your LAN IP with:
 - **Windows**: `ipconfig` (look for "IPv4 Address" under your active network adapter)
 - **macOS/Linux**: `ifconfig` or `ip a` (look for "inet" address under your active network interface)
 
+## Deep links
+
+The app registers the `mindvault://` scheme (declared in `app.json`) and routes resource links to the detail screen — for example `mindvault://resources/abc` or `https://<your-api-host>/resources/abc`.
+
+Try it from a terminal against a running simulator/emulator:
+
+```bash
+# iOS
+npx uri-scheme open "mindvault://resources/abc" --ios
+
+# Android
+npx uri-scheme open "mindvault://resources/abc" --android
+```
+
+The linking config lives in `src/linking.ts` and reuses the same `parseResourceId` parser as the QR scanner.
+
 ## Publisher Authentication
 
 Publisher resources require an API key for authentication:
@@ -64,14 +88,6 @@ The app defaults to the Stellar **Testnet**. The passphrase `Test SDF Network ; 
 **One important exception:** for transactions built through the register and price-edit flows (`prepareRegister` / `prepareEditPrice` in `src/api/resources.ts`), the passphrase used to sign is whatever the **backend API returns** in its response — the client's `app.json` value is only a fallback if the backend omits it. In practice, this means the network for those specific flows is ultimately a backend decision, not purely a client config one.
 
 `src/screens/DevSignerScreen.tsx` is a developer-only debug screen and intentionally hardcodes `Networks.TESTNET` regardless of any config — it's not affected by the `app.json` value and always targets testnet.
-
-## Publisher Authentication
-
-Publisher resources require an API key for authentication:
-
-- **API Key Origin:** Publisher API keys are issued by your MindVault backend server.
-- **Server Configuration:** On self-hosted servers, configure your keys using the `PUBLISHER_API_KEYS` environment variable or generate one through your server's admin interface.
-- **App Usage:** Enter the key in the **Publisher Resources** tab or Publisher Settings modal to view and manage your resources.
 
 ## Theme Preferences
 
@@ -97,6 +113,25 @@ npm start
 
 Then press `i` for iOS simulator, `a` for Android emulator, or scan the QR code with Expo Go.
 
+## Testing
+
+See the [testing guide](docs/TESTING.md) for writing tests, mocking patterns, and test utilities.
+
+```bash
+npm test
+npm test -- --watch
+npm test -- --coverage
+```
+
+## Build and Release
+
+See the [release guide](docs/RELEASE.md) for EAS build profiles, store submission,
+and secret-handling guidance.
+
+## Native Project Generation
+
+The `android/` and `ios/` directories are generated at build time. See the [native guide](docs/NATIVE.md) for details.
+
 ## Available npm scripts
 
 | Script              | Description                                                                 |
@@ -106,6 +141,7 @@ Then press `i` for iOS simulator, `a` for Android emulator, or scan the QR code 
 | `npm run ios`       | Run the app on an iOS device or simulator using Expo's development build    |
 | `npm run web`       | Run the app in a web browser                                                |
 | `npm run typecheck` | Run TypeScript type checking without emitting files                         |
+| `npm test`          | Run tests with Jest                                                         |
 
 ## Related
 

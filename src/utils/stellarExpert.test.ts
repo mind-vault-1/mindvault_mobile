@@ -1,3 +1,6 @@
+import { resetNetworkForTests, setNetwork } from "../config/network";
+import { stellarExpertAccountUrl, stellarExpertTxUrl } from "./stellarExpert";
+
 jest.mock("expo-constants", () => ({
   __esModule: true,
   default: {
@@ -10,7 +13,7 @@ jest.mock("expo-constants", () => ({
   },
 }));
 
-import { stellarExpertAccountUrl, stellarExpertTxUrl } from "./stellarExpert";
+beforeEach(() => resetNetworkForTests());
 
 describe("stellarExpert URL helpers", () => {
   it("uses the configured explorer network when no explicit network is provided", () => {
@@ -19,6 +22,13 @@ describe("stellarExpert URL helpers", () => {
     );
     expect(stellarExpertAccountUrl({ accountId: "GB123" })).toBe(
       "https://stellar.expert/explorer/public/account/GB123"
+    );
+  });
+
+  it("follows a runtime network switch without a restart", () => {
+    setNetwork("testnet");
+    expect(stellarExpertTxUrl({ txHash: "abc123" })).toBe(
+      "https://stellar.expert/explorer/testnet/tx/abc123"
     );
   });
 });

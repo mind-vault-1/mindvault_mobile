@@ -12,7 +12,7 @@ Closes #
 
 ## Checklist
 - [ ] Linked relevant issue(s) in the PR description.
-- [ ] `npm run typecheck` passes cleanly without errors.
+- [ ] `npm run typecheck`, `npm run lint` and `npm test` pass locally (output pasted below).
 - [ ] Performed manual mobile verification (tested on iOS/Android simulator or physical device).
 - [ ] Included screenshots, screen recording, or a short manual verification note for UI changes.
 - [ ] Documented any backend assumptions or API requirements.
