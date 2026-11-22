@@ -17,6 +17,8 @@ import type { ThemeColors } from "../theme";
 import { spacing } from "../theme";
 import { storeApiKey } from "../services/secureStorage";
 import { registerPublisher } from "../api/publishers";
+import { copySensitive } from "../utils/clipboard";
+import { useToast } from "./ToastProvider";
 
 interface PublisherSignupSheetProps {
   visible: boolean;
@@ -197,6 +199,7 @@ export function PublisherSignupSheet({
   onSuccess,
 }: PublisherSignupSheetProps) {
   const { colors, typography } = useAppTheme();
+  const toast = useToast();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [phase, setPhase] = useState<"form" | "loading" | "success">("form");
@@ -279,8 +282,13 @@ export function PublisherSignupSheet({
   };
 
   const handleCopyKey = async () => {
-    await Alert.alert("Copied!", "API key copied to clipboard");
-    setKeyCopied(true);
+    if (!apiKey) return;
+    try {
+      await copySensitive(apiKey, toast.info);
+      setKeyCopied(true);
+    } catch {
+      toast.error("Unable to copy the API key.");
+    }
   };
 
   const handleConfirmSaved = () => {
