@@ -20,6 +20,8 @@ jest.mock("../api/horizon", () => ({
   buildAddUsdcTrustlineXdr: jest.fn(),
   submitSignedTransaction: jest.fn(),
 }));
+jest.mock("../services/wallet", () => ({ wipe: jest.fn() }));
+jest.mock("../services/secureStorage", () => ({ clearApiKey: jest.fn() }));
 jest.mock("react-native-qrcode-svg", () => "QRCode");
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
 jest.mock("react-native-safe-area-context", () => ({
@@ -28,6 +30,8 @@ jest.mock("react-native-safe-area-context", () => ({
 }));
 
 const mocked = wc as jest.Mocked<typeof wc>;
+const mockedWallet = jest.requireMock("../services/wallet") as { wipe: jest.Mock };
+const mockedSecureStorage = jest.requireMock("../services/secureStorage") as { clearApiKey: jest.Mock };
 const mockedHorizon = horizon as jest.Mocked<typeof horizon>;
 const ADDRESS = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7";
 const account = { topic: "t", address: ADDRESS, chainId: "stellar:testnet", walletName: "LOBSTR" };
@@ -94,6 +98,37 @@ describe("WalletScreen", () => {
     mocked.getConnectedAccount.mockRejectedValue(new Error("WalletConnect is not configured."));
     const { findByText } = await renderScreen();
     expect(await findByText("WalletConnect is not configured.")).toBeTruthy();
+  });
+
+  it("wipes the wallet, API key and session after typed confirmation", async () => {
+    mocked.getConnectedAccount.mockResolvedValue(account);
+    mocked.disconnectWallet.mockResolvedValue(undefined);
+    mockedWallet.wipe.mockResolvedValue(undefined);
+    mockedSecureStorage.clearApiKey.mockResolvedValue(undefined);
+    const { getByLabelText, findByLabelText, queryByLabelText } = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText("Wipe wallet and sign out"));
+    });
+
+    const confirm = await findByLabelText("Erase wallet and sign out");
+    expect(confirm.props.accessibilityState.disabled).toBe(true);
+
+    fireEvent.changeText(getByLabelText("Type WIPE to confirm wipe"), "wipe");
+    expect(confirm.props.accessibilityState.disabled).toBe(true);
+
+    await act(async () => {
+      fireEvent.changeText(getByLabelText("Type WIPE to confirm wipe"), "WIPE");
+    });
+    await act(async () => {
+      fireEvent.press(getByLabelText("Erase wallet and sign out"));
+    });
+
+    expect(mockedWallet.wipe).toHaveBeenCalled();
+    expect(mockedSecureStorage.clearApiKey).toHaveBeenCalled();
+    expect(mocked.disconnectWallet).toHaveBeenCalled();
+    expect(await findByLabelText("Connect wallet")).toBeTruthy();
+    expect(queryByLabelText("Type WIPE to confirm wipe")).toBeNull();
   });
 
   it("disconnects", async () => {
