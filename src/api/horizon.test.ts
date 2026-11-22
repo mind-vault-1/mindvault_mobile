@@ -2,6 +2,7 @@ import { Account, Asset, Keypair, Operation, TransactionBuilder } from "@stellar
 
 import {
   buildAddUsdcTrustlineXdr,
+  checkUsdcForPayment,
   fundWithFriendbot,
   hasUsdcTrustline,
   submitSignedTransaction,
@@ -72,6 +73,63 @@ it("detects a USDC trustline", async () => {
     balances: [{ asset_type: "native", balance: "10" }],
   });
   await expect(hasUsdcTrustline(publicKey, config)).resolves.toBe(false);
+});
+
+it("allows a payment when the USDC trustline and balance cover the price", async () => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      balances: [{ asset_code: "USDC", asset_issuer: config.usdcIssuer, balance: "2.5000000" }],
+    }),
+  }) as unknown as typeof global.fetch;
+
+  await expect(checkUsdcForPayment("1.25", { publicKey })).resolves.toEqual({ status: "ok" });
+});
+
+it("reports a missing trustline before payment", async () => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ balances: [{ asset_type: "native", balance: "10" }] }),
+  }) as unknown as typeof global.fetch;
+
+  await expect(checkUsdcForPayment("1.25", { publicKey })).resolves.toEqual({
+    status: "missing-trustline",
+    message: "Your wallet needs a USDC trustline before you can pay.",
+  });
+});
+
+it("reports insufficient USDC before payment", async () => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      balances: [{ asset_code: "USDC", asset_issuer: config.usdcIssuer, balance: "0.5000000" }],
+    }),
+  }) as unknown as typeof global.fetch;
+
+  await expect(checkUsdcForPayment("1.25", { publicKey })).resolves.toEqual({
+    status: "insufficient-balance",
+    message: "Your wallet does not have enough USDC to cover this payment.",
+  });
+});
+
+it("warns and continues when Horizon is unavailable", async () => {
+  global.fetch = jest.fn().mockRejectedValue(new Error("offline")) as unknown as typeof global.fetch;
+
+  await expect(checkUsdcForPayment("1.25", { publicKey })).resolves.toEqual({
+    status: "unavailable",
+    warning: "Couldn't check your USDC balance right now.",
+  });
+});
+
+it("does not call Horizon without a wallet address", async () => {
+  await expect(checkUsdcForPayment("1.25")).resolves.toEqual({
+    status: "unavailable",
+    warning: "Connect a wallet to check your USDC balance before paying.",
+  });
+  expect(global.fetch).not.toHaveBeenCalled();
 });
 
 it("builds and submits a signed USDC trustline transaction", async () => {

@@ -14,6 +14,12 @@ import {
   submitRegister,
 } from './resources';
 import { getApiKey } from '../services/secureStorage';
+import {
+  EMPTY_BODY_HASH,
+  getRequestPath,
+  hashRequestBody,
+  signPublisherRequest,
+} from '../utils/requestSignature';
 
 jest.mock('../services/secureStorage', () => ({
   getApiKey: jest.fn(),
@@ -253,7 +259,7 @@ describe('publisher transaction endpoints', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(`${getApiBaseUrl()}${path}`);
     expect(init.method).toBe(method);
-    expect(init.headers).toEqual({
+    expect(init.headers).toMatchObject({
       'Content-Type': 'application/json',
       'x-api-key': API_KEY,
     });
@@ -262,6 +268,24 @@ describe('publisher transaction endpoints', () => {
     } else {
       expect(JSON.parse(init.body)).toEqual(body);
     }
+
+    if (method === 'GET') {
+      expect(init.headers['X-Timestamp']).toBeUndefined();
+      expect(init.headers['X-Signature']).toBeUndefined();
+      return;
+    }
+
+    const timestamp: string = init.headers['X-Timestamp'];
+    expect(timestamp).toMatch(/^\d{10}$/);
+    expect(init.headers['X-Signature']).toBe(
+      signPublisherRequest({
+        secret: API_KEY,
+        method,
+        path: getRequestPath(path),
+        timestamp,
+        bodyHash: body === undefined ? EMPTY_BODY_HASH : hashRequestBody(JSON.stringify(body)),
+      })
+    );
   }
 
   beforeEach(() => {

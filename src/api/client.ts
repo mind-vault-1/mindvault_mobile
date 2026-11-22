@@ -31,6 +31,9 @@ export class ApiError extends Error {
 /** A fixed message, or one picked by the HTTP status when the server sends no message. */
 export type FallbackMessage = string | ((status: number) => string);
 
+/** Validates and narrows an untrusted JSON/text response body. */
+export type ResponseSchema<T> = (value: unknown) => T;
+
 export interface RequestOptions {
   method?: HttpMethod;
   headers?: Record<string, string>;
@@ -39,6 +42,16 @@ export interface RequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   fallbackMessage?: FallbackMessage;
+  /** Parse the body as text instead of JSON (x402 resources can be plain text). */
+  responseType?: "json" | "text";
+  /** For text responses, don't buffer opaque/binary bodies; only headers are used. */
+  skipBodyForBinary?: boolean;
+  /** Use only `fallbackMessage` for HTTP errors, ignoring a server-supplied body. */
+  ignoreErrorBody?: boolean;
+  /** Runs after parsing, so API modules can validate the shape they expect. */
+  schema?: ResponseSchema<unknown>;
+  /** Set false for a GET that must not be replayed, e.g. a payment attempt. */
+  retry?: boolean;
 }
 
 export interface ApiResponse<T> {
@@ -59,6 +72,20 @@ function isRetryable(error: unknown): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readTextBody(
+  res: Response,
+  options: RequestOptions,
+  interruption: () => ApiError | null
+): Promise<string> {
+  const contentType = res.headers?.get?.("content-type") ?? "";
+  const isTextual = !contentType || /text|json|xml|javascript/i.test(contentType);
+  if (options.skipBodyForBinary && !isTextual) return "";
+  if (typeof res.text !== "function") return "";
+  return res.text().catch((error: unknown) => {
+    throw interruption() ?? error;
+  });
 }
 
 async function send<T>(url: string, method: HttpMethod, options: RequestOptions): Promise<ApiResponse<T>> {
@@ -91,20 +118,35 @@ async function send<T>(url: string, method: HttpMethod, options: RequestOptions)
     });
 
     if (!res.ok) {
-      const message = await extractApiErrorMessage(
-        res,
-        resolveFallback(options.fallbackMessage, res.status)
-      );
+      const fallback = resolveFallback(options.fallbackMessage, res.status);
+      const message = options.ignoreErrorBody
+        ? fallback
+        : await extractApiErrorMessage(res, fallback);
       throw new ApiError("http", message, res.status, res.headers);
     }
 
     // A 204 No Content response has no body to parse.
-    const data = res.status === 204
+    const raw = res.status === 204
       ? undefined
-      : await res.json().catch((error: unknown) => {
-          throw interruption() ?? error;
-        });
-    return { data: data as T, status: res.status, headers: res.headers };
+      : options.responseType === "text"
+        ? await readTextBody(res, options, interruption)
+        : await res.json().catch((error: unknown) => {
+            throw interruption() ?? error;
+          });
+
+    let data: T;
+    if (options.schema) {
+      try {
+        data = options.schema(raw) as T;
+      } catch (error) {
+        throw error instanceof Error
+          ? error
+          : new Error("The server returned an unexpected response.");
+      }
+    } else {
+      data = raw as T;
+    }
+    return { data, status: res.status, headers: res.headers };
   } finally {
     clearTimeout(timer);
     callerSignal?.removeEventListener("abort", cancelFromCaller);
@@ -122,7 +164,7 @@ async function send<T>(url: string, method: HttpMethod, options: RequestOptions)
  */
 export async function request<T>(url: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
   const method = options.method ?? "GET";
-  const retries = method === "GET" ? GET_RETRY_LIMIT : 0;
+  const retries = method === "GET" && options.retry !== false ? GET_RETRY_LIMIT : 0;
 
   for (let attempt = 0; ; attempt += 1) {
     try {

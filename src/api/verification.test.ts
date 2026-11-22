@@ -28,7 +28,8 @@ describe("fetchVerification", () => {
     const result = await fetchVerification("res 1");
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `${getApiBaseUrl()}/resources/res%201/verification`
+      `${getApiBaseUrl()}/resources/res%201/verification`,
+      expect.objectContaining({ method: "GET" })
     );
     expect(result).toEqual(mockDetails);
   });
@@ -45,6 +46,16 @@ describe("fetchVerification", () => {
     await expect(fetchVerification("non-existent")).rejects.toThrow(
       "Verification result not found"
     );
+  });
+
+  it("rejects a response that does not match the verification schema", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ resourceId: "r1" }),
+    }) as unknown as typeof global.fetch;
+
+    await expect(fetchVerification("r1")).rejects.toThrow("The server returned an unexpected response.");
   });
 });
 
