@@ -1,9 +1,15 @@
 import React from "react";
-import { render, waitFor } from "@testing-library/react-native";
+import { act, render, waitFor } from "@testing-library/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SplashScreen from "expo-splash-screen";
 import { setupFetchMock } from "./src/test-utils";
 
-import App from "./App";
+import App, { BOOT_TIMEOUT_MS, resetSplashForTests } from "./App";
+
+jest.mock("expo-splash-screen", () => ({
+  preventAutoHideAsync: jest.fn().mockResolvedValue(undefined),
+  hideAsync: jest.fn().mockResolvedValue(undefined),
+}));
 
 const SAVED_URL = "http://192.168.1.20:4021";
 
@@ -43,6 +49,8 @@ beforeEach(async () => {
   await AsyncStorage.clear();
   await AsyncStorage.setItem(ONBOARDING_KEY, "true");
   mockLinkingProps = undefined;
+  jest.clearAllMocks();
+  resetSplashForTests();
   fetchMock = setupFetchMock();
 });
 
@@ -85,5 +93,34 @@ describe("App boot", () => {
     const route = state.routes[state.routes.length - 1];
     expect(route.name).toBe("ResourceDetail");
     expect(route.params).toEqual({ resourceId: "abc" });
+  });
+
+  it("keeps the splash visible until boot work completes, then hides it once", async () => {
+    const { findByText } = render(<App />);
+
+    expect(SplashScreen.preventAutoHideAsync).toHaveBeenCalledTimes(1);
+    expect(SplashScreen.hideAsync).not.toHaveBeenCalled();
+
+    await findByText("MindVault");
+    await waitFor(() => expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it("hides the splash after the boot timeout when startup hangs", async () => {
+    jest.useFakeTimers();
+    const getItem = jest.spyOn(AsyncStorage, "getItem").mockImplementation((key: string) =>
+      key === "mindvault_api_base_url" ? new Promise<string | null>(() => undefined) : Promise.resolve("true")
+    );
+
+    try {
+      render(<App />);
+      expect(SplashScreen.preventAutoHideAsync).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        jest.advanceTimersByTime(BOOT_TIMEOUT_MS);
+      });
+      expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
+    } finally {
+      getItem.mockRestore();
+      jest.useRealTimers();
+    }
   });
 });
