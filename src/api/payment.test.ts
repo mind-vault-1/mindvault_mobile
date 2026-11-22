@@ -217,8 +217,8 @@ describe("prepareResourceAccess", () => {
     });
 
     await expect(prepareResourceAccess(URL, "1.00")).resolves.toEqual({
-      type: "external",
-      url: URL,
+      type: "ready",
+      result: { type: "external", url: URL },
     });
     expect(text).not.toHaveBeenCalled();
   });

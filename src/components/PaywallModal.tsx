@@ -31,6 +31,7 @@ import { SignTransactionSheet } from "./SignTransactionSheet";
 import { LeaseSheet } from "./LeaseSheet";
 import { getRegistryClient } from "../api/leases";
 import { hapticError, hapticSuccess } from "../utils/haptics";
+import { getPublicKey } from "../services/wallet";
 
 type WalletNavigation = { navigate: (route: "Wallet") => void };
 
@@ -263,7 +264,11 @@ export function PaywallModal({
     try {
       // Only reached after the user presses Pay, so cancelling the sheet never
       // triggers a Horizon call. The signal stops an in-flight check on close.
-      const check = await checkUsdcForPayment(price, { signal: controller.signal });
+      const publicKey = await getPublicKey().catch(() => null);
+      const check = await checkUsdcForPayment(price, {
+        publicKey,
+        signal: controller.signal,
+      });
       if (!isActive(run)) return;
       if (check.status === "missing-trustline" || check.status === "insufficient-balance") {
         setErrorMsg(check.message);

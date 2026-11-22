@@ -1,5 +1,6 @@
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import * as ScreenCapture from "expo-screen-capture";
 import { Linking, type EmitterSubscription } from "react-native";
 
 import { signTransactionXdr } from "../api/resources";

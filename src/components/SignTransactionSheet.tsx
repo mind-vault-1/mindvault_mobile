@@ -111,6 +111,14 @@ export function SignTransactionSheet({
   }, [visible]);
 
   useEffect(() => {
+    if (!visible) return;
+    void ScreenCapture.preventScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => undefined);
+    return () => {
+      void ScreenCapture.allowScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => undefined);
+    };
+  }, [visible]);
+
+  useEffect(() => {
     if (!visible || !canUseSep7) return;
     let cancelled = false;
 

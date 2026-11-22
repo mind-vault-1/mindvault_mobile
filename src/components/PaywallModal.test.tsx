@@ -1,6 +1,6 @@
 import React from "react";
 import { Linking } from "react-native";
-import { act, fireEvent } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 
 import { checkUsdcForPayment } from "../api/horizon";
 import { appNetworkId, prepareResourceAccess, signPaymentTransaction, submitSignedPayment, type PaymentChallenge } from "../api/payment";
@@ -17,6 +17,9 @@ jest.mock("../utils/validateStellarSecret", () => ({
 }));
 jest.mock("../api/horizon", () => ({
   checkUsdcForPayment: jest.fn(),
+}));
+jest.mock("../services/wallet", () => ({
+  getPublicKey: jest.fn().mockResolvedValue("GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7"),
 }));
 jest.mock("@react-navigation/native", () => ({
   ...jest.requireActual("@react-navigation/native"),
@@ -122,7 +125,7 @@ it("shows challenge, signing and settlement progress and then text content", asy
   const screen = renderWithProviders(<PaywallModal {...props} />);
   fireEvent.press(await screen.findByText("Pay & Access"));
   expect(screen.getByText("Getting payment challenge…")).toBeTruthy();
-  expect(mockPrepare).toHaveBeenCalledWith(props.accessUrl, props.price);
+  await waitFor(() => expect(mockPrepare).toHaveBeenCalledWith(props.accessUrl, props.price));
   await act(async () => { prepare.resolve({ type: "payment", challenge }); });
   fireEvent.changeText(screen.getByLabelText("Stellar secret key"), "S-test-secret");
   await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Sign" })); });

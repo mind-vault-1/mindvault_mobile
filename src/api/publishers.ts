@@ -366,10 +366,9 @@ async function publisherKeyRequest<T>(
     });
     return data;
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) {
-      throw taggedError("Unauthorized: Invalid API key", error.status);
-    }
     if (error instanceof ApiError) {
+      if (error.status === undefined) throw error;
+      if (error.status === 401) throw taggedError("Unauthorized: Invalid API key", error.status);
       throw taggedError(redact(error.message, key), error.status);
     }
     throw error;

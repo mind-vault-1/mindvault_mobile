@@ -24,6 +24,7 @@ jest.mock("@stellar/stellar-sdk", () => ({
   Networks: { TESTNET: "Test SDF Network ; September 2015" },
   Asset: { native: jest.fn() },
   Operation: { payment: jest.fn() },
+  StrKey: { isValidEd25519SecretSeed: jest.fn().mockReturnValue(true) },
 }));
 
 const mockedUseFocusEffect = useFocusEffect as jest.Mock;
