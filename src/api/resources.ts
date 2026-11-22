@@ -1,8 +1,13 @@
 import { getDefaultApiBaseUrl, loadApiBaseUrl, saveApiBaseUrl } from "./apiSettings";
-import Constants from "expo-constants";
 import { Keypair, Transaction } from "@stellar/stellar-sdk";
 
 import { ApiError, request } from "./client";
+import {
+  getDefaultNetworkId,
+  getNetwork,
+  getNetworkConfig,
+  subscribeNetwork,
+} from "../config/network";
 import { getApiKey, storeApiKey, clearApiKey } from "../services/secureStorage";
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
@@ -11,12 +16,17 @@ import { signedRequestHeaders } from "../utils/requestSignature";
 
 let apiBaseUrl = getDefaultApiBaseUrl();
 
-export const DEFAULT_STELLAR_NETWORK =
-  (Constants.expoConfig?.extra?.network as string | undefined)?.trim().toLowerCase() || "testnet";
+export let DEFAULT_STELLAR_NETWORK = getDefaultNetworkId();
+export let DEFAULT_NETWORK_PASSPHRASE = getNetworkConfig().passphrase;
 
-export const DEFAULT_NETWORK_PASSPHRASE =
-  (Constants.expoConfig?.extra?.networkPassphrase as string | undefined) ??
-  "Test SDF Network ; September 2015";
+subscribeNetwork(() => {
+  DEFAULT_STELLAR_NETWORK = getNetwork();
+  DEFAULT_NETWORK_PASSPHRASE = getNetworkConfig().passphrase;
+});
+
+export function getCurrentNetworkPassphrase(): string {
+  return getNetworkConfig().passphrase;
+}
 
 export { getDefaultApiBaseUrl };
 

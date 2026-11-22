@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as ScreenCapture from "expo-screen-capture";
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Pressable,
   StyleSheet,
@@ -14,6 +15,7 @@ import { DEFAULT_NETWORK_PASSPHRASE, signTransactionXdr } from "../api/resources
 import { authenticate, isAvailable } from "../services/biometrics";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { buildSep7TransactionUri, parseSep7Callback } from "../utils/sep7";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
 
 const SCREEN_CAPTURE_KEY = "mindvault-sign-transaction-sheet";
@@ -49,6 +51,7 @@ function createStyles(colors: ThemeColors) {
     network: { color: colors.textMuted, fontSize: 12 },
     notice: { color: colors.textMuted, fontSize: 12 },
     warning: { color: colors.warning, backgroundColor: colors.warningBg, padding: 10, borderRadius: 8 },
+    walletPanel: { gap: 8, padding: 12, borderRadius: 12, backgroundColor: colors.neutralBg },
     input: {
       borderWidth: 1,
       borderColor: colors.border,
@@ -83,8 +86,10 @@ export function SignTransactionSheet({
   const [busy, setBusy] = useState(false);
   const [signError, setSignError] = useState<string | null>(null);
   const [biometricsUnavailable, setBiometricsUnavailable] = useState(false);
+  const [walletStatus, setWalletStatus] = useState<string | null>(null);
   const validation = useMemo(() => validateStellarSecret(secret), [secret]);
   const isNonProduction = /test|future network/i.test(networkPassphrase);
+  const canUseSep7 = !customSign && Boolean(unsignedXdr.trim());
 
   useEffect(() => {
     if (!visible) {
@@ -93,6 +98,7 @@ export function SignTransactionSheet({
       setBusy(false);
       setSignError(null);
       setBiometricsUnavailable(false);
+      setWalletStatus(null);
       return;
     }
     let cancelled = false;
@@ -104,20 +110,49 @@ export function SignTransactionSheet({
     };
   }, [visible]);
 
-  // Block screenshots/recording for as long as the secret input is on screen.
-  // A keyed tag lets this coexist with other screens that also block capture.
   useEffect(() => {
-    if (!visible) return undefined;
-    void ScreenCapture.preventScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => undefined);
-    return () => {
-      void ScreenCapture.allowScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => undefined);
+    if (!visible || !canUseSep7) return;
+    let cancelled = false;
+
+    const handleCallback = (url: string) => {
+      const result = parseSep7Callback(url);
+      if (!result || cancelled) return;
+      if (result.status === "signed" && result.signedXdr) {
+        setWalletStatus("Signed in your wallet — returning to MindVault…");
+        void onSigned(result.signedXdr);
+      } else if (result.status === "rejected") {
+        setWalletStatus("Signing was declined in your wallet. You can try again or use a secret key.");
+      } else {
+        setWalletStatus("The wallet returned an incomplete result. Try again or use a secret key.");
+      }
     };
-  }, [visible]);
+
+    const subscription = Linking.addEventListener("url", ({ url }) => handleCallback(url));
+    void Linking.getInitialURL()
+      .then((url) => {
+        if (url) handleCallback(url);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
+  }, [visible, canUseSep7, onSigned]);
 
   function cancel() {
     setSecret("");
     setTouched(false);
     onCancel();
+  }
+
+  async function openSep7Wallet() {
+    if (!canUseSep7) return;
+    setWalletStatus("Opening your wallet… Return here after signing.");
+    try {
+      await Linking.openURL(buildSep7TransactionUri(unsignedXdr, { message: `MindVault ${action}` }));
+    } catch {
+      setWalletStatus("No wallet app could be opened. Use a secret key below, or install a Stellar wallet.");
+    }
   }
 
   async function sign() {
@@ -172,6 +207,25 @@ export function SignTransactionSheet({
           <Text style={styles.network}>Network passphrase: {networkPassphrase}</Text>
           {isNonProduction ? (
             <Text style={styles.warning}>Development/test network — do not use a production account.</Text>
+          ) : null}
+          {canUseSep7 ? (
+            <View style={styles.walletPanel}>
+              <Text style={styles.notice}>
+                Prefer a wallet app? Open a SEP-7 signing request, then return here once it is signed.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open wallet app (SEP-7)"
+                onPress={() => void openSep7Wallet()}
+                disabled={busy}
+                style={[shared.button, styles.button, styles.secondary]}
+              >
+                <Text style={styles.secondaryText}>Sign with wallet app</Text>
+              </Pressable>
+              {walletStatus ? (
+                <Text accessibilityLiveRegion="polite" style={styles.notice}>{walletStatus}</Text>
+              ) : null}
+            </View>
           ) : null}
           {biometricsUnavailable ? (
             <Text style={styles.notice}>

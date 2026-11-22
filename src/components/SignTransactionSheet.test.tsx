@@ -1,10 +1,11 @@
 import React from "react";
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
-import * as ScreenCapture from "expo-screen-capture";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { Linking, type EmitterSubscription } from "react-native";
 
 import { signTransactionXdr } from "../api/resources";
 import { authenticate, isAvailable } from "../services/biometrics";
 import { ThemeProvider } from "../theme/ThemeProvider";
+import { SEP7_CALLBACK_URL } from "../utils/sep7";
 import { SignTransactionSheet } from "./SignTransactionSheet";
 
 jest.mock("../api/resources", () => ({
@@ -48,6 +49,7 @@ const mockedIsAvailable = isAvailable as jest.Mock;
 const mockedPreventCapture = ScreenCapture.preventScreenCaptureAsync as jest.Mock;
 const mockedAllowCapture = ScreenCapture.allowScreenCaptureAsync as jest.Mock;
 const VALID_SECRET = "SCXZ7ZA2UUWX4SWVRPE3ENOZAOLG6A53YLBT6A43EFDE25N4MXZ75AAC";
+let urlListener: ((event: { url: string }) => void) | undefined;
 
 function renderSheet(props: Partial<React.ComponentProps<typeof SignTransactionSheet>> = {}) {
   const onSigned = jest.fn();
@@ -69,8 +71,15 @@ function renderSheet(props: Partial<React.ComponentProps<typeof SignTransactionS
 
 beforeEach(() => {
   jest.clearAllMocks();
+  urlListener = undefined;
   mockedAuthenticate.mockResolvedValue("success");
   mockedIsAvailable.mockResolvedValue(true);
+  jest.spyOn(Linking, "openURL").mockResolvedValue(undefined);
+  jest.spyOn(Linking, "getInitialURL").mockResolvedValue(null);
+  jest.spyOn(Linking, "addEventListener").mockImplementation((_event, handler) => {
+    urlListener = handler as (event: { url: string }) => void;
+    return { remove: jest.fn() } as unknown as EmitterSubscription;
+  });
 });
 
 it("shows the network, masks the secret, and submits only a signed XDR", async () => {
@@ -239,4 +248,32 @@ it("falls back to the secret-entry flow with an explanation when biometrics are 
 
   await waitFor(() => expect(screen.onSigned).toHaveBeenCalledWith("signed-xdr"));
   expect(mockedSign).toHaveBeenCalled();
+});
+
+it("opens a SEP-7 request and submits the signed XDR returned by the wallet", async () => {
+  const screen = renderSheet();
+
+  fireEvent.press(screen.getByLabelText("Open wallet app (SEP-7)"));
+  await waitFor(() =>
+    expect(Linking.openURL).toHaveBeenCalledWith(expect.stringContaining("web+stellar:tx?xdr=unsigned-xdr"))
+  );
+
+  await act(async () => {
+    urlListener?.({ url: `${SEP7_CALLBACK_URL}?result=signed&xdr=signed-in-wallet` });
+  });
+
+  await waitFor(() => expect(screen.onSigned).toHaveBeenCalledWith("signed-in-wallet"));
+  expect(await screen.findByText(/Signed in your wallet/)).toBeTruthy();
+  expect(mockedSign).not.toHaveBeenCalled();
+});
+
+it("explains when a wallet declines the SEP-7 request", async () => {
+  const screen = renderSheet();
+
+  await act(async () => {
+    urlListener?.({ url: `${SEP7_CALLBACK_URL}?result=rejected` });
+  });
+
+  expect(await screen.findByText(/Signing was declined/)).toBeTruthy();
+  expect(screen.onSigned).not.toHaveBeenCalled();
 });

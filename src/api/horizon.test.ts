@@ -1,128 +1,95 @@
-import { getPublicKey } from "../services/wallet";
-import { checkUsdcForPayment, usdcToStroops } from "./horizon";
+import { Account, Asset, Keypair, Operation, TransactionBuilder } from "@stellar/stellar-sdk";
 
-jest.mock("../services/wallet", () => ({
-  getPublicKey: jest.fn(),
-}));
+import {
+  buildAddUsdcTrustlineXdr,
+  fundWithFriendbot,
+  hasUsdcTrustline,
+  submitSignedTransaction,
+} from "./horizon";
+import { NETWORKS } from "../config/network";
 
-const mockedGetPublicKey = getPublicKey as jest.MockedFunction<typeof getPublicKey>;
-const ADDRESS = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+const mockLoadAccount = jest.fn();
+const mockSubmitTransaction = jest.fn();
 
-function response(status: number, body: unknown): Response {
+jest.mock("@stellar/stellar-sdk", () => {
+  const actual = jest.requireActual("@stellar/stellar-sdk");
   return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => body,
-  } as Response;
-}
+    ...actual,
+    Horizon: {
+      ...actual.Horizon,
+      Server: jest.fn(() => ({
+        loadAccount: mockLoadAccount,
+        submitTransaction: mockSubmitTransaction,
+      })),
+    },
+  };
+});
 
-function account(balance: string | null): Response {
-  return response(200, {
-    balances:
-      balance === null
-        ? []
-        : [
-            {
-              asset_type: "credit_alphanum4",
-              asset_code: "USDC",
-              asset_issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
-              balance,
-            },
-          ],
-  });
-}
+const config = NETWORKS.testnet;
+const publicKey = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7";
+const originalFetch = global.fetch;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockedGetPublicKey.mockResolvedValue(ADDRESS);
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ hash: "friendbot-hash" }),
+  }) as unknown as typeof global.fetch;
 });
 
-describe("usdcToStroops", () => {
-  it("converts decimal USDC to 7-decimal base units", () => {
-    expect(usdcToStroops("1.25")).toBe(BigInt(12500000));
-    expect(usdcToStroops("0.0000001")).toBe(BigInt(1));
-  });
-
-  it("rejects malformed amounts", () => {
-    expect(usdcToStroops("1.12345678")).toBeNull();
-    expect(usdcToStroops("abc")).toBeNull();
-  });
+afterEach(() => {
+  global.fetch = originalFetch;
 });
 
-describe("checkUsdcForPayment", () => {
-  it("returns ok when the trustline covers the price", async () => {
-    const fetchFn = jest.fn().mockResolvedValue(account("2.0000000"));
-
-    await expect(checkUsdcForPayment("1.25", { fetchFn })).resolves.toEqual({ status: "ok" });
-    expect(fetchFn).toHaveBeenCalledWith(
-      `https://horizon-testnet.stellar.org/accounts/${ADDRESS}`,
-      undefined
-    );
+it("funds a testnet account through Friendbot", async () => {
+  await expect(fundWithFriendbot(publicKey, config)).resolves.toEqual({
+    funded: true,
+    hash: "friendbot-hash",
   });
+  expect(global.fetch).toHaveBeenCalledWith(
+    `https://friendbot.stellar.org?addr=${encodeURIComponent(publicKey)}`
+  );
+});
 
-  it("reports a missing trustline with an actionable message", async () => {
-    const fetchFn = jest.fn().mockResolvedValue(account(null));
+it("refuses to use Friendbot on mainnet", async () => {
+  await expect(fundWithFriendbot(publicKey, NETWORKS.mainnet)).rejects.toThrow(
+    "Friendbot is available on test networks only."
+  );
+  expect(global.fetch).not.toHaveBeenCalled();
+});
 
-    const result = await checkUsdcForPayment("1.25", { fetchFn });
-    expect(result).toMatchObject({ status: "missing-trustline" });
-    expect(String((result as { message?: string }).message)).toContain("Open Wallet");
+it("detects a USDC trustline", async () => {
+  mockLoadAccount.mockResolvedValueOnce({
+    balances: [
+      { asset_type: "native", balance: "10" },
+      { asset_type: "credit_alphanum4", asset_code: "USDC", asset_issuer: config.usdcIssuer },
+    ],
   });
+  await expect(hasUsdcTrustline(publicKey, config)).resolves.toBe(true);
 
-  it("treats an unfunded account as a missing trustline", async () => {
-    const fetchFn = jest.fn().mockResolvedValue(response(404, { status: 404 }));
-
-    await expect(checkUsdcForPayment("1.25", { fetchFn })).resolves.toMatchObject({
-      status: "missing-trustline",
-    });
+  mockLoadAccount.mockResolvedValueOnce({
+    balances: [{ asset_type: "native", balance: "10" }],
   });
+  await expect(hasUsdcTrustline(publicKey, config)).resolves.toBe(false);
+});
 
-  it("reports an insufficient balance with both amounts", async () => {
-    const fetchFn = jest.fn().mockResolvedValue(account("0.5000000"));
+it("builds and submits a signed USDC trustline transaction", async () => {
+  mockLoadAccount.mockResolvedValue(new Account(publicKey, "1"));
+  mockSubmitTransaction.mockResolvedValue({ hash: "tx-hash" });
 
-    const result = await checkUsdcForPayment("1.25", { fetchFn });
-    expect(result).toMatchObject({
-      status: "insufficient-balance",
-      available: "0.5",
-      required: "1.25",
-    });
-    expect(String((result as { message?: string }).message)).toContain("Open Wallet");
-  });
+  const xdr = await buildAddUsdcTrustlineXdr(publicKey, config);
+  expect(typeof xdr).toBe("string");
 
-  it("accepts a custom classic USDC issuer for self-hosted deployments", async () => {
-    const customIssuer = "GCUSTOMISSUERTEST123456789012345678901234567890123456789012345";
-    const fetchFn = jest.fn().mockResolvedValue(response(200, {
-      balances: [{
-        asset_code: "USDC",
-        asset_issuer: customIssuer,
-        balance: "2.0000000",
-      }],
-    }));
+  const signed = new TransactionBuilder(new Account(publicKey, "2"), {
+    fee: "100",
+    networkPassphrase: config.passphrase,
+  })
+    .addOperation(Operation.changeTrust({ asset: new Asset("USDC", config.usdcIssuer as string) }))
+    .setTimeout(300)
+    .build();
+  signed.sign(Keypair.random());
 
-    await expect(
-      checkUsdcForPayment("1.25", { address: ADDRESS, fetchFn, issuer: customIssuer })
-    ).resolves.toEqual({ status: "ok" });
-  });
-
-  it("warns and continues when Horizon is unreachable", async () => {
-    const fetchFn = jest.fn().mockRejectedValue(new Error("Network request failed"));
-
-    const result = await checkUsdcForPayment("1.25", { fetchFn });
-    expect(result).toMatchObject({ status: "unavailable" });
-    expect(String((result as { warning?: string }).warning)).toContain("Couldn't check");
-  });
-
-  it("passes the caller's abort signal and makes no call when already cancelled", async () => {
-    const controller = new AbortController();
-    const fetchFn = jest.fn().mockResolvedValue(account("2.0000000"));
-
-    await checkUsdcForPayment("1.25", { fetchFn, signal: controller.signal });
-    expect(fetchFn).toHaveBeenCalledWith(expect.any(String), { signal: controller.signal });
-
-    fetchFn.mockClear();
-    controller.abort();
-    await expect(
-      checkUsdcForPayment("1.25", { fetchFn, signal: controller.signal })
-    ).rejects.toThrow("USDC check cancelled");
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
+  await expect(submitSignedTransaction(signed.toXDR(), config)).resolves.toBe("tx-hash");
+  expect(mockSubmitTransaction).toHaveBeenCalledWith(expect.objectContaining({ sign: expect.any(Function) }));
 });

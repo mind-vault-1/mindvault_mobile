@@ -9,6 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { SettingsScreen } from "./SettingsScreen";
 import { getDefaultApiBaseUrl } from "../api/apiSettings";
+import { getNetwork, resetNetworkForTests, setNetwork } from "../config/network";
 import { RootNavigator, type RootStackParamList } from "../navigation";
 import { AppLockProvider } from "../hooks/useAppLock";
 import { ThemeProvider } from "../theme/ThemeProvider";
@@ -50,6 +51,7 @@ function setDev(value: boolean) {
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  resetNetworkForTests();
   setupFetchMock();
 });
 
@@ -169,6 +171,44 @@ describe("about section", () => {
     expect(
       fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/health"))
     ).toHaveLength(2);
+  });
+});
+
+describe("stellar network", () => {
+  it("switches between test networks without a restart", async () => {
+    setNetwork("testnet");
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const screen = await renderSettings();
+
+    fireEvent.press(screen.getByLabelText("Select futurenet"));
+
+    expect(getNetwork()).toBe("futurenet");
+    expect(screen.getByText("Current: Futurenet")).toBeTruthy();
+    expect(screen.getByLabelText("Network: futurenet")).toBeTruthy();
+    alertSpy.mockRestore();
+  });
+
+  it("requires typed MAINNET confirmation before switching to mainnet", async () => {
+    setNetwork("testnet");
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    let promptCallback: ((value?: string) => void) | undefined;
+    const promptSpy = jest
+      .spyOn(Alert, "prompt")
+      .mockImplementation((_title, _message, callback) => {
+        promptCallback = callback as ((value?: string) => void) | undefined;
+      });
+    const screen = await renderSettings();
+
+    fireEvent.press(screen.getByLabelText("Select mainnet"));
+    promptCallback?.("mainnet");
+    expect(getNetwork()).toBe("testnet");
+
+    fireEvent.press(screen.getByLabelText("Select mainnet"));
+    promptCallback?.("MAINNET");
+    expect(getNetwork()).toBe("mainnet");
+
+    promptSpy.mockRestore();
+    alertSpy.mockRestore();
   });
 });
 

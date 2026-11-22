@@ -1,48 +1,43 @@
 import { Linking } from "react-native";
 
-import { DEFAULT_STELLAR_NETWORK, DEFAULT_NETWORK_PASSPHRASE } from "../api/resources";
-
-type StellarExpertNetworkSegment = "testnet" | "public";
+import { getNetwork, getNetworkConfig, NETWORKS, type StellarNetworkId } from "../config/network";
 
 function normalizeNetwork(input?: string): string | null {
   const value = input?.trim().toLowerCase();
   return value && value.length > 0 ? value : null;
 }
 
-function networkSegmentFromNetworkName(network?: string): StellarExpertNetworkSegment | null {
-  const n = normalizeNetwork(network);
-  if (!n) return null;
-
-  if (n.includes("test")) return "testnet";
-  if (n.includes("public") || n.includes("mainnet") || n.includes("main")) return "public";
-
+function explorerSegmentFromNetwork(input?: string): string | null {
+  const network = normalizeNetwork(input);
+  if (!network) return null;
+  if (network.includes("future")) return "futurenet";
+  if (network.includes("test")) return "testnet";
+  if (network.includes("public") || network.includes("main") || network === "pubnet") return "public";
   return null;
 }
 
-function networkSegmentFromPassphrase(passphrase?: string): StellarExpertNetworkSegment {
-  const p = normalizeNetwork(passphrase) ?? normalizeNetwork(DEFAULT_NETWORK_PASSPHRASE) ?? "";
-
-  if (p.includes("test sdf network")) return "testnet";
-  if (p.includes("public global stellar network")) return "public";
-
-  // Default to testnet to match current app defaults.
-  return "testnet";
+function explorerSegmentFromPassphrase(passphrase?: string): string {
+  const value = normalizeNetwork(passphrase);
+  for (const config of Object.values(NETWORKS)) {
+    if (value && normalizeNetwork(config.passphrase) === value) return config.explorerSegment;
+  }
+  return getNetworkConfig().explorerSegment;
 }
 
 function resolveExplorerNetworkSegment(opts: {
   network?: string;
   networkPassphrase?: string;
-}): StellarExpertNetworkSegment {
+}): string {
   return (
-    networkSegmentFromNetworkName(opts.network) ??
-    networkSegmentFromNetworkName(DEFAULT_STELLAR_NETWORK) ??
-    networkSegmentFromPassphrase(opts.networkPassphrase)
+    explorerSegmentFromNetwork(opts.network) ??
+    explorerSegmentFromNetwork(getNetwork() as string) ??
+    explorerSegmentFromPassphrase(opts.networkPassphrase)
   );
 }
 
 export function stellarExpertTxUrl(opts: {
   txHash: string;
-  network?: string;
+  network?: string | StellarNetworkId;
   networkPassphrase?: string;
 }): string {
   const segment = resolveExplorerNetworkSegment(opts);
@@ -51,7 +46,7 @@ export function stellarExpertTxUrl(opts: {
 
 export function stellarExpertAccountUrl(opts: {
   accountId: string;
-  network?: string;
+  network?: string | StellarNetworkId;
   networkPassphrase?: string;
 }): string {
   const segment = resolveExplorerNetworkSegment(opts);
@@ -63,4 +58,3 @@ export async function openExternalUrl(url: string): Promise<void> {
   if (!canOpen) throw new Error("Cannot open URL");
   await Linking.openURL(url);
 }
-

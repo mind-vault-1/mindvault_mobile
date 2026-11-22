@@ -26,7 +26,15 @@ import {
   saveApiBaseUrl,
   validateApiBaseUrl,
 } from "../api/apiSettings";
-import { DEFAULT_STELLAR_NETWORK, initializeApiBaseUrl } from "../api/resources";
+import { initializeApiBaseUrl } from "../api/resources";
+import {
+  getNetwork,
+  getNetworkConfig,
+  NETWORK_IDS,
+  setNetwork,
+  subscribeNetwork,
+  type StellarNetworkId,
+} from "../config/network";
 import { checkHealth, type ServerHealth } from "../api/health";
 import { collectDiagnostics, formatDiagnostics } from "../services/diagnostics";
 import {
@@ -63,6 +71,7 @@ export function SettingsScreen() {
   const [savedUrl, setSavedUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  const [network, setNetworkState] = useState<StellarNetworkId>(getNetwork());
   const {
     enabled: appLockEnabled,
     timeoutMinutes: appLockTimeout,
@@ -76,6 +85,32 @@ export function SettingsScreen() {
   useEffect(() => {
     void areHapticsEnabled().then(setHapticsEnabledState);
   }, []);
+
+  useEffect(() => subscribeNetwork(setNetworkState), []);
+
+  const handleNetworkChange = useCallback(
+    (next: StellarNetworkId) => {
+      if (next === network) return;
+      const apply = () => {
+        setNetwork(next);
+        setNetworkState(next);
+        Alert.alert("Network changed", `Now using ${getNetworkConfig(next).label}.`);
+      };
+      if (next === "mainnet") {
+        Alert.prompt(
+          "Switch to mainnet?",
+          "Type MAINNET to confirm you want to use the public network.",
+          (value) => {
+            if (value?.trim() === "MAINNET") apply();
+          },
+          "plain-text"
+        );
+        return;
+      }
+      apply();
+    },
+    [network]
+  );
 
   const handleHapticsChange = useCallback(async (enabled: boolean) => {
     setHapticsEnabledState(enabled);
@@ -756,6 +791,41 @@ export function SettingsScreen() {
 
         <View
           style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}
+          accessibilityLabel="Stellar network"
+        >
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
+            Stellar network
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
+            Current: {getNetworkConfig(network).label}
+          </Text>
+          {NETWORK_IDS.map((id) => (
+            <TouchableOpacity
+              key={id}
+              style={[
+                shared.button,
+                styles.networkButton,
+                { backgroundColor: id === network ? colors.primary : colors.neutralBg },
+              ]}
+              onPress={() => handleNetworkChange(id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Select ${getNetworkConfig(id).label.toLowerCase()}`}
+              accessibilityState={{ selected: id === network }}
+            >
+              <Text
+                style={[
+                  shared.buttonText,
+                  id === network ? shared.buttonText : { color: colors.text },
+                ]}
+              >
+                {getNetworkConfig(id).label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View
+          style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 16 }]}
           accessibilityLabel="About"
         >
           <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
@@ -763,7 +833,7 @@ export function SettingsScreen() {
           </Text>
           {[
             { label: "App version", value: appVersion, color: colors.text },
-            { label: "Network", value: DEFAULT_STELLAR_NETWORK, color: colors.text },
+            { label: "Network", value: network, color: colors.text },
             { label: "API URL", value: savedUrl, color: colors.text },
             { label: "Server status", value: serverStatus, color: serverStatusColor },
           ].map((row) => (
@@ -913,6 +983,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     paddingVertical: 6,
+  },
+  networkButton: {
+    marginBottom: 8,
   },
   aboutRow: {
     flexDirection: "row",
