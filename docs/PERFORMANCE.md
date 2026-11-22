@@ -13,7 +13,10 @@ is memoized so parent state changes do not create a new render callback.
 
 Resource cards have content-dependent heights (titles, metadata and images can
 wrap or load asynchronously), so do not provide a fixed `getItemLayout`.
-Incorrect offsets make `scrollToIndex` and virtualization less reliable.
+Incorrect offsets make `scrollToIndex` and virtualization less reliable. A
+fixed 120 px `getItemLayout` was trialled for #352 and reverted for this reason;
+the profile below remains the baseline (no new device measurements were taken
+for that trial).
 
 The catalog also follows the API's `nextOffset` pagination value and appends
 only unseen resource IDs. Keep this paging behavior when changing filters or
