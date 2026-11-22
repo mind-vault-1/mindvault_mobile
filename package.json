@@ -33,6 +33,7 @@
     "expo-local-authentication": "~15.0.2",
     "expo-media-library": "~17.0.6",
     "expo-notifications": "~0.29.14",
+    "expo-screen-capture": "~7.0.1",
     "expo-secure-store": "~14.0.1",
     "expo-sharing": "~13.0.1",
     "expo-status-bar": "~2.0.1",

@@ -129,9 +129,10 @@ describe("fetchMe", () => {
     const fetchMock = mockFetch(profile);
 
     await expect(fetchMe()).resolves.toEqual(profile);
-    expect(fetchMock).toHaveBeenCalledWith(`${getApiBaseUrl()}/publishers/me`, {
-      headers: { "x-api-key": "stored-key" },
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getApiBaseUrl()}/publishers/me`,
+      expect.objectContaining({ method: "GET", headers: { "x-api-key": "stored-key" } })
+    );
   });
 
   it("uses an explicit key instead of the stored one, for validating a new key", async () => {
@@ -139,7 +140,7 @@ describe("fetchMe", () => {
     const fetchMock = mockFetch(profile);
 
     await fetchMe("candidate-key");
-    expect(fetchMock.mock.calls[0][1]).toEqual({ headers: { "x-api-key": "candidate-key" } });
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { "x-api-key": "candidate-key" } });
   });
 
   it("throws without calling the API when no key is stored", async () => {
@@ -178,16 +179,17 @@ describe("fetchAnalytics", () => {
     mockGetApiKey.mockResolvedValue("stored-key");
     const fetchMock = mockFetch(analytics);
     await expect(fetchAnalytics()).resolves.toEqual(analytics);
-    expect(fetchMock).toHaveBeenCalledWith(`${getApiBaseUrl()}/publishers/me/analytics`, {
-      headers: { "x-api-key": "stored-key" },
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getApiBaseUrl()}/publishers/me/analytics`,
+      expect.objectContaining({ method: "GET", headers: { "x-api-key": "stored-key" } })
+    );
   });
 
   it("uses an explicit key without reading storage", async () => {
     const fetchMock = mockFetch(analytics);
     await fetchAnalytics("candidate-key");
     expect(mockGetApiKey).not.toHaveBeenCalled();
-    expect(fetchMock.mock.calls[0][1]).toEqual({ headers: { "x-api-key": "candidate-key" } });
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { "x-api-key": "candidate-key" } });
   });
 
   it("does not fetch without a key", async () => {
@@ -238,7 +240,11 @@ describe("rotateApiKey", () => {
       `${getApiBaseUrl()}/publishers/me/api-key/rotate`,
       expect.objectContaining({
         method: "POST",
-        headers: { "x-api-key": "old-key-123456" },
+        headers: expect.objectContaining({
+          "x-api-key": "old-key-123456",
+          "X-Timestamp": expect.stringMatching(/^\d{10}$/),
+          "X-Signature": expect.stringMatching(/^[0-9a-f]{64}$/),
+        }),
       })
     );
     expect(mockStoreApiKey).toHaveBeenCalledWith("new-key-abcdef");
@@ -280,6 +286,14 @@ describe("rotateApiKey", () => {
     expect(mockStoreApiKey).not.toHaveBeenCalled();
   });
 
+  it("keeps the central client's network error message", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    global.fetch = jest.fn().mockRejectedValue(new TypeError("Network request failed"));
+
+    await expect(rotateApiKey()).rejects.toThrow("Network error. Please check your connection.");
+    expect(mockStoreApiKey).not.toHaveBeenCalled();
+  });
+
   it("fails without calling the API when no key is stored", async () => {
     mockGetApiKey.mockResolvedValue(null);
     const fetchMock = mockFetch({ apiKey: "new-key" });
@@ -308,7 +322,11 @@ describe("revokeApiKey", () => {
       `${getApiBaseUrl()}/publishers/me/api-key`,
       expect.objectContaining({
         method: "DELETE",
-        headers: { "x-api-key": "old-key-123456" },
+        headers: expect.objectContaining({
+          "x-api-key": "old-key-123456",
+          "X-Timestamp": expect.stringMatching(/^\d{10}$/),
+          "X-Signature": expect.stringMatching(/^[0-9a-f]{64}$/),
+        }),
       })
     );
     expect(mockClearApiKey).toHaveBeenCalledTimes(1);

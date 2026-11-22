@@ -1,5 +1,6 @@
 import React from "react";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import * as ScreenCapture from "expo-screen-capture";
 
 import { signTransactionXdr } from "../api/resources";
 import { authenticate, isAvailable } from "../services/biometrics";
@@ -13,6 +14,10 @@ jest.mock("../api/resources", () => ({
 jest.mock("../services/biometrics", () => ({
   authenticate: jest.fn(),
   isAvailable: jest.fn(),
+}));
+jest.mock("expo-screen-capture", () => ({
+  preventScreenCaptureAsync: jest.fn().mockResolvedValue(undefined),
+  allowScreenCaptureAsync: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../utils/validateStellarSecret", () => ({
   validateStellarSecret: (value: string) =>
@@ -40,6 +45,8 @@ jest.mock("../theme/ThemeProvider", () => {
 const mockedSign = signTransactionXdr as jest.Mock;
 const mockedAuthenticate = authenticate as jest.Mock;
 const mockedIsAvailable = isAvailable as jest.Mock;
+const mockedPreventCapture = ScreenCapture.preventScreenCaptureAsync as jest.Mock;
+const mockedAllowCapture = ScreenCapture.allowScreenCaptureAsync as jest.Mock;
 const VALID_SECRET = "SCXZ7ZA2UUWX4SWVRPE3ENOZAOLG6A53YLBT6A43EFDE25N4MXZ75AAC";
 
 function renderSheet(props: Partial<React.ComponentProps<typeof SignTransactionSheet>> = {}) {
@@ -196,6 +203,26 @@ it("does not sign when biometric authentication fails", async () => {
   expect(await screen.findByText(/Biometric authentication failed/)).toBeTruthy();
   expect(mockedSign).not.toHaveBeenCalled();
   expect(screen.onSigned).not.toHaveBeenCalled();
+});
+
+it("blocks screen capture while visible and releases it when closed", () => {
+  const screen = renderSheet();
+
+  expect(mockedPreventCapture).toHaveBeenCalledWith("mindvault-sign-transaction-sheet");
+  expect(mockedAllowCapture).not.toHaveBeenCalled();
+
+  screen.rerender(
+    <ThemeProvider>
+      <SignTransactionSheet
+        visible={false}
+        unsignedXdr="unsigned-xdr"
+        onSigned={screen.onSigned}
+        onCancel={screen.onCancel}
+      />
+    </ThemeProvider>
+  );
+
+  expect(mockedAllowCapture).toHaveBeenCalledWith("mindvault-sign-transaction-sheet");
 });
 
 it("falls back to the secret-entry flow with an explanation when biometrics are unavailable", async () => {

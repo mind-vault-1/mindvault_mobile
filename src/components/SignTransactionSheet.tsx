@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import * as ScreenCapture from "expo-screen-capture";
 import {
   ActivityIndicator,
   Modal,
@@ -14,6 +15,8 @@ import { authenticate, isAvailable } from "../services/biometrics";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
+
+const SCREEN_CAPTURE_KEY = "mindvault-sign-transaction-sheet";
 
 interface SignTransactionSheetProps {
   visible: boolean;
@@ -98,6 +101,16 @@ export function SignTransactionSheet({
     });
     return () => {
       cancelled = true;
+    };
+  }, [visible]);
+
+  // Block screenshots/recording for as long as the secret input is on screen.
+  // A keyed tag lets this coexist with other screens that also block capture.
+  useEffect(() => {
+    if (!visible) return undefined;
+    void ScreenCapture.preventScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => undefined);
+    return () => {
+      void ScreenCapture.allowScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => undefined);
     };
   }, [visible]);
 

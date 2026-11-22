@@ -30,7 +30,8 @@ it("fetches the encoded buyer address with page parameters and normalizes record
   });
   const page = await fetchBuyerPayments("G/ buyer", { limit: 20, offset: 0 });
   expect(mockFetch).toHaveBeenCalledWith(
-    "https://api.example.test/buyers/G%2F%20buyer/payments?limit=20&offset=0"
+    "https://api.example.test/buyers/G%2F%20buyer/payments?limit=20&offset=0",
+    expect.objectContaining({ method: "GET" })
   );
   expect(page.payments[0].txHash).toBe("tx-1");
   expect(page.payments[0].resourceTitle).toBe("Book");
@@ -54,7 +55,7 @@ it("accepts an array response and returns no next page for a short page", async 
 
 it("rejects failed requests and invalid addresses", async () => {
   await expect(fetchBuyerPayments(" ")).rejects.toThrow("A buyer wallet address is required.");
-  mockFetch.mockResolvedValue({ ok: false, status: 503 });
+  mockFetch.mockResolvedValue({ ok: false, status: 503, json: async () => ({}), headers: { get: () => null } });
   await expect(fetchBuyerPayments("Gbuyer")).rejects.toThrow("Unable to load on-chain purchase history.");
 });
 
@@ -67,7 +68,10 @@ it("ignores malformed records and clamps page options", async () => {
     ] }),
   });
   const page = await fetchBuyerPayments("Gbuyer", { limit: 1000, offset: -1 });
-  expect(mockFetch).toHaveBeenCalledWith("https://api.example.test/buyers/Gbuyer/payments?limit=100&offset=0");
+  expect(mockFetch).toHaveBeenCalledWith(
+    "https://api.example.test/buyers/Gbuyer/payments?limit=100&offset=0",
+    expect.objectContaining({ method: "GET" })
+  );
   expect(page.payments).toHaveLength(1);
 });
 

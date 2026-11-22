@@ -11,7 +11,9 @@ import {
 } from "react-native";
 
 import Constants from "expo-constants";
+import { useNavigation } from "@react-navigation/native";
 
+import { checkUsdcForPayment } from "../api/horizon";
 import {
   appNetworkId,
   sorobanRpcUrl,
@@ -29,6 +31,17 @@ import { SignTransactionSheet } from "./SignTransactionSheet";
 import { LeaseSheet } from "./LeaseSheet";
 import { getRegistryClient } from "../api/leases";
 import { hapticError, hapticSuccess } from "../utils/haptics";
+
+type WalletNavigation = { navigate: (route: "Wallet") => void };
+
+/** Navigation may be absent when the sheet is rendered in isolation (tests). */
+function useOptionalNavigation(): WalletNavigation | undefined {
+  try {
+    return useNavigation<WalletNavigation>();
+  } catch {
+    return undefined;
+  }
+}
 
 interface PaywallModalProps {
   visible: boolean;
@@ -109,6 +122,13 @@ function createStyles(colors: ThemeColors) {
       color: colors.primary,
       textDecorationLine: "underline",
     },
+    warning: {
+      fontSize: 12,
+      color: colors.warning,
+      backgroundColor: colors.warningBg,
+      padding: 10,
+      borderRadius: 8,
+    },
   });
 }
 
@@ -155,9 +175,13 @@ export function PaywallModal({
   const [challenge, setChallenge] = useState<PaymentChallenge | null>(null);
   const [showLeaseSheet, setShowLeaseSheet] = useState(false);
   const [registryAvailable, setRegistryAvailable] = useState<boolean | null>(null);
+  const [warningMsg, setWarningMsg] = useState<string | null>(null);
+  const [showWalletLink, setShowWalletLink] = useState(false);
 
   const flow = useRef(0);
   const busy = useRef(false);
+  const checkController = useRef<AbortController | null>(null);
+  const navigation = useOptionalNavigation();
   const networkLabel = paymentNetworkLabel();
 
   useEffect(() => {
@@ -168,7 +192,15 @@ export function PaywallModal({
     setErrorMsg(null);
     setChallenge(null);
     setShowLeaseSheet(false);
-    return () => { flow.current += 1; };
+    setWarningMsg(null);
+    setShowWalletLink(false);
+    checkController.current?.abort();
+    checkController.current = null;
+    return () => {
+      flow.current += 1;
+      checkController.current?.abort();
+      checkController.current = null;
+    };
   }, [visible, accessUrl, price, resourceTitle]);
 
   useEffect(() => {
@@ -186,6 +218,8 @@ export function PaywallModal({
   function close() {
     flow.current += 1;
     busy.current = false;
+    checkController.current?.abort();
+    checkController.current = null;
     setChallenge(null);
     setShowLeaseSheet(false);
     setPhase("confirm");
@@ -197,6 +231,7 @@ export function PaywallModal({
     void hapticError();
     busy.current = false;
     setChallenge(null);
+    setShowWalletLink(false);
     setErrorMsg(err instanceof Error ? err.message : "Unable to access this resource. Please try again.");
     setPhase("error");
   }
@@ -218,9 +253,26 @@ export function PaywallModal({
     const run = ++flow.current;
     busy.current = true;
     setErrorMsg(null);
+    setWarningMsg(null);
+    setShowWalletLink(false);
     setResult(null);
     setPhase("preparing");
+
+    const controller = new AbortController();
+    checkController.current = controller;
     try {
+      // Only reached after the user presses Pay, so cancelling the sheet never
+      // triggers a Horizon call. The signal stops an in-flight check on close.
+      const check = await checkUsdcForPayment(price, { signal: controller.signal });
+      if (!isActive(run)) return;
+      if (check.status === "missing-trustline" || check.status === "insufficient-balance") {
+        setErrorMsg(check.message);
+        setShowWalletLink(true);
+        setPhase("error");
+        return;
+      }
+      if (check.status === "unavailable") setWarningMsg(check.warning);
+
       const access = await prepareResourceAccess(accessUrl, price);
       if (!isActive(run)) return;
       if (access.type === "payment") {
@@ -232,6 +284,7 @@ export function PaywallModal({
     } catch (err) {
       showError(err, run);
     } finally {
+      if (checkController.current === controller) checkController.current = null;
       if (isActive(run)) busy.current = false;
     }
   }
@@ -296,6 +349,9 @@ export function PaywallModal({
                 <Text style={styles.hint}>
                   You'll sign the payment with your Stellar key; the server pays the network fee.
                 </Text>
+                {warningMsg ? (
+                  <Text accessibilityRole="alert" style={styles.warning}>{warningMsg}</Text>
+                ) : null}
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => void handlePay()}
@@ -324,6 +380,9 @@ export function PaywallModal({
                 <Text style={typography.body} accessibilityRole="progressbar" accessibilityLiveRegion="polite">
                   {phase === "preparing" ? "Getting payment challenge…" : phase === "authorizing" ? "Signing payment…" : "Settling payment…"}
                 </Text>
+                {warningMsg ? (
+                  <Text accessibilityRole="alert" style={styles.warning}>{warningMsg}</Text>
+                ) : null}
               </View>
             )}
 
@@ -336,6 +395,16 @@ export function PaywallModal({
             {phase === "error" && (
               <View style={styles.body}>
                 <Text accessibilityRole="alert" style={[typography.body, { color: colors.danger }]}>{errorMsg}</Text>
+                {showWalletLink ? (
+                  <Pressable
+                    accessibilityRole="link"
+                    accessibilityLabel="Open Wallet"
+                    onPress={() => navigation?.navigate("Wallet")}
+                    style={styles.secondaryAction}
+                  >
+                    <Text style={styles.secondaryActionText}>Open Wallet</Text>
+                  </Pressable>
+                ) : null}
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => {
