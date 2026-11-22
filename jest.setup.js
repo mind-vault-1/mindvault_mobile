@@ -16,6 +16,14 @@ jest.mock("expo-haptics", () => ({
   NotificationFeedbackType: { Success: "success", Error: "error" },
   ImpactFeedbackStyle: { Light: "light" },
 }));
+jest.mock("expo-notifications", () => ({
+  IosAuthorizationStatus: { PROVISIONAL: 3 },
+  setNotificationHandler: jest.fn(),
+  getPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true, canAskAgain: true })),
+  requestPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true, canAskAgain: true })),
+  scheduleNotificationAsync: jest.fn(() => Promise.resolve("notification-id")),
+  addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+}));
 jest.mock("@stellar/stellar-sdk", () => {
   // Deterministic fake ed25519 public key for testing
   const VALID_PUBLIC_KEY =

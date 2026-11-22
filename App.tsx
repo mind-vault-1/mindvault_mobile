@@ -11,6 +11,7 @@ import {
   describeMutation,
   flushMutations,
 } from "./src/services/mutationQueue";
+import { registerPublishNotificationLinks } from "./src/services/notifications";
 import { getNavigationTheme } from "./src/theme";
 import { ThemeProvider, useAppTheme } from "./src/theme/ThemeProvider";
 import { logError } from "./src/utils/errorLogger";
@@ -33,6 +34,8 @@ function AppContent() {
 
   // Reconciles local receipts with the server in the background.
   useReceiptSync(apiUrlReady);
+
+  useEffect(() => registerPublishNotificationLinks(), []);
 
   // Replays queued offline actions in FIFO order, with a toast per action.
   const drainMutationQueue = useCallback(() => {

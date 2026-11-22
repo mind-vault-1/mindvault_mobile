@@ -9,6 +9,7 @@ import {
   type PaymentChallenge,
 } from "./payment";
 import { publisherFetch } from "./resources";
+import { notifyPublishResult, requestPublishNotificationsPermission } from "../services/notifications";
 import type { Resource } from "../types";
 
 export const TITLE_MAX_LENGTH = 120;
@@ -190,14 +191,18 @@ export async function pollPublishStatus(
 ): Promise<void> {
   let delay = baseDelayMs;
 
+  void requestPublishNotificationsPermission().catch(() => undefined);
+
   while (!isCancelled()) {
     const current = await fetchPublishStatus(resourceId);
     if (isCancelled()) break;
     onStatus(current);
 
-    if (current.status === "on-chain" || current.status === "rejected" || isCancelled()) {
+    if (current.status === "on-chain" || current.status === "rejected") {
+      void notifyPublishResult(resourceId, current.status).catch(() => undefined);
       break;
     }
+    if (isCancelled()) break;
 
     await new Promise((resolve) => setTimeout(resolve, delay));
     delay = Math.min(delay * 1.5, maxDelayMs);
