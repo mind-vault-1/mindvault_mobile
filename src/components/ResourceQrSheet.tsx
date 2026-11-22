@@ -54,7 +54,8 @@ export function ResourceQrSheet({ visible, resourceId, resourceTitle, onClose }:
         toast.error("Photos permission is needed to save the QR code");
         return;
       }
-      const base64 = await new Promise<string>((resolve) => qrRef.current!.toDataURL(resolve));
+      const dataUrl = await new Promise<string>((resolve) => qrRef.current!.toDataURL(resolve));
+      const base64 = dataUrl.replace(/^data:[^,]*,/, "");
       path = `${FileSystem.cacheDirectory}mindvault-qr-${Date.now()}.png`;
       await FileSystem.writeAsStringAsync(path, base64, {
         encoding: FileSystem.EncodingType.Base64,

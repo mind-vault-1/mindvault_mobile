@@ -15,7 +15,7 @@ jest.mock("react-native-qrcode-svg", () => {
   const { View } = require("react-native");
   return function MockQr(props: { value: string; getRef?: (r: unknown) => void }) {
     mockQrValue = props.value;
-    props.getRef?.({ toDataURL: (cb: (d: string) => void) => cb("BASE64PNG") });
+    props.getRef?.({ toDataURL: (cb: (d: string) => void) => cb("data:image/png;base64,BASE64PNG") });
     return <View testID="qr" />;
   };
 });
