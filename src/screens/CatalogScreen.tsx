@@ -58,6 +58,7 @@ import {
   parsePriceRange,
 } from "../utils/priceRange";
 import { getRelativeTimeString } from "../utils/time";
+import { t } from "../i18n";
 
 const CATALOG_FILTERS_KEY = STORAGE_KEYS.catalogFilters;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -89,23 +90,23 @@ const DEFAULT_RESOURCE_TYPE: ResourceTypeFilter = "all";
 const DEFAULT_SORT: CatalogSort = "newest";
 
 const VERIFICATION_OPTIONS: { value: VerificationFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "verified", label: "Verified" },
-  { value: "pending", label: "Pending" },
-  { value: "rejected", label: "Rejected" },
+  { value: "all", label: t("catalog.verification.all") },
+  { value: "verified", label: t("catalog.verification.verified") },
+  { value: "pending", label: t("catalog.verification.pending") },
+  { value: "rejected", label: t("catalog.verification.rejected") },
 ];
 
 const RESOURCE_TYPE_OPTIONS: { value: ResourceTypeFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "file", label: "File" },
-  { value: "link", label: "Link" },
+  { value: "all", label: t("catalog.type.all") },
+  { value: "file", label: t("catalog.type.file") },
+  { value: "link", label: t("catalog.type.link") },
 ];
 
 const SORT_OPTIONS: { value: CatalogSort; label: string }[] = [
-  { value: "newest", label: "Newest" },
-  { value: "price_asc", label: "Price: Low to high" },
-  { value: "price_desc", label: "Price: High to low" },
-  { value: "title", label: "Title" },
+  { value: "newest", label: t("catalog.sort.newest") },
+  { value: "price_asc", label: t("catalog.sort.priceAsc") },
+  { value: "price_desc", label: t("catalog.sort.priceDesc") },
+  { value: "title", label: t("catalog.sort.title") },
 ];
 
 
@@ -657,7 +658,7 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
       const message =
         err instanceof Error
           ? err.message
-          : "Something went wrong loading the catalog.";
+          : t("catalog.loadError");
       setError(message);
     } finally {
       if (requestId === requestIdRef.current) {
@@ -734,7 +735,7 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
     } catch (err) {
       if (requestId !== requestIdRef.current) return;
       const message =
-        err instanceof Error ? err.message : "Failed to load more resources.";
+        err instanceof Error ? err.message : t("catalog.loadMoreError");
       setLoadMoreError(message);
     } finally {
       setLoadingMore(false);
@@ -839,8 +840,8 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
       <Pressable
         onPress={() => openResource(item)}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${item.title}`}
-        accessibilityHint="Opens the resource detail"
+        accessibilityLabel={t("catalog.openResource", { title: item.title })}
+        accessibilityHint={t("catalog.opensResourceDetail")}
       >
         <ResourceCard resource={item} onCopyUrl={toast.info} />
       </Pressable>
@@ -879,9 +880,9 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
       });
       setSavedSearches((prev) => [...prev, newSearch]);
       setSaveSearchName("");
-      toast?.show(`Search "${name}" saved successfully`);
+      toast?.show(t("catalog.searchSaved", { name }));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save search";
+      const message = err instanceof Error ? err.message : t("catalog.saveSearchError");
       toast?.show(message, "error");
     } finally {
       setIsSavingSearch(false);
@@ -889,20 +890,24 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
   }, [saveSearchName, isSavingSearch, search, verification, resourceType, minPrice, maxPrice, sort, toast]);
 
   const deleteSavedSearch = useCallback((saved: SavedSearch) => {
-    Alert.alert("Delete saved search", `Delete "${saved.name}"?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          void deleteSearch(saved.id).then((deleted) => {
-            if (!deleted) return;
-            setSavedSearches((prev) => prev.filter((entry) => entry.id !== saved.id));
-            toast?.show(`Search "${saved.name}" deleted`);
-          });
+    Alert.alert(
+      t("catalog.deleteSearchTitle"),
+      t("catalog.deleteSearchMessage", { name: saved.name }),
+      [
+        { text: t("catalog.cancel"), style: "cancel" },
+        {
+          text: t("catalog.delete"),
+          style: "destructive",
+          onPress: () => {
+            void deleteSearch(saved.id).then((deleted) => {
+              if (!deleted) return;
+              setSavedSearches((prev) => prev.filter((entry) => entry.id !== saved.id));
+              toast?.show(t("catalog.searchDeleted", { name: saved.name }));
+            });
+          },
         },
-      },
-    ]);
+      ]
+    );
   }, [toast]);
 
   const handleSeeAll = useCallback(
@@ -928,7 +933,7 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
         <View
           style={styles.footerContainer}
           accessibilityRole="progressbar"
-          accessibilityLabel="Loading more resources"
+          accessibilityLabel={t("catalog.loadingMore")}
         >
           <ActivityIndicator color={colors.primary} size="small" />
         </View>
@@ -942,9 +947,9 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
             onPress={() => void loadMore()}
             style={styles.footerRetryButton}
             accessibilityRole="button"
-            accessibilityLabel="Retry loading more resources"
+            accessibilityLabel={t("catalog.retryLoadMore")}
           >
-            <Text style={styles.footerRetryText}>Retry</Text>
+            <Text style={styles.footerRetryText}>{t("catalog.retry")}</Text>
           </Pressable>
         </View>
       );
@@ -958,12 +963,12 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
     return (
       <View style={styles.emptyState}>
         <Text style={styles.emptyTitle}>
-          {resources.length > 0 ? "No matches" : "The catalog is empty"}
+          {resources.length > 0 ? t("catalog.noMatches") : t("catalog.empty")}
         </Text>
         <Text style={styles.emptyBody}>
           {resources.length > 0
-            ? "Try adjusting or clearing your filters."
-            : "No resources have been published yet. Connect to a running MindVault server to browse the vault."}
+            ? t("catalog.noMatchesBody")
+            : t("catalog.emptyBody")}
         </Text>
       </View>
     );
@@ -993,35 +998,40 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
           <View style={styles.header}>
             <View style={styles.headerRow}>
               <View style={{ flex: 1 }}>
-                <Text style={typography.title} accessibilityRole="header">MindVault</Text>
+                <Text style={typography.title} accessibilityRole="header">{t("app.title")}</Text>
                 <Text style={typography.subtitle}>
-                  Payment-protected digital resources on Stellar
+                  {t("app.subtitle")}
                 </Text>
                 {registryCount !== null ? (
                   <Text
                     style={styles.registry}
-                    accessibilityLabel={
-                      `${registryCount} resource${registryCount === 1 ? "" : "s"} registered on-chain`
-                    }
+                    accessibilityLabel={t("catalog.registryCount", {
+                      count: registryCount,
+                      suffix: registryCount === 1 ? "" : "s",
+                    })}
                   >
-                    {registryCount} resource{registryCount === 1 ? "" : "s"}{" "}
-                    on-chain
+                    {t("catalog.registryCountText", {
+                      count: registryCount,
+                      suffix: registryCount === 1 ? "" : "s",
+                    })}
                   </Text>
                 ) : registryFailed ? (
                   <Text
                     style={styles.registry}
-                    accessibilityLabel="On-chain resource count unavailable"
+                    accessibilityLabel={t("catalog.registryCountUnavailableLabel")}
                   >
-                    On-chain count unavailable
+                    {t("catalog.registryCountUnavailable")}
                   </Text>
                 ) : null}
                 {lastUpdatedAt ? (
                   <Text
                     style={styles.lastUpdated}
                     key={relativeTimeKey}
-                    accessibilityLabel={`Catalog updated ${getRelativeTimeString(lastUpdatedAt)}`}
+                    accessibilityLabel={t("catalog.updatedLabel", {
+                      time: getRelativeTimeString(lastUpdatedAt),
+                    })}
                   >
-                    Updated {getRelativeTimeString(lastUpdatedAt)}
+                    {t("catalog.updated", { time: getRelativeTimeString(lastUpdatedAt) })}
                   </Text>
                 ) : null}
               </View>
@@ -1029,8 +1039,8 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                 style={styles.settingsButton}
                 onPress={() => navigation.navigate("Settings")}
                 accessibilityRole="button"
-                accessibilityLabel="Settings"
-                accessibilityHint="Opens app settings"
+                accessibilityLabel={t("catalog.settings")}
+                accessibilityHint={t("catalog.settingsHint")}
               >
                 <Text
                   style={styles.settingsButtonText}
@@ -1044,16 +1054,16 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Search resources…"
+              placeholder={t("catalog.searchPlaceholder")}
               placeholderTextColor={colors.textSubtle}
               style={styles.searchInput}
               autoCapitalize="none"
               autoCorrect={false}
               clearButtonMode="while-editing"
-              accessibilityLabel="Search resources"
+              accessibilityLabel={t("catalog.searchLabel")}
               accessibilityHint={
                 searchHistory.length > 0
-                  ? "Recent searches are listed below while this field is focused"
+                  ? t("catalog.searchHintWithHistory")
                   : undefined
               }
               returnKeyType="search"
@@ -1066,19 +1076,19 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
               <View
                 style={styles.suggestions}
                 testID="search-suggestions"
-                accessibilityLabel="Recent searches"
+                accessibilityLabel={t("catalog.recentSearches")}
               >
                 <View style={styles.recentHeader}>
                   <Text style={styles.filterLabel} accessibilityRole="header">
-                    Recent searches
+                    {t("catalog.recentSearches")}
                   </Text>
                   <Pressable
                     onPress={clearAllSuggestions}
                     style={styles.clearButton}
                     accessibilityRole="button"
-                    accessibilityLabel="Clear all recent searches"
+                    accessibilityLabel={t("catalog.clearAllRecentLabel")}
                   >
-                    <Text style={styles.clearButtonText}>Clear all</Text>
+                    <Text style={styles.clearButtonText}>{t("catalog.clearAllRecent")}</Text>
                   </Pressable>
                 </View>
                 {suggestions.map((query) => (
@@ -1087,8 +1097,8 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                       onPress={() => applySuggestion(query)}
                       style={styles.suggestionButton}
                       accessibilityRole="button"
-                      accessibilityLabel={`Search for ${query}`}
-                      accessibilityHint="Runs this recent search"
+                      accessibilityLabel={t("catalog.searchFor", { query })}
+                      accessibilityHint={t("catalog.recentSearchHint")}
                     >
                       <Text style={styles.suggestionText} numberOfLines={1}>
                         {query}
@@ -1099,7 +1109,7 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                       style={styles.suggestionRemove}
                       hitSlop={8}
                       accessibilityRole="button"
-                      accessibilityLabel={`Remove ${query} from recent searches`}
+                      accessibilityLabel={t("catalog.removeRecentSearch", { query })}
                     >
                       <Text style={styles.suggestionRemoveText}>✕</Text>
                     </Pressable>
@@ -1111,14 +1121,14 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
             {recent.length > 0 && search.trim() === "" ? (
               <View style={styles.recentSection}>
                 <View style={styles.recentHeader}>
-                  <Text style={styles.filterLabel} accessibilityRole="header">Recently viewed</Text>
+                  <Text style={styles.filterLabel} accessibilityRole="header">{t("catalog.recentlyViewed")}</Text>
                   <Pressable
                     onPress={clearRecent}
                     style={styles.clearButton}
                     accessibilityRole="button"
-                    accessibilityLabel="Clear recently viewed"
+                    accessibilityLabel={t("catalog.clearRecentlyViewedLabel")}
                   >
-                    <Text style={styles.clearButtonText}>Clear</Text>
+                    <Text style={styles.clearButtonText}>{t("catalog.clearRecentlyViewed")}</Text>
                   </Pressable>
                 </View>
                 <ScrollView
@@ -1132,8 +1142,8 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                       onPress={() => openResource(entry)}
                       style={styles.recentItem}
                       accessibilityRole="button"
-                      accessibilityLabel={`Open recently viewed ${entry.title}`}
-                      accessibilityHint="Opens the resource detail"
+                      accessibilityLabel={t("catalog.openRecentlyViewed", { title: entry.title })}
+                      accessibilityHint={t("catalog.opensResourceDetail")}
                     >
                       <Text style={styles.recentTitle} numberOfLines={1}>
                         {entry.title}
@@ -1147,15 +1157,15 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
 
             {hasActiveFilters ? (
               <View style={styles.recentSection}>
-                <Text style={styles.filterLabel} accessibilityRole="header">Save this search</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">{t("catalog.saveThisSearch")}</Text>
                 <View style={styles.saveSearchRow}>
                   <TextInput
                     value={saveSearchName}
                     onChangeText={setSaveSearchName}
-                    placeholder="Search name"
+                    placeholder={t("catalog.searchNamePlaceholder")}
                     placeholderTextColor={colors.textSubtle}
                     style={styles.saveSearchInput}
-                    accessibilityLabel="Saved search name"
+                    accessibilityLabel={t("catalog.savedSearchName")}
                     onSubmitEditing={() => { void saveCurrentSearch(); }}
                   />
                   <Pressable
@@ -1166,10 +1176,10 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                       (!saveSearchName.trim() || isSavingSearch) && styles.clearButtonDisabled,
                     ]}
                     accessibilityRole="button"
-                    accessibilityLabel="Save current search"
+                    accessibilityLabel={t("catalog.saveCurrentSearch")}
                     accessibilityState={{ disabled: !saveSearchName.trim() || isSavingSearch }}
                   >
-                    <Text style={styles.clearButtonText}>Save</Text>
+                    <Text style={styles.clearButtonText}>{t("catalog.save")}</Text>
                   </Pressable>
                 </View>
               </View>
@@ -1177,15 +1187,15 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
 
             {savedSearches.length > 0 && search.trim() === "" ? (
               <View style={styles.recentSection}>
-                <Text style={styles.filterLabel} accessibilityRole="header">Saved searches</Text>
-                <View style={styles.chipRow} accessibilityLabel="Saved searches">
+                <Text style={styles.filterLabel} accessibilityRole="header">{t("catalog.savedSearches")}</Text>
+                <View style={styles.chipRow} accessibilityLabel={t("catalog.savedSearches")}>
                   {savedSearches.map((saved) => (
                     <View key={saved.id} style={styles.savedSearchChip}>
                       <Pressable
                         onPress={() => applySavedSearch(saved)}
                         style={styles.savedSearchButton}
                         accessibilityRole="button"
-                        accessibilityLabel={`Apply saved search: ${saved.name}`}
+                        accessibilityLabel={t("catalog.applySavedSearch", { name: saved.name })}
                       >
                         <Text style={styles.savedSearchName} numberOfLines={1}>
                           {saved.name}
@@ -1200,7 +1210,7 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                         onPress={() => deleteSavedSearch(saved)}
                         style={styles.savedSearchDelete}
                         accessibilityRole="button"
-                        accessibilityLabel={`Delete saved search: ${saved.name}`}
+                        accessibilityLabel={t("catalog.deleteSavedSearch", { name: saved.name })}
                       >
                         <Text style={styles.savedSearchDeleteText}>×</Text>
                       </Pressable>
@@ -1217,13 +1227,13 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
             <View style={styles.filters}>
               {owner ? (
                 <View style={styles.filterGroup}>
-                  <Text style={styles.filterLabel} accessibilityRole="header">Publisher</Text>
+                  <Text style={styles.filterLabel} accessibilityRole="header">{t("catalog.publisher")}</Text>
                   <View style={styles.chipRow}>
                     <Pressable
                       onPress={removeOwner}
                       style={[styles.chip, styles.chipActive]}
                       accessibilityRole="button"
-                      accessibilityLabel={`Publisher ${shortOwner(owner)}. Remove publisher filter`}
+                      accessibilityLabel={t("catalog.removePublisherFilter", { owner: shortOwner(owner) })}
                     >
                       <Text style={[styles.chipText, styles.chipTextActive]}>
                         {shortOwner(owner)} ✕
@@ -1233,8 +1243,8 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                 </View>
               ) : null}
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel} accessibilityRole="header">Sort</Text>
-                <View style={styles.chipRow} accessibilityRole="radiogroup" accessibilityLabel="Sort catalog">
+                <Text style={styles.filterLabel} accessibilityRole="header">{t("catalog.sort")}</Text>
+                <View style={styles.chipRow} accessibilityRole="radiogroup" accessibilityLabel={t("catalog.sortLabel")}>
                   {SORT_OPTIONS.map((option) => {
                     const active = sort === option.value;
                     return (
@@ -1253,11 +1263,11 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                 </View>
               </View>
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel} accessibilityRole="header">Verification</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">{t("catalog.verification")}</Text>
                 <View
                   style={styles.chipRow}
                   accessibilityRole="radiogroup"
-                  accessibilityLabel="Verification filter"
+                  accessibilityLabel={t("catalog.verificationLabel")}
                 >
                   {VERIFICATION_OPTIONS.map((option) => {
                     const active = verification === option.value;
@@ -1271,8 +1281,8 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                         accessibilityLabel={option.label}
                         accessibilityHint={
                           active
-                            ? "Currently selected"
-                            : "Tap to filter by this status"
+                            ? t("catalog.currentlySelected")
+                            : t("catalog.tapStatus")
                         }
                       >
                         <Text
@@ -1290,11 +1300,11 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
               </View>
 
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel} accessibilityRole="header">Type</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">{t("catalog.type")}</Text>
                 <View
                   style={styles.chipRow}
                   accessibilityRole="radiogroup"
-                  accessibilityLabel="Resource type filter"
+                  accessibilityLabel={t("catalog.typeLabel")}
                 >
                   {RESOURCE_TYPE_OPTIONS.map((option) => {
                     const active = resourceType === option.value;
@@ -1308,8 +1318,8 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                         accessibilityLabel={option.label}
                         accessibilityHint={
                           active
-                            ? "Currently selected"
-                            : "Tap to filter by this type"
+                            ? t("catalog.currentlySelected")
+                            : t("catalog.tapType")
                         }
                       >
                         <Text
@@ -1327,13 +1337,13 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
               </View>
 
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel} accessibilityRole="header">Price (USDC)</Text>
+                <Text style={styles.filterLabel} accessibilityRole="header">{t("catalog.price")}</Text>
                 <View style={styles.priceRow}>
                   <View style={styles.priceField}>
                     <TextInput
                       value={minPrice}
                       onChangeText={setMinPrice}
-                      placeholder="Min"
+                      placeholder={t("catalog.min")}
                       placeholderTextColor={colors.textSubtle}
                       style={[
                         styles.priceInput,
@@ -1341,7 +1351,7 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                       ]}
                       keyboardType="decimal-pad"
                       inputMode="decimal"
-                      accessibilityLabel="Minimum price"
+                      accessibilityLabel={t("catalog.minimumPrice")}
 
                       accessibilityHint={
                         priceRange.isInvalid ? INVALID_PRICE_RANGE_MESSAGE : undefined
@@ -1352,7 +1362,7 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                     <TextInput
                       value={maxPrice}
                       onChangeText={setMaxPrice}
-                      placeholder="Max"
+                      placeholder={t("catalog.max")}
                       placeholderTextColor={colors.textSubtle}
                       style={[
                         styles.priceInput,
@@ -1360,7 +1370,7 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                       ]}
                       keyboardType="decimal-pad"
                       inputMode="decimal"
-                      accessibilityLabel="Maximum price"
+                      accessibilityLabel={t("catalog.maximumPrice")}
 
                       accessibilityHint={
                         priceRange.isInvalid ? INVALID_PRICE_RANGE_MESSAGE : undefined
@@ -1382,8 +1392,11 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
               {!loading && resources.length > 0 ? (
                 <View style={styles.resultsRow}>
                   <Text style={styles.resultsCount}>
-                    Showing {resources.length} of {totalCount || resources.length} resource
-                    {(totalCount || resources.length) === 1 ? "" : "s"}
+                    {t("catalog.resultsCount", {
+                      shown: resources.length,
+                      total: totalCount || resources.length,
+                      suffix: (totalCount || resources.length) === 1 ? "" : "s",
+                    })}
                   </Text>
                   <Pressable
                     onPress={clearFilters}
@@ -1394,15 +1407,15 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                     ]}
                     accessibilityRole="button"
                     accessibilityState={{ disabled: !hasActiveFilters }}
-                    accessibilityLabel="Clear filters"
+                    accessibilityLabel={t("catalog.clearFilters")}
                   >
-                    <Text style={styles.clearButtonText}>Clear filters</Text>
+                    <Text style={styles.clearButtonText}>{t("catalog.clearFilters")}</Text>
                   </Pressable>
                 </View>
               ) : null}
             </View>
 
-            <Text style={styles.apiHint}>API: {getApiBaseUrl()}</Text>
+            <Text style={styles.apiHint}>{t("catalog.api", { url: getApiBaseUrl() })}</Text>
 
             {error ? (
               <ErrorBanner message={error} onRetry={() => void loadData()} />
@@ -1429,9 +1442,9 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
         style={styles.fab}
         onPress={() => navigation.navigate("Scanner")}
         accessibilityRole="button"
-        accessibilityLabel="Scan QR code"
+        accessibilityLabel={t("catalog.scanQrLabel")}
       >
-        <Text style={styles.fabText}>Scan QR</Text>
+        <Text style={styles.fabText}>{t("catalog.scanQr")}</Text>
       </Pressable>
 
     </SafeAreaView>

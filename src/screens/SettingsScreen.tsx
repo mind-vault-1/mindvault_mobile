@@ -57,6 +57,11 @@ import {
   useAppLock,
 } from "../hooks/useAppLock";
 import { openExternalUrl } from "../utils/stellarExpert";
+import {
+  DEFAULT_PER_PAYMENT_LIMIT,
+  loadPreferences,
+  savePerPaymentLimit,
+} from "../services/preferences";
 
 /** docs/PRIVACY.md on the default branch: what is stored, what leaves the device, how to delete it. */
 const PRIVACY_POLICY_URL =
@@ -71,6 +76,9 @@ export function SettingsScreen() {
   const [savedUrl, setSavedUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  const [perPaymentLimit, setPerPaymentLimit] = useState(DEFAULT_PER_PAYMENT_LIMIT);
+  const [perPaymentLimitDraft, setPerPaymentLimitDraft] = useState(DEFAULT_PER_PAYMENT_LIMIT);
+  const [savingLimit, setSavingLimit] = useState(false);
   const [network, setNetworkState] = useState<StellarNetworkId>(getNetwork());
   const {
     enabled: appLockEnabled,
@@ -84,6 +92,13 @@ export function SettingsScreen() {
 
   useEffect(() => {
     void areHapticsEnabled().then(setHapticsEnabledState);
+  }, []);
+
+  useEffect(() => {
+    void loadPreferences().then(({ perPaymentLimit: limit }) => {
+      setPerPaymentLimit(limit);
+      setPerPaymentLimitDraft(limit);
+    });
   }, []);
 
   useEffect(() => subscribeNetwork(setNetworkState), []);
@@ -117,6 +132,26 @@ export function SettingsScreen() {
     await setHapticsEnabled(enabled);
     if (enabled) void hapticImpact();
   }, []);
+
+  const handleSavePaymentLimit = useCallback(async () => {
+    setSavingLimit(true);
+    try {
+      const saved = await savePerPaymentLimit(perPaymentLimitDraft);
+      setPerPaymentLimit(saved.perPaymentLimit);
+      setPerPaymentLimitDraft(saved.perPaymentLimit);
+      Alert.alert(
+        "Spending limit saved",
+        `Payments above ${saved.perPaymentLimit} USDC will ask for confirmation.`
+      );
+    } catch (error) {
+      Alert.alert(
+        "Invalid limit",
+        error instanceof Error ? error.message : "Enter a valid USDC amount."
+      );
+    } finally {
+      setSavingLimit(false);
+    }
+  }, [perPaymentLimitDraft]);
 
   const handleAppLockChange = useCallback(async (enabled: boolean) => {
     const saved = await setAppLockEnabled(enabled);
@@ -365,6 +400,65 @@ export function SettingsScreen() {
               trackColor={{ false: colors.border, true: colors.primary }}
               thumbColor={colors.surface}
             />
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Spending guard
+          </Text>
+          <Text
+            style={[
+              styles.infoText,
+              { color: colors.textMuted, marginBottom: 12 },
+            ]}
+          >
+            Payments above this limit require an extra typed confirmation in the paywall.
+          </Text>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: colors.text,
+                backgroundColor: colors.neutralBg,
+                borderColor: colors.border,
+              },
+            ]}
+            value={perPaymentLimitDraft}
+            onChangeText={setPerPaymentLimitDraft}
+            keyboardType="decimal-pad"
+            autoCapitalize="none"
+            accessibilityLabel="Per-payment limit (USDC)"
+            placeholder={DEFAULT_PER_PAYMENT_LIMIT}
+            placeholderTextColor={colors.textSubtle}
+            editable={!savingLimit}
+          />
+          <View style={styles.buttonRow}>
+            <TouchableOpacity
+              style={[
+                shared.button,
+                shared.primaryButton,
+                (perPaymentLimitDraft.trim() === perPaymentLimit || savingLimit) && styles.disabledButton,
+              ]}
+              onPress={() => void handleSavePaymentLimit()}
+              disabled={perPaymentLimitDraft.trim() === perPaymentLimit || savingLimit}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: perPaymentLimitDraft.trim() === perPaymentLimit || savingLimit }}
+              accessibilityLabel="Save spending limit"
+            >
+              <Text style={[shared.buttonText, shared.primaryButtonText]}>
+                {savingLimit ? "Saving…" : "Save limit"}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 

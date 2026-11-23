@@ -66,6 +66,17 @@ Then:
 - Press `a` — Android emulator
 - Scan the QR code with Expo Go on your device
 
+## Adding a localized string
+
+Catalog UI strings live in one file per namespace to reduce merge conflicts. To add a new Catalog string:
+
+1. Add an English key to `src/i18n/en/catalog.json`, using `{name}` placeholders for variables.
+2. Use `t("catalog.yourKey", { name: value })` from `src/i18n` instead of a literal in `src/screens/CatalogScreen.tsx`.
+3. Keep accessibility labels and hints translated too; only icons and route names stay literal.
+4. Update `src/i18n/index.test.ts` when you add a string that needs an interpolation check.
+
+The `t()` helper is typed from `catalog.json`, so a missing or misspelled key fails `npm run typecheck`.
+
 ## Type Checking
 
 ```bash

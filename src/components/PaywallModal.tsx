@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
@@ -18,6 +19,7 @@ import {
   appNetworkId,
   sorobanRpcUrl,
   prepareResourceAccess,
+  priceToAtomicUnits,
   signPaymentTransaction,
   submitSignedPayment,
   type PaymentChallenge,
@@ -32,6 +34,7 @@ import { LeaseSheet } from "./LeaseSheet";
 import { getRegistryClient } from "../api/leases";
 import { hapticError, hapticSuccess } from "../utils/haptics";
 import { getPublicKey } from "../services/wallet";
+import { DEFAULT_PER_PAYMENT_LIMIT, loadPreferences } from "../services/preferences";
 
 type WalletNavigation = { navigate: (route: "Wallet") => void };
 
@@ -130,6 +133,21 @@ function createStyles(colors: ThemeColors) {
       padding: 10,
       borderRadius: 8,
     },
+    warningPanel: {
+      gap: 8,
+      padding: 12,
+      borderRadius: 8,
+      backgroundColor: colors.warningBg,
+    },
+    limitInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      color: colors.text,
+      backgroundColor: colors.surface,
+    },
   });
 }
 
@@ -178,12 +196,23 @@ export function PaywallModal({
   const [registryAvailable, setRegistryAvailable] = useState<boolean | null>(null);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
   const [showWalletLink, setShowWalletLink] = useState(false);
+  const [spendingLimit, setSpendingLimit] = useState(DEFAULT_PER_PAYMENT_LIMIT);
+  const [showLimitConfirm, setShowLimitConfirm] = useState(false);
+  const [limitConfirmText, setLimitConfirmText] = useState("");
 
   const flow = useRef(0);
   const busy = useRef(false);
+  const highPaymentConfirmed = useRef(false);
   const checkController = useRef<AbortController | null>(null);
   const navigation = useOptionalNavigation();
   const networkLabel = paymentNetworkLabel();
+  const isOverLimit = useMemo(() => {
+    try {
+      return priceToAtomicUnits(price) > priceToAtomicUnits(spendingLimit);
+    } catch {
+      return false;
+    }
+  }, [price, spendingLimit]);
 
   useEffect(() => {
     flow.current += 1;
@@ -195,6 +224,9 @@ export function PaywallModal({
     setShowLeaseSheet(false);
     setWarningMsg(null);
     setShowWalletLink(false);
+    setShowLimitConfirm(false);
+    setLimitConfirmText("");
+    highPaymentConfirmed.current = false;
     checkController.current?.abort();
     checkController.current = null;
     return () => {
@@ -210,6 +242,17 @@ export function PaywallModal({
     } else {
       setRegistryAvailable(false);
     }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void loadPreferences().then((preferences) => {
+      if (!cancelled) setSpendingLimit(preferences.perPaymentLimit);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [visible]);
 
   function isActive(run: number) {
@@ -249,8 +292,21 @@ export function PaywallModal({
     }
   }
 
+  function handleConfirmHighPayment() {
+    if (limitConfirmText.trim().toUpperCase() !== "CONFIRM") return;
+    highPaymentConfirmed.current = true;
+    setShowLimitConfirm(false);
+    void handlePay();
+  }
+
   async function handlePay() {
     if (!visible || busy.current) return;
+    if (isOverLimit && !highPaymentConfirmed.current) {
+      setShowLimitConfirm(true);
+      return;
+    }
+    setShowLimitConfirm(false);
+    setLimitConfirmText("");
     const run = ++flow.current;
     busy.current = true;
     setErrorMsg(null);
@@ -354,8 +410,43 @@ export function PaywallModal({
                 <Text style={styles.hint}>
                   You'll sign the payment with your Stellar key; the server pays the network fee.
                 </Text>
+                <Text style={styles.hint} accessibilityLabel={`Spending limit ${spendingLimit} USDC per payment`}>
+                  Spending limit: {spendingLimit} USDC per payment.
+                </Text>
+                {isOverLimit ? (
+                  <Text accessibilityRole="alert" style={styles.warning}>
+                    This payment is above your spending limit and needs extra confirmation.
+                  </Text>
+                ) : null}
                 {warningMsg ? (
                   <Text accessibilityRole="alert" style={styles.warning}>{warningMsg}</Text>
+                ) : null}
+                {showLimitConfirm ? (
+                  <View style={styles.warningPanel}>
+                    <Text accessibilityRole="alert" style={styles.warning}>
+                      Type CONFIRM to allow this payment above your {spendingLimit} USDC limit.
+                    </Text>
+                    <TextInput
+                      value={limitConfirmText}
+                      onChangeText={setLimitConfirmText}
+                      placeholder="CONFIRM"
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      accessibilityLabel="Confirm high payment"
+                      style={styles.limitInput}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Confirm high payment button"
+                      disabled={limitConfirmText.trim().toUpperCase() !== "CONFIRM"}
+                      onPress={handleConfirmHighPayment}
+                      style={[shared.button, shared.primaryButton, styles.actionBtn]}
+                    >
+                      <Text style={[shared.buttonText, shared.primaryButtonText]}>
+                        Confirm payment
+                      </Text>
+                    </Pressable>
+                  </View>
                 ) : null}
                 <Pressable
                   accessibilityRole="button"
