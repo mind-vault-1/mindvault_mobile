@@ -284,3 +284,113 @@ it("does not apply pending work after unmount", async () => {
   expect(mockSign).not.toHaveBeenCalled();
   expect(mockSubmit).not.toHaveBeenCalled();
 });
+
+describe("spending guard", () => {
+  it("does not ask for confirmation when the price is exactly the limit", async () => {
+    const screen = renderWithProviders(<PaywallModal {...props} price="5.00" />);
+    fireEvent.press(await screen.findByText("Pay & Access"));
+
+    await waitFor(() => expect(mockPrepare).toHaveBeenCalledWith(props.accessUrl, "5.00"));
+    expect(screen.queryByLabelText("Confirm high payment")).toBeNull();
+    expect(screen.queryByText(/above your spending limit/)).toBeNull();
+  });
+
+  it("warns up front when the price is above the limit", async () => {
+    const screen = renderWithProviders(<PaywallModal {...props} price="5.01" />);
+
+    expect(await screen.findByText(/above your spending limit/)).toBeTruthy();
+    expect(screen.getByLabelText("Spending limit 5.00 USDC per payment")).toBeTruthy();
+    expect(mockPrepare).not.toHaveBeenCalled();
+  });
+
+  it("keeps the payment blocked until CONFIRM is typed, in any letter case", async () => {
+    const screen = renderWithProviders(<PaywallModal {...props} price="10.00" />);
+    fireEvent.press(await screen.findByText("Pay & Access"));
+    const input = await screen.findByLabelText("Confirm high payment");
+
+    fireEvent.changeText(input, "yes");
+    await act(async () => { fireEvent.press(screen.getByLabelText("Confirm high payment button")); });
+    expect(mockPrepare).not.toHaveBeenCalled();
+    expect(mockCheckUsdc).not.toHaveBeenCalled();
+
+    fireEvent.changeText(input, " confirm ");
+    await act(async () => { fireEvent.press(screen.getByLabelText("Confirm high payment button")); });
+    await waitFor(() => expect(mockPrepare).toHaveBeenCalledTimes(1));
+    expect(screen.queryByLabelText("Confirm high payment")).toBeNull();
+  });
+
+  it("asks again after the sheet is closed and reopened", async () => {
+    const screen = renderWithProviders(<PaywallModal {...props} price="10.00" />);
+    fireEvent.press(await screen.findByText("Pay & Access"));
+    fireEvent.changeText(await screen.findByLabelText("Confirm high payment"), "CONFIRM");
+    await act(async () => { fireEvent.press(screen.getByLabelText("Confirm high payment button")); });
+    await waitFor(() => expect(mockPrepare).toHaveBeenCalledTimes(1));
+
+    screen.rerender(<PaywallModal {...props} price="10.00" visible={false} />);
+    screen.rerender(<PaywallModal {...props} price="10.00" />);
+    fireEvent.press(await screen.findByText("Pay & Access"));
+
+    expect(await screen.findByLabelText("Confirm high payment")).toBeTruthy();
+    expect(mockPrepare).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("payment errors", () => {
+  it("blocks payment and links to the wallet when the balance is insufficient", async () => {
+    mockCheckUsdc.mockResolvedValueOnce({
+      status: "insufficient-balance",
+      message: "You need at least 1.25 USDC to pay for this resource.",
+    });
+    const screen = renderWithProviders(<PaywallModal {...props} />);
+    fireEvent.press(await screen.findByText("Pay & Access"));
+
+    expect(await screen.findByText("You need at least 1.25 USDC to pay for this resource.")).toBeTruthy();
+    expect(screen.getByLabelText("Open Wallet")).toBeTruthy();
+    expect(mockPrepare).not.toHaveBeenCalled();
+  });
+
+  it("uses a generic message when the failure is not an Error", async () => {
+    mockPrepare.mockRejectedValueOnce("boom");
+    const screen = renderWithProviders(<PaywallModal {...props} />);
+    fireEvent.press(await screen.findByText("Pay & Access"));
+
+    expect(await screen.findByText("Unable to access this resource. Please try again.")).toBeTruthy();
+  });
+
+  it("hides the wallet link on a later, unrelated error", async () => {
+    mockCheckUsdc.mockResolvedValueOnce({ status: "missing-trustline", message: "Add a USDC trustline." });
+    const screen = renderWithProviders(<PaywallModal {...props} />);
+    fireEvent.press(await screen.findByText("Pay & Access"));
+    expect(await screen.findByLabelText("Open Wallet")).toBeTruthy();
+
+    mockPrepare.mockRejectedValueOnce(new Error("Storage offline"));
+    fireEvent.press(screen.getByText("Retry"));
+
+    expect(await screen.findByText("Storage offline")).toBeTruthy();
+    expect(screen.queryByLabelText("Open Wallet")).toBeNull();
+  });
+
+  it("settles only once when Pay is pressed repeatedly", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof prepareResourceAccess>>>();
+    mockPrepare.mockReturnValue(pending.promise);
+    const screen = renderWithProviders(<PaywallModal {...props} />);
+    const pay = await screen.findByText("Pay & Access");
+
+    fireEvent.press(pay);
+    fireEvent.press(pay);
+    await act(async () => { pending.resolve({ type: "payment", challenge }); });
+
+    expect(mockPrepare).toHaveBeenCalledTimes(1);
+    expect(mockCheckUsdc).toHaveBeenCalledTimes(1);
+  });
+});
+
+it("hands unlocked text to ContentViewer with its copy action", async () => {
+  mockSubmit.mockResolvedValueOnce({ type: "text", content: "Plain unlocked text" });
+  const screen = renderWithProviders(<PaywallModal {...props} />);
+  await startSigning(screen);
+
+  expect(await screen.findByLabelText("Unlocked content")).toBeTruthy();
+  expect(screen.getByText("Plain unlocked text")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Copy content" })).toBeTruthy();
+});
