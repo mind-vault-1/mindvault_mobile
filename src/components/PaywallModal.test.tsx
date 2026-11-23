@@ -1,4 +1,5 @@
 import React from "react";
+import * as WebBrowser from "expo-web-browser";
 import { Linking } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 
@@ -23,6 +24,7 @@ jest.mock("../utils/validateStellarSecret", () => ({
 jest.mock("../api/horizon", () => ({
   checkUsdcForPayment: jest.fn(),
 }));
+jest.mock("expo-web-browser", () => ({ openBrowserAsync: jest.fn() }));
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
 jest.mock("./ToastProvider", () => ({
   useToast: () => ({ show: jest.fn(), success: jest.fn(), error: jest.fn(), info: jest.fn() }),
@@ -50,6 +52,7 @@ const mockCheckUsdc = checkUsdcForPayment as jest.MockedFunction<typeof checkUsd
 const mockGetCachedContent = getCachedContent as jest.MockedFunction<typeof getCachedContent>;
 const mockCacheContent = cacheContent as jest.MockedFunction<typeof cacheContent>;
 const mockNavigate = jest.fn();
+const mockOpenBrowser = WebBrowser.openBrowserAsync as jest.Mock;
 const challenge: PaymentChallenge = {
   x402Version: 2, resource: { url: "https://api.example.com/resources/book", description: "Handbook" },
   accepted: { scheme: "exact", network: "stellar:testnet", amount: "12500000", asset: "C-USDC", payTo: "G-payee", maxTimeoutSeconds: 60, extra: { areFeesSponsored: true } },
@@ -72,6 +75,7 @@ beforeEach(() => {
   mockPrepare.mockResolvedValue({ type: "payment", challenge });
   mockSign.mockResolvedValue("signed-payment-xdr");
   mockSubmit.mockResolvedValue({ type: "text", content: "Unlocked content" });
+  mockOpenBrowser.mockReset().mockResolvedValue({ type: "opened" });
 });
 
 afterEach(() => { jest.restoreAllMocks(); });
@@ -197,8 +201,21 @@ it("renders markdown and JSON unlocked content through ContentViewer", async () 
   expect(await jsonScreen.findByText(/"title": "Book"/)).toBeTruthy();
 });
 
-it("opens external content after settlement and closes", async () => {
+it("opens external content in the in-app browser after settlement and closes", async () => {
   mockSubmit.mockResolvedValue({ type: "external", url: "https://example.com/book.pdf" });
+  const open = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+  const screen = renderWithProviders(<PaywallModal {...props} />);
+  await startSigning(screen);
+  await act(async () => {});
+  expect(mockOpenBrowser).toHaveBeenCalledWith("https://example.com/book.pdf");
+  expect(open).not.toHaveBeenCalled();
+  expect(props.onClose).toHaveBeenCalled();
+});
+
+it("falls back to the system handler when the in-app browser cannot open", async () => {
+  mockSubmit.mockResolvedValue({ type: "external", url: "https://example.com/book.pdf" });
+  mockOpenBrowser.mockRejectedValue(new Error("no in-app browser"));
+  jest.spyOn(Linking, "canOpenURL").mockResolvedValue(true);
   const open = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
   const screen = renderWithProviders(<PaywallModal {...props} />);
   await startSigning(screen);
@@ -209,6 +226,8 @@ it("opens external content after settlement and closes", async () => {
 
 it("retries opening settled external content without paying again", async () => {
   mockSubmit.mockResolvedValue({ type: "external", url: "https://example.com/book.pdf" });
+  mockOpenBrowser.mockRejectedValue(new Error("no in-app browser"));
+  jest.spyOn(Linking, "canOpenURL").mockResolvedValue(true);
   const open = jest.spyOn(Linking, "openURL")
     .mockRejectedValueOnce(new Error("Browser unavailable"))
     .mockResolvedValueOnce(true);
