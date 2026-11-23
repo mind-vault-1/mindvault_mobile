@@ -18,6 +18,7 @@ import { ReceiptDetailScreen } from "./screens/ReceiptDetailScreen";
 import { PublishResourceScreen } from "./screens/PublishResourceScreen";
 import { PublisherResourceDetailScreen } from "./screens/PublisherResourceDetailScreen";
 import { OnboardingScreen } from "./screens/OnboardingScreen";
+import { WalletScreen } from "./screens/WalletScreen";
 
 export type RootStackParamList = {
   Onboarding: undefined;
@@ -33,6 +34,8 @@ export type RootStackParamList = {
   PurchaseHistory: undefined;
   ReceiptDetail: { txHash: string };
   PublishResource: undefined;
+  Wallet: undefined;
+  ImportWallet: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -120,6 +123,16 @@ export function RootNavigator({ showOnboarding }: RootNavigatorProps) {
         name="PublishResource"
         component={PublishResourceScreen}
         options={{ title: "Publish Link" }}
+      />
+      <Stack.Screen
+        name="Wallet"
+        component={WalletScreen}
+        options={{ title: "Wallet" }}
+      />
+      <Stack.Screen
+        name="ImportWallet"
+        component={WalletScreen}
+        options={{ title: "Import Wallet" }}
       />
     </Stack.Navigator>
   );
