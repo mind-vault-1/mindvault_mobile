@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=4",
     "validate-deps": "npx --yes expo-doctor@latest",
-    "test": "jest"
+    "test": "jest",
+    "contract:check": "node --experimental-strip-types scripts/check-contract.ts",
+    "contract:update": "node --experimental-strip-types scripts/check-contract.ts --update"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.5",
@@ -28,6 +30,7 @@
     "expo-camera": "~16.1.11",
     "expo-clipboard": "~7.1.5",
     "expo-constants": "~17.1.8",
+    "expo-document-picker": "~13.1.6",
     "expo-file-system": "~18.1.11",
     "expo-haptics": "~14.1.4",
     "expo-local-authentication": "~16.0.5",

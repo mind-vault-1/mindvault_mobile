@@ -17,6 +17,7 @@ export interface AgentStatusCardProps {
 }
 
 export function AgentStatusCard(props: AgentStatusCardProps) {
+  const { onRetry } = props;
   const { colors, typography } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -33,7 +34,7 @@ export function AgentStatusCard(props: AgentStatusCardProps) {
 
   const load = useCallback(async () => {
     if (isControlled) {
-      props.onRetry?.();
+      onRetry?.();
       return;
     }
     setInternalLoading(true);
@@ -46,7 +47,7 @@ export function AgentStatusCard(props: AgentStatusCardProps) {
     } finally {
       setInternalLoading(false);
     }
-  }, [isControlled, props.onRetry]);
+  }, [isControlled, onRetry]);
 
   useEffect(() => {
     if (!isControlled) {
