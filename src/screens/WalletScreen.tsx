@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import QRCode from "react-native-qrcode-svg";
 import * as Clipboard from "expo-clipboard";
@@ -25,6 +25,8 @@ import {
   type PendingConnection,
   type WalletConnectAccount,
 } from "../services/walletconnect";
+import { wipe as wipeWalletSecrets } from "../services/wallet";
+import { clearApiKey } from "../services/secureStorage";
 import { spacing, type ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { logError } from "../utils/errorLogger";
@@ -45,6 +47,9 @@ export function WalletScreen() {
   const [funding, setFunding] = useState(false);
   const [trustlineMissing, setTrustlineMissing] = useState(false);
   const [trustlineBusy, setTrustlineBusy] = useState(false);
+  const [wipeOpen, setWipeOpen] = useState(false);
+  const [wipeText, setWipeText] = useState("");
+  const [wiping, setWiping] = useState(false);
   const mounted = useRef(true);
   const testnetOnly = network === "testnet";
 
@@ -154,6 +159,26 @@ export function WalletScreen() {
       setTrustlineBusy(false);
     }
   }, [account, testnetOnly, refreshTrustline, toast]);
+
+  const wipeEverything = useCallback(async () => {
+    setWiping(true);
+    try {
+      // Best-effort: every store is cleared even if one deletion fails.
+      await Promise.all([
+        wipeWalletSecrets().catch(() => undefined),
+        clearApiKey().catch(() => undefined),
+        disconnectWallet().catch(() => undefined),
+      ]);
+      if (!mounted.current) return;
+      setAccount(null);
+      setPending(null);
+      setWipeOpen(false);
+      setWipeText("");
+      toast.success("Wallet wiped and signed out");
+    } finally {
+      if (mounted.current) setWiping(false);
+    }
+  }, [toast]);
 
   async function openWallet(uri: string) {
     try {
@@ -278,6 +303,68 @@ export function WalletScreen() {
             )}
           </View>
         )}
+        {status !== "loading" ? (
+          <View style={styles.card}>
+            <Text style={typography.cardTitle} accessibilityRole="header">
+              Wipe wallet
+            </Text>
+            <Text style={typography.body}>
+              Permanently removes the secret key, API key and WalletConnect sessions stored on this device.
+            </Text>
+            {wipeOpen ? (
+              <View style={styles.wipeForm}>
+                <TextInput
+                  value={wipeText}
+                  onChangeText={setWipeText}
+                  placeholder='Type "WIPE" to confirm'
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  editable={!wiping}
+                  accessibilityLabel="Type WIPE to confirm wipe"
+                  style={styles.input}
+                />
+                <Pressable
+                  onPress={() => void wipeEverything()}
+                  disabled={wipeText !== "WIPE" || wiping}
+                  accessibilityRole="button"
+                  accessibilityLabel="Erase wallet and sign out"
+                  accessibilityState={{ disabled: wipeText !== "WIPE" || wiping, busy: wiping }}
+                  style={[shared.button, styles.dangerButton, styles.action]}
+                >
+                  {wiping ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={[shared.buttonText, shared.primaryButtonText]}>Erase everything</Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setWipeOpen(false);
+                    setWipeText("");
+                  }}
+                  disabled={wiping}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel wipe"
+                  style={styles.action}
+                >
+                  <Text style={[shared.buttonText, { color: colors.textMuted }]}>Cancel</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => setWipeOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Wipe wallet and sign out"
+                style={styles.action}
+              >
+                <Text style={[typography.body, { color: colors.danger, fontWeight: "600" }]}>
+                  Wipe wallet &amp; sign out
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        ) : null}
         {error ? (
           <Text style={styles.error} accessibilityRole="alert">
             {error}
@@ -306,6 +393,16 @@ function createStyles(colors: ThemeColors) {
     testnetPanel: { gap: spacing.sm, padding: spacing.sm, borderRadius: 12, backgroundColor: colors.neutralBg },
     hint: { fontSize: 12, color: colors.textMuted },
     action: { alignSelf: "stretch" },
+    wipeForm: { gap: spacing.sm },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      padding: spacing.sm,
+      color: colors.text,
+      fontFamily: "monospace",
+    },
+    dangerButton: { backgroundColor: colors.danger },
     error: { fontSize: 14, color: colors.danger, textAlign: "center" },
   });
 }

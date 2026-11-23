@@ -111,7 +111,7 @@ describe("wallet service", () => {
     store.getItemAsync.mockImplementation(async (key) =>
       key === walletSecretKey ? keypair.secret() : null
     );
-    localAuth.authenticateAsync.mockResolvedValue({ success: false, error: "user_canceled" });
+    localAuth.authenticateAsync.mockResolvedValue({ success: false, error: "user_cancel" });
     const transaction = new TransactionBuilder(
       new Account(keypair.publicKey(), "1"),
       { fee: "100", networkPassphrase: Networks.TESTNET }

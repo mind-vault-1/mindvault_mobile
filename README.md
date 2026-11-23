@@ -20,9 +20,9 @@ The [privacy and data-handling notes](docs/PRIVACY.md) list every value the app 
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 20+ (SDK 53 dropped support for Node 18)
 - npm or pnpm
-- [Expo Go](https://expo.dev/go) on your phone, or Xcode / Android Studio for simulators
+- [Expo Go](https://expo.dev/go) on your phone, or Xcode / Android Studio for simulators. On Android, push notifications are not available in Expo Go under SDK 53 — use a development build to test them.
 
 ## Setup
 
@@ -82,6 +82,10 @@ Authenticated publisher writes (`POST`/`DELETE`) are signed with HMAC-SHA256 whe
 - `Idempotency-Key`: only when the caller supplies one; it is appended as a fifth canonical line
 
 The canonical string, body hash and signature are byte-for-byte compatible with `server/src/utils/requestSignature.ts`. The implementation in `src/utils/requestSignature.ts` is pure JavaScript (including SHA-256 and UTF-8 encoding) because Hermes has no `node:crypto`.
+
+### Wipe wallet and sign out
+
+The **Wallet** screen has a **Wipe wallet & sign out** action. After you type `WIPE` to confirm, the app deletes the Stellar secret/public key, the publisher API key and all active WalletConnect sessions from secure storage, clears the in-memory wallet state and returns to the disconnected state. This cannot be undone: back up any key you still need before wiping. See [privacy and data-handling notes](docs/PRIVACY.md) for the full list of stored values and deletion behaviour.
 
 ### Screen-capture protection
 
@@ -157,6 +161,8 @@ The `android/` and `ios/` directories are generated at build time. See the [nati
 | `npm run ios`       | Run the app on an iOS device or simulator using Expo's development build    |
 | `npm run web`       | Run the app in a web browser                                                |
 | `npm run typecheck` | Run TypeScript type checking without emitting files                         |
+| `npm run lint`      | Run ESLint (fails on more than 4 warnings)                                   |
+| `npm run validate-deps` | Check installed dependency versions against the Expo SDK                |
 | `npm test`          | Run tests with Jest                                                         |
 
 ## Related

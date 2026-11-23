@@ -4,8 +4,18 @@ import {
   prepareOwnershipTransfer,
   submitOwnershipTransfer,
 } from "../api/resources";
+import { getNetworkConfig } from "../config/network";
 
-export type TransferStep = "idle" | "preparing" | "signing" | "submitting" | "done" | "error";
+export type TransferStep =
+  | "idle"
+  | "confirm"
+  | "preparing"
+  | "signing"
+  | "submitting"
+  | "done"
+  | "error";
+
+export const TRANSFER_CONFIRM_PHRASE = "TRANSFER";
 
 export interface UseTransferOwnershipResult {
   step: TransferStep;
@@ -14,6 +24,14 @@ export interface UseTransferOwnershipResult {
   destinationAddress: string;
   setDestinationAddress: (address: string) => void;
   isValidAddress: boolean;
+  confirmationText: string;
+  setConfirmationText: (text: string) => void;
+  isConfirmed: boolean;
+  networkLabel: string;
+  networkPassphrase: string;
+  scanDestination: (payload: string) => boolean;
+  beginConfirm: () => void;
+  cancelConfirm: () => void;
   pendingTransaction: PendingOwnershipTransaction | null;
   start: (resourceId: string) => Promise<void>;
   submitSigned: (signedXdr: string) => Promise<void>;
@@ -41,22 +59,70 @@ function normalizeStellarAddress(address: string): string {
   return address.trim().toUpperCase();
 }
 
+function extractDestination(payload: string): string {
+  const trimmed = payload.trim();
+  if (!trimmed.includes(":")) return trimmed;
+  try {
+    const url = new URL(trimmed);
+    const param = url.searchParams.get("destination");
+    return param ?? trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
 /**
  * Mobile transfer-ownership flow:
- * 1. prepare  — POST /resources/:id/ownership/prepare { newCreator } → unsigned XDR
- * 2. sign     — sign the XDR (stub — replace with mobile wallet)
- * 3. submit   — POST /resources/:id/ownership { signedXdr, newCreator } → broadcast
+ * 1. scan/confirm — validate the destination, review details, type TRANSFER
+ * 2. prepare      — POST /resources/:id/ownership/prepare { newCreator } → unsigned XDR
+ * 3. sign         — sign the XDR
+ * 4. submit       — POST /resources/:id/ownership { signedXdr, newCreator } → broadcast
  */
 export function useTransferOwnership(): UseTransferOwnershipResult {
   const [step, setStep] = useState<TransferStep>("idle");
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [destinationAddress, setDestinationAddress] = useState("");
+  const [confirmationText, setConfirmationText] = useState("");
   const [pendingTransaction, setPendingTransaction] = useState<PendingOwnershipTransaction | null>(null);
 
+  const network = getNetworkConfig();
   const isValidAddress = validateStellarAddress(destinationAddress);
+  const isConfirmed = confirmationText.trim().toUpperCase() === TRANSFER_CONFIRM_PHRASE;
+
+  function scanDestination(payload: string): boolean {
+    const candidate = normalizeStellarAddress(extractDestination(payload));
+    if (!validateStellarAddress(candidate)) {
+      setError("Scanned code is not a valid Stellar public key.");
+      return false;
+    }
+    setDestinationAddress(candidate);
+    setConfirmationText("");
+    setError(null);
+    setStep("idle");
+    return true;
+  }
+
+  function beginConfirm() {
+    if (!validateStellarAddress(destinationAddress)) {
+      setError("Enter a valid destination address first.");
+      return;
+    }
+    setError(null);
+    setStep("confirm");
+  }
+
+  function cancelConfirm() {
+    setConfirmationText("");
+    setError(null);
+    setStep("idle");
+  }
 
   async function start(resourceId: string): Promise<void> {
+    if (step !== "confirm" || !isConfirmed) {
+      setError("Review the transfer details and type TRANSFER to confirm.");
+      return;
+    }
     const destination = normalizeStellarAddress(destinationAddress);
     if (!validateStellarAddress(destination)) {
       setError("Invalid destination address.");
@@ -67,7 +133,6 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
     setTxHash(null);
 
     try {
-      // Step 1: Prepare
       setStep("preparing");
       const { unsignedXdr, networkPassphrase } = await prepareOwnershipTransfer(resourceId, destination);
       setStep("signing");
@@ -115,6 +180,7 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
     setError(null);
     setTxHash(null);
     setDestinationAddress("");
+    setConfirmationText("");
     setPendingTransaction(null);
   }
 
@@ -125,6 +191,14 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
     destinationAddress,
     setDestinationAddress,
     isValidAddress,
+    confirmationText,
+    setConfirmationText,
+    isConfirmed,
+    networkLabel: network.label,
+    networkPassphrase: network.passphrase,
+    scanDestination,
+    beginConfirm,
+    cancelConfirm,
     pendingTransaction,
     start,
     submitSigned,

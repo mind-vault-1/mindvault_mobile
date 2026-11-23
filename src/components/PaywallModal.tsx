@@ -4,7 +4,6 @@ import {
   Linking,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -30,6 +29,7 @@ import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import type { AccessResult } from "../types";
 import { SignTransactionSheet } from "./SignTransactionSheet";
+import { ContentViewer } from "./ContentViewer";
 import { LeaseSheet } from "./LeaseSheet";
 import { getRegistryClient } from "../api/leases";
 import { hapticError, hapticSuccess } from "../utils/haptics";
@@ -106,17 +106,6 @@ function createStyles(colors: ThemeColors) {
     hint: {
       fontSize: 12,
       color: colors.textMuted,
-    },
-    scrollArea: {
-      flexGrow: 0,
-    },
-    scrollContent: {
-      padding: spacing.lg,
-    },
-    contentText: {
-      fontSize: 14,
-      color: colors.text,
-      lineHeight: 22,
     },
     secondaryAction: {
       marginTop: spacing.sm,
@@ -483,9 +472,7 @@ export function PaywallModal({
             )}
 
             {phase === "result" && result?.type === "text" && (
-              <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
-                <Text style={styles.contentText}>{result.content}</Text>
-              </ScrollView>
+              <ContentViewer content={result.content} />
             )}
 
             {phase === "error" && (

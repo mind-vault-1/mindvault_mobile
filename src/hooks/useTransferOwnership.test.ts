@@ -2,7 +2,12 @@ import { Keypair } from "@stellar/stellar-sdk";
 import { act, renderHook } from "@testing-library/react-native";
 
 import { prepareOwnershipTransfer, submitOwnershipTransfer } from "../api/resources";
-import { useTransferOwnership, validateStellarAddress } from "./useTransferOwnership";
+import { getNetworkConfig } from "../config/network";
+import {
+  TRANSFER_CONFIRM_PHRASE,
+  useTransferOwnership,
+  validateStellarAddress,
+} from "./useTransferOwnership";
 
 jest.mock("../api/resources", () => ({
   prepareOwnershipTransfer: jest.fn(),
@@ -48,15 +53,29 @@ describe("useTransferOwnership signing", () => {
     });
   });
 
+  type Hook = { result: { current: ReturnType<typeof useTransferOwnership> } };
+
+  function setDestination(hook: Hook, address = destination) {
+    act(() => hook.result.current.setDestinationAddress(`  ${address.toLowerCase()}  `));
+  }
+
+  function confirm(hook: Hook) {
+    act(() => hook.result.current.beginConfirm());
+    expect(hook.result.current.step).toBe("confirm");
+    act(() => hook.result.current.setConfirmationText(TRANSFER_CONFIRM_PHRASE));
+    expect(hook.result.current.isConfirmed).toBe(true);
+  }
+
   async function prepared() {
     const hook = renderHook(() => useTransferOwnership());
-    act(() => hook.result.current.setDestinationAddress(destination));
+    setDestination(hook);
+    confirm(hook);
     await act(() => hook.result.current.start("r1"));
     expect(hook.result.current.pendingTransaction).not.toBeNull();
     return hook;
   }
 
-  it("happy path: walks idle -> preparing -> signing -> submitting -> done with tx hash", async () => {
+  it("happy path: walks confirm -> preparing -> signing -> submitting -> done with tx hash", async () => {
     mockedSubmit.mockResolvedValue({
       id: "r1",
       newCreator: destination,
@@ -67,10 +86,12 @@ describe("useTransferOwnership signing", () => {
     const hook = renderHook(() => useTransferOwnership());
     expect(hook.result.current.step).toBe("idle");
     expect(hook.result.current.pendingTransaction).toBeNull();
+    const network = getNetworkConfig();
+    expect(hook.result.current.networkLabel).toBe(network.label);
+    expect(hook.result.current.networkPassphrase).toBe(network.passphrase);
 
-    act(() => {
-      hook.result.current.setDestinationAddress(`  ${destination.toLowerCase()}  `);
-    });
+    setDestination(hook);
+    confirm(hook);
 
     let startPromise: Promise<void>;
     act(() => {
@@ -114,11 +135,9 @@ describe("useTransferOwnership signing", () => {
     mockedPrepare.mockRejectedValue(new Error("Resource not found"));
 
     const hook = renderHook(() => useTransferOwnership());
-    act(() => hook.result.current.setDestinationAddress(destination));
-
-    await act(async () => {
-      await hook.result.current.start("r1");
-    });
+    setDestination(hook);
+    confirm(hook);
+    await act(() => hook.result.current.start("r1"));
 
     expect(hook.result.current.step).toBe("error");
     expect(hook.result.current.error).toBe("Resource not found");
@@ -142,20 +161,21 @@ describe("useTransferOwnership signing", () => {
 
   it("invalid input makes no API calls, sets error, and reset returns to clean state", async () => {
     const hook = renderHook(() => useTransferOwnership());
-    act(() => hook.result.current.setDestinationAddress("invalid-destination"));
+    setDestination(hook, "invalid-destination");
 
     expect(hook.result.current.isValidAddress).toBe(false);
+
+    act(() => hook.result.current.beginConfirm());
+    expect(hook.result.current.step).toBe("idle");
+    expect(hook.result.current.error).toBe("Enter a valid destination address first.");
 
     await act(async () => {
       await hook.result.current.start("r1");
     });
 
     expect(mockedPrepare).not.toHaveBeenCalled();
-    expect(hook.result.current.error).toBe("Invalid destination address.");
-    expect(hook.result.current.step).toBe("idle");
     expect(hook.result.current.pendingTransaction).toBeNull();
 
-    // reset clears address, error, and step
     act(() => {
       hook.result.current.reset();
     });
@@ -164,7 +184,61 @@ describe("useTransferOwnership signing", () => {
     expect(hook.result.current.error).toBeNull();
     expect(hook.result.current.txHash).toBeNull();
     expect(hook.result.current.destinationAddress).toBe("");
+    expect(hook.result.current.confirmationText).toBe("");
     expect(hook.result.current.pendingTransaction).toBeNull();
+  });
+
+  it("start is blocked until the typed confirmation matches", async () => {
+    const hook = renderHook(() => useTransferOwnership());
+    setDestination(hook);
+
+    await act(() => hook.result.current.start("r1"));
+    expect(mockedPrepare).not.toHaveBeenCalled();
+    expect(hook.result.current.error).toBe("Review the transfer details and type TRANSFER to confirm.");
+
+    act(() => hook.result.current.beginConfirm());
+    act(() => hook.result.current.setConfirmationText("WRONG"));
+    await act(() => hook.result.current.start("r1"));
+    expect(mockedPrepare).not.toHaveBeenCalled();
+    expect(hook.result.current.step).toBe("confirm");
+
+    act(() => hook.result.current.cancelConfirm());
+    expect(hook.result.current.step).toBe("idle");
+    expect(hook.result.current.confirmationText).toBe("");
+  });
+
+  it("scanDestination accepts a validated QR payload or SEP-7 destination", () => {
+    const hook = renderHook(() => useTransferOwnership());
+    const scanned = destination.toLowerCase();
+
+    act(() => {
+      expect(hook.result.current.scanDestination(`  ${scanned}  `)).toBe(true);
+    });
+    expect(hook.result.current.destinationAddress).toBe(destination.toUpperCase());
+    expect(hook.result.current.isValidAddress).toBe(true);
+
+    act(() => {
+      hook.result.current.scanDestination(
+        `web+stellar:pay?destination=${destination.toUpperCase()}`
+      );
+    });
+    expect(hook.result.current.destinationAddress).toBe(destination.toUpperCase());
+  });
+
+  it("scanDestination rejects tampered or secret-key payloads", () => {
+    const hook = renderHook(() => useTransferOwnership());
+    const tampered = destination.slice(0, -1) + (destination.endsWith("A") ? "B" : "A");
+
+    act(() => {
+      expect(hook.result.current.scanDestination(tampered)).toBe(false);
+    });
+    expect(hook.result.current.error).toBe("Scanned code is not a valid Stellar public key.");
+    expect(hook.result.current.destinationAddress).toBe("");
+
+    act(() => {
+      expect(hook.result.current.scanDestination("S" + "A".repeat(55))).toBe(false);
+    });
+    expect(mockedPrepare).not.toHaveBeenCalled();
   });
 
   it("closes the signing sheet and reports the error when submission fails", async () => {

@@ -22,6 +22,10 @@ jest.mock("../utils/validateStellarSecret", () => ({
 jest.mock("../api/horizon", () => ({
   checkUsdcForPayment: jest.fn(),
 }));
+jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
+jest.mock("./ToastProvider", () => ({
+  useToast: () => ({ show: jest.fn(), success: jest.fn(), error: jest.fn(), info: jest.fn() }),
+}));
 jest.mock("../services/wallet", () => ({
   getPublicKey: jest.fn().mockResolvedValue("GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7"),
 }));
@@ -155,6 +159,19 @@ it("shows challenge, signing and settlement progress and then text content", asy
   await act(async () => { settle.resolve({ type: "text", content: "Unlocked content" }); });
   expect(screen.getByText("Unlocked content")).toBeTruthy();
   expect(screen.queryByLabelText("Stellar secret key")).toBeNull();
+});
+
+it("renders markdown and JSON unlocked content through ContentViewer", async () => {
+  mockSubmit.mockResolvedValueOnce({ type: "text", content: "# Guide\nSome **bold** text" });
+  const screen = renderWithProviders(<PaywallModal {...props} />);
+  await startSigning(screen);
+  expect(await screen.findByText("Guide")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Copy content" })).toBeTruthy();
+
+  mockSubmit.mockResolvedValueOnce({ type: "text", content: '{"title":"Book"}' });
+  const jsonScreen = renderWithProviders(<PaywallModal {...props} />);
+  await startSigning(jsonScreen);
+  expect(await jsonScreen.findByText(/"title": "Book"/)).toBeTruthy();
 });
 
 it("opens external content after settlement and closes", async () => {

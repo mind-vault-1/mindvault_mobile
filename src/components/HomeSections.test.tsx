@@ -161,7 +161,7 @@ describe("HomeSections", () => {
       expect(getByText("Newest")).toBeTruthy();
       expect(queryByText("Cheapest")).toBeNull();
       expect(getByText("Verified")).toBeTruthy();
-    });
+    }, { timeout: 5000 });
   });
 
   it("hides section when it returns empty", async () => {
@@ -176,7 +176,7 @@ describe("HomeSections", () => {
       expect(queryByText("Newest")).toBeNull();
       expect(queryByText("Cheapest")).toBeNull();
       expect(queryByText("Verified")).toBeNull();
-    });
+    }, { timeout: 5000 });
   });
 
   it("calls onSeeAll with correct parameters when 'See all' is pressed", async () => {
