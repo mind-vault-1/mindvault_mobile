@@ -1,12 +1,14 @@
 import React from "react";
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 import { PublisherResourcesScreen } from "./PublisherResourcesScreen";
 import { ToastProvider } from "../components/ToastProvider";
 import {
   delistResource,
+  deleteStoredApiKey,
   fetchPublisherResources,
   getStoredApiKey,
+  storeApiKey,
 } from "../api/resources";
 import type { Resource } from "../types";
 
@@ -149,6 +151,10 @@ const mockedFetchPublisherResources = fetchPublisherResources as jest.MockedFunc
   typeof fetchPublisherResources
 >;
 const mockedDelistResource = delistResource as jest.MockedFunction<typeof delistResource>;
+const mockedStoreApiKey = storeApiKey as jest.MockedFunction<typeof storeApiKey>;
+const mockedDeleteStoredApiKey = deleteStoredApiKey as jest.MockedFunction<
+  typeof deleteStoredApiKey
+>;
 
 function createResource(overrides: Partial<Resource>): Resource {
   return {
@@ -494,5 +500,123 @@ describe("PublisherResourcesScreen - bulk actions", () => {
     expect(mockedDelistResource).toHaveBeenCalledWith("bulk-2");
     await waitFor(() => expect(screen.queryByText("Bulk One")).toBeNull());
     expect(screen.getByText("Bulk Two")).toBeTruthy();
+  });
+});
+
+describe("PublisherResourcesScreen - API key lifecycle", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedFetchPublisherResources.mockResolvedValue([]);
+    mockedStoreApiKey.mockResolvedValue(undefined);
+    mockedDeleteStoredApiKey.mockResolvedValue(undefined);
+  });
+
+  it("restores a stored API key and loads the publisher's resources", async () => {
+    mockedGetStoredApiKey.mockResolvedValue("stored-key");
+    mockedFetchPublisherResources.mockResolvedValue([
+      createResource({ id: "restored-1", title: "Stored Resource" }),
+    ]);
+
+    const screen = renderScreen();
+
+    expect(await screen.findByText("Stored Resource")).toBeTruthy();
+    expect(mockedFetchPublisherResources).toHaveBeenCalledWith("stored-key", undefined);
+    expect(screen.queryByText("Authenticate")).toBeNull();
+  });
+
+  it("shows the auth form when the stored API key is invalid", async () => {
+    mockedGetStoredApiKey.mockResolvedValue("expired-key");
+    mockedFetchPublisherResources.mockRejectedValue(new Error("Invalid API key"));
+
+    const screen = renderScreen();
+
+    expect(await screen.findByText("Invalid API key")).toBeTruthy();
+    expect(screen.getByText("Authenticate")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Enter your API key…")).toBeTruthy();
+  });
+
+  it("saves a valid API key and authenticates", async () => {
+    mockedGetStoredApiKey.mockResolvedValue(null);
+    mockedFetchPublisherResources.mockResolvedValue([
+      createResource({ id: "new-1", title: "New Resource" }),
+    ]);
+
+    const screen = renderScreen();
+    const input = await screen.findByPlaceholderText("Enter your API key…");
+
+    await act(async () => {
+      fireEvent.changeText(input, "sk_test_123");
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText("Authenticate"));
+    });
+
+    await waitFor(() => expect(mockedStoreApiKey).toHaveBeenCalledWith("sk_test_123"));
+    expect(await screen.findByText("New Resource")).toBeTruthy();
+    expect(await screen.findByText("API key saved successfully")).toBeTruthy();
+  });
+
+  it("shows the authentication error and does not save an invalid API key", async () => {
+    mockedGetStoredApiKey.mockResolvedValue(null);
+    mockedFetchPublisherResources.mockRejectedValue(new Error("Invalid API key"));
+
+    const screen = renderScreen();
+    const input = await screen.findByPlaceholderText("Enter your API key…");
+
+    await act(async () => {
+      fireEvent.changeText(input, "bad-key");
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText("Authenticate"));
+    });
+
+    expect(await screen.findByText("Invalid API key")).toBeTruthy();
+    expect(mockedStoreApiKey).not.toHaveBeenCalled();
+  });
+
+  it("filters resources with the search input", async () => {
+    mockedGetStoredApiKey.mockResolvedValue("stored-key");
+    mockedFetchPublisherResources.mockResolvedValue([
+      createResource({ id: "alpha", title: "Alpha Resource" }),
+      createResource({ id: "beta", title: "Beta Resource" }),
+    ]);
+
+    const screen = renderScreen();
+    expect(await screen.findByText("Alpha Resource")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText("Search your resources…"), "Beta");
+    });
+
+    expect(screen.getByText("Beta Resource")).toBeTruthy();
+    expect(screen.queryByText("Alpha Resource")).toBeNull();
+  });
+
+  it("shows the empty state when the publisher has no resources", async () => {
+    mockedGetStoredApiKey.mockResolvedValue("stored-key");
+    mockedFetchPublisherResources.mockResolvedValue([]);
+
+    const screen = renderScreen();
+
+    expect(await screen.findByText("No resources")).toBeTruthy();
+    expect(screen.getByText("You haven't published any resources yet.")).toBeTruthy();
+  });
+
+  it("deletes the stored API key and returns to the auth form on logout", async () => {
+    mockedGetStoredApiKey.mockResolvedValue("stored-key");
+    mockedFetchPublisherResources.mockResolvedValue([
+      createResource({ id: "logout-1", title: "Logout Resource" }),
+    ]);
+
+    const screen = renderScreen();
+    expect(await screen.findByText("Logout Resource")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByText("Logout"));
+    });
+
+    await waitFor(() => expect(mockedDeleteStoredApiKey).toHaveBeenCalled());
+    expect(await screen.findByText("Authenticate")).toBeTruthy();
+    expect(screen.queryByText("Logout Resource")).toBeNull();
   });
 });
