@@ -93,7 +93,7 @@ export function EditPriceSheet({
       setTouched(false);
       resetError();
     }
-  }, [oldPrice, visible]);
+  }, [oldPrice, visible, resetError]);
 
   const validationError = touched ? validatePrice(newPrice) : null;
   const busy = status !== "idle";

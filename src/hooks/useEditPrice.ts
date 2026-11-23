@@ -27,6 +27,9 @@ export function validatePrice(price: string): string | null {
   }
 
   if (!/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    if (/^-\d+(?:\.\d+)?$/.test(trimmed)) {
+      return "Price must be greater than zero.";
+    }
     return "Price must be a valid number.";
   }
 
@@ -105,6 +108,8 @@ export function useEditPrice() {
     setStatus("idle");
   }, []);
 
+  const resetError = useCallback(() => setError(null), []);
+
   return {
     status,
     error,
@@ -112,6 +117,6 @@ export function useEditPrice() {
     preparePriceEdit,
     submitSigned,
     cancelSigning,
-    resetError: () => setError(null),
+    resetError,
   };
 }

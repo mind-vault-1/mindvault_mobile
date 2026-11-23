@@ -5,6 +5,7 @@ import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { checkUsdcForPayment } from "../api/horizon";
 import { appNetworkId, prepareResourceAccess, signPaymentTransaction, submitSignedPayment, type PaymentChallenge } from "../api/payment";
 import { renderWithProviders } from "../test-utils";
+import { cacheContent, getCachedContent } from "../services/contentCache";
 import { PaywallModal } from "./PaywallModal";
 
 jest.mock("../api/payment", () => ({
@@ -29,6 +30,10 @@ jest.mock("./ToastProvider", () => ({
 jest.mock("../services/wallet", () => ({
   getPublicKey: jest.fn().mockResolvedValue("GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7"),
 }));
+jest.mock("../services/contentCache", () => ({
+  getCachedContent: jest.fn(),
+  cacheContent: jest.fn(),
+}));
 jest.mock("@react-navigation/native", () => ({
   ...jest.requireActual("@react-navigation/native"),
   useNavigation: () => ({
@@ -42,6 +47,8 @@ const mockSign = signPaymentTransaction as jest.MockedFunction<typeof signPaymen
 const mockSubmit = submitSignedPayment as jest.MockedFunction<typeof submitSignedPayment>;
 const mockNetwork = appNetworkId as jest.MockedFunction<typeof appNetworkId>;
 const mockCheckUsdc = checkUsdcForPayment as jest.MockedFunction<typeof checkUsdcForPayment>;
+const mockGetCachedContent = getCachedContent as jest.MockedFunction<typeof getCachedContent>;
+const mockCacheContent = cacheContent as jest.MockedFunction<typeof cacheContent>;
 const mockNavigate = jest.fn();
 const challenge: PaymentChallenge = {
   x402Version: 2, resource: { url: "https://api.example.com/resources/book", description: "Handbook" },
@@ -58,6 +65,8 @@ function deferred<T>() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGetCachedContent.mockReset().mockResolvedValue(null);
+  mockCacheContent.mockReset().mockResolvedValue(true);
   mockNetwork.mockReturnValue("stellar:testnet");
   mockCheckUsdc.mockResolvedValue({ status: "ok" });
   mockPrepare.mockResolvedValue({ type: "payment", challenge });
@@ -136,6 +145,20 @@ it("requires typed confirmation before paying above the per-payment limit", asyn
   });
 
   await waitFor(() => expect(mockPrepare).toHaveBeenCalledWith(props.accessUrl, "10.00"));
+});
+
+it("opens cached unlocked content without paying again", async () => {
+  mockGetCachedContent.mockResolvedValue("Unlocked content");
+  const screen = renderWithProviders(<PaywallModal {...props} />);
+
+  expect(await screen.findByText("Open")).toBeTruthy();
+  expect(screen.queryByText("Pay & Access")).toBeNull();
+
+  fireEvent.press(screen.getByText("Open"));
+  expect(await screen.findByText("Unlocked content")).toBeTruthy();
+  expect(mockCheckUsdc).not.toHaveBeenCalled();
+  expect(mockPrepare).not.toHaveBeenCalled();
+  expect(mockCacheContent).not.toHaveBeenCalled();
 });
 
 it("shows challenge, signing and settlement progress and then text content", async () => {

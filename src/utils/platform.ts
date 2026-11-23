@@ -1,5 +1,7 @@
 import { Platform } from "react-native";
 
+import { logError } from "./errorLogger";
+
 export const WEB_STORAGE_WARNING =
   "MindVault web storage is not encrypted. Avoid using publisher or wallet secrets on shared devices.";
 
@@ -14,7 +16,7 @@ export function getWebStorage(): Storage | null {
   if (!isWeb()) return null;
   if (!warnedAboutWebStorage) {
     warnedAboutWebStorage = true;
-    console.warn(WEB_STORAGE_WARNING);
+    logError(WEB_STORAGE_WARNING, new Error("Browser storage fallback in use."));
   }
   try {
     return globalThis.localStorage ?? null;
