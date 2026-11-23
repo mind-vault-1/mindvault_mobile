@@ -29,6 +29,7 @@ import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import { useToast } from "../components/ToastProvider";
 import type { RootStackParamList } from "../navigation";
+import { useLayout } from "../hooks/useLayout";
 import {
   clearRecentResources,
   getRecentResources,
@@ -171,7 +172,7 @@ function createStyles(colors: ThemeColors) {
       alignItems: "flex-start",
       gap: spacing.md,
     },
-    settingsButton: {
+    headerButton: {
       borderRadius: 10,
       backgroundColor: colors.neutralBg,
       paddingHorizontal: 12,
@@ -181,9 +182,15 @@ function createStyles(colors: ThemeColors) {
       justifyContent: "center",
       alignItems: "center",
     },
-    settingsButtonText: {
+    headerButtonText: {
       fontSize: 20,
       color: colors.textMuted,
+    },
+    gridRow: {
+      gap: spacing.md,
+    },
+    gridItem: {
+      flex: 1,
     },
     registry: {
       marginTop: spacing.xs,
@@ -524,6 +531,7 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [registryFailed, setRegistryFailed] = useState(false);
   const toast = useToast();
+  const { layout, columns, toggleLayout } = useLayout();
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   // Ref mirror of lastUpdatedAt so the useFocusEffect callback can read the
   // current value without being listed as a dep — which would otherwise cause
@@ -852,14 +860,15 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
     ({ item }: ListRenderItemInfo<Resource>) => (
       <Pressable
         onPress={() => openResource(item)}
+        style={columns > 1 ? styles.gridItem : undefined}
         accessibilityRole="button"
         accessibilityLabel={t("catalog.openResource", { title: item.title })}
         accessibilityHint={t("catalog.opensResourceDetail")}
       >
-        <ResourceCard resource={item} onCopyUrl={toast.info} />
+        <ResourceCard resource={item} onCopyUrl={toast.info} layout={layout} />
       </Pressable>
     ),
-    [openResource, toast],
+    [openResource, toast, columns, layout, styles],
   );
 
   const clearRecent = useCallback(() => {
@@ -991,7 +1000,11 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
     <SafeAreaView style={shared.screen} edges={["top", "left", "right"]}>
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <FlatList
+        // numColumns cannot change on the fly, so the list remounts on a switch.
+        key={`catalog-${columns}`}
         data={loading ? null : resources}
+        numColumns={columns}
+        columnWrapperStyle={columns > 1 ? styles.gridRow : undefined}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         initialNumToRender={8}
@@ -1049,14 +1062,40 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                 ) : null}
               </View>
               <Pressable
-                style={styles.settingsButton}
+                style={styles.headerButton}
+                onPress={() => navigation.navigate("Favorites")}
+                accessibilityRole="button"
+                accessibilityLabel={t("catalog.favourites")}
+                accessibilityHint={t("catalog.favouritesHint")}
+              >
+                <Text style={styles.headerButtonText} importantForAccessibility="no">
+                  ★
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.headerButton}
+                onPress={toggleLayout}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  layout === "grid" ? t("catalog.listView") : t("catalog.gridView")
+                }
+              >
+                <Text
+                  style={styles.headerButtonText}
+                  importantForAccessibility="no"
+                >
+                  {layout === "grid" ? "☰" : "▦"}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.headerButton}
                 onPress={() => navigation.navigate("Settings")}
                 accessibilityRole="button"
                 accessibilityLabel={t("catalog.settings")}
                 accessibilityHint={t("catalog.settingsHint")}
               >
                 <Text
-                  style={styles.settingsButtonText}
+                  style={styles.headerButtonText}
                   importantForAccessibility="no"
                 >
                   ⚙

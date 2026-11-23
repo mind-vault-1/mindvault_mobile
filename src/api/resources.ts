@@ -222,13 +222,15 @@ function signatureHeaders(
  * Reads the publisher API key from secure storage, sends it as `x-api-key`,
  * and signs every POST/DELETE with `X-Timestamp` and `X-Signature` (the key is
  * the HMAC secret). Non-OK responses become `Error`s with user-safe messages;
- * the key itself never appears in the thrown message. A 402 is rethrown as the
- * original `ApiError` so the caller can read the x402 challenge headers.
+ * the key itself never appears in the thrown message. Statuses in
+ * `preserveStatuses` are rethrown as the original `ApiError` so callers can
+ * read their headers or map them to specific messages (402 by default).
  */
 export async function publisherFetch<T>(
   path: string,
   init: { method: "GET" | "POST" | "DELETE"; body?: unknown; headers?: Record<string, string> },
-  fallbackMessage: string
+  fallbackMessage: string,
+  preserveStatuses: readonly number[] = [402]
 ): Promise<T> {
   const apiKey = await getApiKey();
   if (!apiKey) {
@@ -254,8 +256,8 @@ export async function publisherFetch<T>(
     if (error.status === 401) {
       throw new Error("Unauthorized: Invalid API key");
     }
-    // A 402 is a payment challenge the caller handles, so keep its headers.
-    if (error.status === 402) throw error;
+    // Payment challenges and caller-specific conflicts need the original status.
+    if (error.status !== undefined && preserveStatuses.includes(error.status)) throw error;
     // Never let a server that echoes the key leak it into the UI.
     throw new Error(error.message.split(apiKey).join("[redacted]"));
   }

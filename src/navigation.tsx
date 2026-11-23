@@ -6,6 +6,7 @@ import {
 } from "@react-navigation/native-stack";
 
 import { CatalogScreen } from "./screens/CatalogScreen";
+import { FavoritesScreen } from "./screens/FavoritesScreen";
 import { ResourceDetailScreen } from "./screens/ResourceDetailScreen";
 import { ScannerScreen } from "./screens/ScannerScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
@@ -27,6 +28,7 @@ export type RootStackParamList = {
   Onboarding: undefined;
   /** `owner` opens the catalog filtered to one publisher wallet. */
   Catalog: { owner?: string } | undefined;
+  Favorites: undefined;
   ResourceDetail: { resourceId: string };
   Scanner: undefined;
   Settings: undefined;
@@ -78,6 +80,11 @@ export function RootNavigator({ showOnboarding }: RootNavigatorProps) {
         options={{ headerShown: false }}
       />
       <Stack.Screen name="Catalog" component={CatalogScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="Favorites"
+        component={FavoritesScreen}
+        options={{ title: "Saved Favourites" }}
+      />
       <Stack.Screen
         name="ResourceDetail"
         component={ResourceDetailScreen}

@@ -1,5 +1,5 @@
 import React from "react";
-import { Linking } from "react-native";
+import * as WebBrowser from "expo-web-browser";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 import { PublisherResourceDetailScreen, RESOURCE_NOT_FOUND_MESSAGE } from "./PublisherResourceDetailScreen";
@@ -9,6 +9,7 @@ import { delistResource, fetchPublisherResources } from "../api/resources";
 import { fetchAnalytics } from "../api/publishers";
 import type { Resource } from "../types";
 
+jest.mock("expo-web-browser", () => ({ openBrowserAsync: jest.fn() }));
 jest.mock("../api/resources", () => ({
   fetchPublisherResources: jest.fn(),
   delistResource: jest.fn(),
@@ -133,8 +134,8 @@ it("offers every publisher action", async () => {
 
 it("links the registration transaction to the explorer", async () => {
   mockedFetchResources.mockResolvedValue([resource({ onchainStatus: "registered", onchainTxHash: "deadbeefcafe1234" })]);
-  jest.spyOn(Linking, "canOpenURL").mockResolvedValue(true);
-  const openSpy = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+  const openSpy = WebBrowser.openBrowserAsync as jest.Mock;
+  openSpy.mockClear().mockResolvedValue({ type: "opened" });
   const screen = renderScreen();
 
   fireEvent.press(await screen.findByLabelText("View transaction deadbeefcafe1234 on Stellar Expert"));

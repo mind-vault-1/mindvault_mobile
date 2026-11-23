@@ -170,6 +170,34 @@ These are not MindVault API routes but are used by the mobile client directly:
 - The server OpenAPI document currently covers only a subset of these routes;
   this file is authoritative for the mobile contract until OpenAPI catches up.
 
+## Contract check
+
+The server's OpenAPI spec (`server/src/openapi.ts`) is committed as
+`src/api/__contract__/openapi.snapshot.json`. `scripts/check-contract.ts` lists
+the endpoints the app calls (`CONTRACT`: query parameters and body fields it
+sends, response fields it reads with their JSON types) and fails when the
+snapshot no longer provides them. Endpoints the spec does not describe yet are
+listed in `UNDOCUMENTED` so the gap stays visible.
+
+| Task | Command |
+| --- | --- |
+| Check the app against the snapshot (CI job `snapshot`) | `npm run contract:check` |
+| Refresh the snapshot from a server checkout, file or URL | `npm run contract:update -- --source ../mindvault` |
+| Check that the snapshot matches the server's current spec (daily CI job `drift`) | `npm run contract:check -- --fresh --source ../mindvault` |
+
+Update workflow:
+
+1. The server's spec changed (the `drift` job fails, or you know it did). Run
+   `npm run contract:update -- --source <server checkout>`. A URL is read from
+   `<url>/openapi.json`.
+2. Review the snapshot diff. If the check now reports a problem, the server
+   change breaks the app: adapt the app or agree a compatible change with the
+   server.
+3. When the app starts using another endpoint, field or parameter, add it to
+   `CONTRACT` in the same PR. Move an `UNDOCUMENTED` entry into `CONTRACT` once
+   the server documents it.
+4. Commit the snapshot with the code change.
+
 ## Verification checklist
 
 - [ ] Method, path, auth, request, response, errors, and headers match the code.
