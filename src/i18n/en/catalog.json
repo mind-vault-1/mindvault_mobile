@@ -23,6 +23,8 @@
   "catalog.registryCountUnavailable": "On-chain count unavailable",
   "catalog.updatedLabel": "Catalog updated {time}",
   "catalog.updated": "Updated {time}",
+  "catalog.favourites": "Saved favourites",
+  "catalog.favouritesHint": "Opens your saved favourites",
   "catalog.settings": "Settings",
   "catalog.settingsHint": "Opens app settings",
   "catalog.searchPlaceholder": "Search resources…",

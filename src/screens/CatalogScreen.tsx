@@ -171,7 +171,7 @@ function createStyles(colors: ThemeColors) {
       alignItems: "flex-start",
       gap: spacing.md,
     },
-    settingsButton: {
+    headerButton: {
       borderRadius: 10,
       backgroundColor: colors.neutralBg,
       paddingHorizontal: 12,
@@ -181,7 +181,7 @@ function createStyles(colors: ThemeColors) {
       justifyContent: "center",
       alignItems: "center",
     },
-    settingsButtonText: {
+    headerButtonText: {
       fontSize: 20,
       color: colors.textMuted,
     },
@@ -1036,14 +1036,25 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
                 ) : null}
               </View>
               <Pressable
-                style={styles.settingsButton}
+                style={styles.headerButton}
+                onPress={() => navigation.navigate("Favorites")}
+                accessibilityRole="button"
+                accessibilityLabel={t("catalog.favourites")}
+                accessibilityHint={t("catalog.favouritesHint")}
+              >
+                <Text style={styles.headerButtonText} importantForAccessibility="no">
+                  ★
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.headerButton}
                 onPress={() => navigation.navigate("Settings")}
                 accessibilityRole="button"
                 accessibilityLabel={t("catalog.settings")}
                 accessibilityHint={t("catalog.settingsHint")}
               >
                 <Text
-                  style={styles.settingsButtonText}
+                  style={styles.headerButtonText}
                   importantForAccessibility="no"
                 >
                   ⚙
