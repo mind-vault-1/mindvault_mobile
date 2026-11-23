@@ -1,21 +1,32 @@
 import { getDefaultApiBaseUrl, loadApiBaseUrl, saveApiBaseUrl } from "./apiSettings";
-import Constants from "expo-constants";
 import { Keypair, Transaction } from "@stellar/stellar-sdk";
 
 import { ApiError, request } from "./client";
+import {
+  getDefaultNetworkId,
+  getNetwork,
+  getNetworkConfig,
+  subscribeNetwork,
+} from "../config/network";
 import { getApiKey, storeApiKey, clearApiKey } from "../services/secureStorage";
 import type { CatalogFilters, RegistryStatus, Resource } from "../types";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
 import { parsePriceRange } from "../utils/priceRange";
+import { signedRequestHeaders } from "../utils/requestSignature";
 
 let apiBaseUrl = getDefaultApiBaseUrl();
 
-export const DEFAULT_STELLAR_NETWORK =
-  (Constants.expoConfig?.extra?.network as string | undefined)?.trim().toLowerCase() || "testnet";
+export let DEFAULT_STELLAR_NETWORK = getDefaultNetworkId();
+export let DEFAULT_NETWORK_PASSPHRASE = getNetworkConfig().passphrase;
 
-export const DEFAULT_NETWORK_PASSPHRASE =
-  (Constants.expoConfig?.extra?.networkPassphrase as string | undefined) ??
-  "Test SDF Network ; September 2015";
+subscribeNetwork(() => {
+  DEFAULT_STELLAR_NETWORK = getNetwork();
+  DEFAULT_NETWORK_PASSPHRASE = getNetworkConfig().passphrase;
+});
+
+export function getCurrentNetworkPassphrase(): string {
+  return getNetworkConfig().passphrase;
+}
 
 export { getDefaultApiBaseUrl };
 
@@ -41,6 +52,7 @@ export function buildQuery(filters?: FetchCatalogParams): string {
   if (filters.resourceType && filters.resourceType !== "all") {
     params.set("resourceType", filters.resourceType);
   }
+  if (filters.owner?.trim()) params.set("owner", filters.owner.trim());
   if (["newest", "price_asc", "price_desc", "title"].includes(filters.sort ?? "")) {
     params.set("sort", filters.sort!);
   }
@@ -180,12 +192,37 @@ export async function fetchRegistryStatus(): Promise<RegistryStatus> {
   return data;
 }
 
+/** Mirrors the central client's body serialization so the hash matches the wire bytes. */
+function serializedBody(body: unknown): string | undefined {
+  return body === undefined ? undefined : JSON.stringify(body);
+}
+
+function signatureHeaders(
+  apiKey: string,
+  path: string,
+  init: { method: "GET" | "POST" | "DELETE"; body?: unknown; headers?: Record<string, string> }
+): Record<string, string> {
+  if (init.method === "GET") return {};
+  const idempotencyEntry = Object.entries(init.headers ?? {}).find(
+    ([name]) => name.toLowerCase() === "idempotency-key"
+  );
+  // The server signs `req.originalUrl`: path plus query, no host or fragment.
+  return signedRequestHeaders({
+    secret: apiKey,
+    method: init.method,
+    path,
+    body: serializedBody(init.body),
+    ...(idempotencyEntry?.[1] ? { idempotencyKey: idempotencyEntry[1] } : {}),
+  });
+}
+
 /**
  * Sends an authenticated request to a publisher-only endpoint.
  *
  * Reads the publisher API key from secure storage, sends it as `x-api-key`,
- * and turns a non-OK response into an `Error` with a user-safe message. The
- * key itself never appears in the thrown message. A 402 is rethrown as the
+ * and signs every POST/DELETE with `X-Timestamp` and `X-Signature` (the key is
+ * the HMAC secret). Non-OK responses become `Error`s with user-safe messages;
+ * the key itself never appears in the thrown message. A 402 is rethrown as the
  * original `ApiError` so the caller can read the x402 challenge headers.
  */
 export async function publisherFetch<T>(
@@ -205,6 +242,7 @@ export async function publisherFetch<T>(
         "Content-Type": "application/json",
         "x-api-key": apiKey,
         ...init.headers,
+        ...signatureHeaders(apiKey, path, init),
       },
       body: init.body,
       fallbackMessage: (status) =>

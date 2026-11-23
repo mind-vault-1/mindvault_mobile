@@ -16,6 +16,14 @@ jest.mock("expo-haptics", () => ({
   NotificationFeedbackType: { Success: "success", Error: "error" },
   ImpactFeedbackStyle: { Light: "light" },
 }));
+jest.mock("expo-notifications", () => ({
+  IosAuthorizationStatus: { PROVISIONAL: 3 },
+  setNotificationHandler: jest.fn(),
+  getPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true, canAskAgain: true })),
+  requestPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true, canAskAgain: true })),
+  scheduleNotificationAsync: jest.fn(() => Promise.resolve("notification-id")),
+  addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+}));
 jest.mock("@stellar/stellar-sdk", () => {
   // Deterministic fake ed25519 public key for testing
   const VALID_PUBLIC_KEY =
@@ -37,3 +45,21 @@ jest.mock("@stellar/stellar-sdk", () => {
     Transaction: jest.fn(),
   };
 });
+
+// Native/ESM-only modules pulled in by screens; individual tests override these as needed.
+jest.mock("@walletconnect/react-native-compat", () => ({}));
+jest.mock("@walletconnect/sign-client", () => ({
+  __esModule: true,
+  default: { init: jest.fn() },
+}));
+jest.mock("react-native-qrcode-svg", () => "QRCode");
+jest.mock("expo-media-library", () => ({
+  requestPermissionsAsync: jest.fn(),
+  saveToLibraryAsync: jest.fn(),
+}));
+jest.mock("expo-file-system", () => ({
+  cacheDirectory: "file:///cache/",
+  EncodingType: { Base64: "base64" },
+  writeAsStringAsync: jest.fn(),
+  deleteAsync: jest.fn(),
+}));

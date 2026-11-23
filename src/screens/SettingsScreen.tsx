@@ -26,7 +26,15 @@ import {
   saveApiBaseUrl,
   validateApiBaseUrl,
 } from "../api/apiSettings";
-import { DEFAULT_STELLAR_NETWORK, initializeApiBaseUrl } from "../api/resources";
+import { initializeApiBaseUrl } from "../api/resources";
+import {
+  getNetwork,
+  getNetworkConfig,
+  NETWORK_IDS,
+  setNetwork,
+  subscribeNetwork,
+  type StellarNetworkId,
+} from "../config/network";
 import { checkHealth, type ServerHealth } from "../api/health";
 import { collectDiagnostics, formatDiagnostics } from "../services/diagnostics";
 import {
@@ -44,6 +52,20 @@ import {
   hapticImpact,
   setHapticsEnabled,
 } from "../utils/haptics";
+import {
+  APP_LOCK_TIMEOUT_OPTIONS,
+  useAppLock,
+} from "../hooks/useAppLock";
+import { openExternalUrl } from "../utils/stellarExpert";
+import {
+  DEFAULT_PER_PAYMENT_LIMIT,
+  loadPreferences,
+  savePerPaymentLimit,
+} from "../services/preferences";
+
+/** docs/PRIVACY.md on the default branch: what is stored, what leaves the device, how to delete it. */
+const PRIVACY_POLICY_URL =
+  "https://github.com/mind-vault-1/mindvault_mobile/blob/main/docs/PRIVACY.md";
 
 export function SettingsScreen() {
   const { colors, shared } = useAppTheme();
@@ -54,6 +76,17 @@ export function SettingsScreen() {
   const [savedUrl, setSavedUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  const [perPaymentLimit, setPerPaymentLimit] = useState(DEFAULT_PER_PAYMENT_LIMIT);
+  const [perPaymentLimitDraft, setPerPaymentLimitDraft] = useState(DEFAULT_PER_PAYMENT_LIMIT);
+  const [savingLimit, setSavingLimit] = useState(false);
+  const [network, setNetworkState] = useState<StellarNetworkId>(getNetwork());
+  const {
+    enabled: appLockEnabled,
+    timeoutMinutes: appLockTimeout,
+    error: appLockError,
+    setEnabled: setAppLockEnabled,
+    setTimeoutMinutes: setAppLockTimeout,
+  } = useAppLock();
 
   const [auditLogPreview, setAuditLogPreview] = useState<string | null>(null);
 
@@ -61,11 +94,74 @@ export function SettingsScreen() {
     void areHapticsEnabled().then(setHapticsEnabledState);
   }, []);
 
+  useEffect(() => {
+    void loadPreferences().then(({ perPaymentLimit: limit }) => {
+      setPerPaymentLimit(limit);
+      setPerPaymentLimitDraft(limit);
+    });
+  }, []);
+
+  useEffect(() => subscribeNetwork(setNetworkState), []);
+
+  const handleNetworkChange = useCallback(
+    (next: StellarNetworkId) => {
+      if (next === network) return;
+      const apply = () => {
+        setNetwork(next);
+        setNetworkState(next);
+        Alert.alert("Network changed", `Now using ${getNetworkConfig(next).label}.`);
+      };
+      if (next === "mainnet") {
+        Alert.prompt(
+          "Switch to mainnet?",
+          "Type MAINNET to confirm you want to use the public network.",
+          (value) => {
+            if (value?.trim() === "MAINNET") apply();
+          },
+          "plain-text"
+        );
+        return;
+      }
+      apply();
+    },
+    [network]
+  );
+
   const handleHapticsChange = useCallback(async (enabled: boolean) => {
     setHapticsEnabledState(enabled);
     await setHapticsEnabled(enabled);
     if (enabled) void hapticImpact();
   }, []);
+
+  const handleSavePaymentLimit = useCallback(async () => {
+    setSavingLimit(true);
+    try {
+      const saved = await savePerPaymentLimit(perPaymentLimitDraft);
+      setPerPaymentLimit(saved.perPaymentLimit);
+      setPerPaymentLimitDraft(saved.perPaymentLimit);
+      Alert.alert(
+        "Spending limit saved",
+        `Payments above ${saved.perPaymentLimit} USDC will ask for confirmation.`
+      );
+    } catch (error) {
+      Alert.alert(
+        "Invalid limit",
+        error instanceof Error ? error.message : "Enter a valid USDC amount."
+      );
+    } finally {
+      setSavingLimit(false);
+    }
+  }, [perPaymentLimitDraft]);
+
+  const handleAppLockChange = useCallback(async (enabled: boolean) => {
+    const saved = await setAppLockEnabled(enabled);
+    if (!saved) {
+      Alert.alert(
+        "App lock unavailable",
+        "Set up device biometrics and try again. Your existing setting has not changed.",
+      );
+    }
+  }, [setAppLockEnabled]);
 
   const handleReopenOnboarding = useCallback(async () => {
     try {
@@ -307,6 +403,133 @@ export function SettingsScreen() {
           </View>
         </View>
 
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Spending guard
+          </Text>
+          <Text
+            style={[
+              styles.infoText,
+              { color: colors.textMuted, marginBottom: 12 },
+            ]}
+          >
+            Payments above this limit require an extra typed confirmation in the paywall.
+          </Text>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: colors.text,
+                backgroundColor: colors.neutralBg,
+                borderColor: colors.border,
+              },
+            ]}
+            value={perPaymentLimitDraft}
+            onChangeText={setPerPaymentLimitDraft}
+            keyboardType="decimal-pad"
+            autoCapitalize="none"
+            accessibilityLabel="Per-payment limit (USDC)"
+            placeholder={DEFAULT_PER_PAYMENT_LIMIT}
+            placeholderTextColor={colors.textSubtle}
+            editable={!savingLimit}
+          />
+          <View style={styles.buttonRow}>
+            <TouchableOpacity
+              style={[
+                shared.button,
+                shared.primaryButton,
+                (perPaymentLimitDraft.trim() === perPaymentLimit || savingLimit) && styles.disabledButton,
+              ]}
+              onPress={() => void handleSavePaymentLimit()}
+              disabled={perPaymentLimitDraft.trim() === perPaymentLimit || savingLimit}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: perPaymentLimitDraft.trim() === perPaymentLimit || savingLimit }}
+              accessibilityLabel="Save spending limit"
+            >
+              <Text style={[shared.buttonText, shared.primaryButtonText]}>
+                {savingLimit ? "Saving…" : "Save limit"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.hapticsRow}>
+            <View style={styles.hapticsCopy}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                Lock after inactivity
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Require device authentication before returning to wallet and publisher screens.
+              </Text>
+            </View>
+            <Switch
+              value={appLockEnabled}
+              onValueChange={(value) => void handleAppLockChange(value)}
+              accessibilityLabel="Lock after inactivity"
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.surface}
+            />
+          </View>
+          {appLockEnabled ? (
+            <View style={{ marginTop: 16, gap: 8 }}>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Lock after
+              </Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {APP_LOCK_TIMEOUT_OPTIONS.map((minutes) => {
+                  const selected = minutes === appLockTimeout;
+                  return (
+                    <TouchableOpacity
+                      key={minutes}
+                      onPress={() => void setAppLockTimeout(minutes)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      accessibilityLabel={`${minutes} minutes`}
+                      style={{
+                        borderRadius: 999,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        backgroundColor: selected ? colors.primaryMuted : colors.neutralBg,
+                      }}
+                    >
+                      <Text style={{ color: selected ? colors.primary : colors.text }}>
+                        {minutes} min
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+          {appLockError ? (
+            <Text
+              style={[styles.infoText, { color: colors.danger, marginTop: 8 }]}
+              accessibilityRole="alert"
+            >
+              {appLockError}
+            </Text>
+          ) : null}
+        </View>
+
         <View style={[styles.infoCard, { backgroundColor: colors.neutralBg }]}>
           <Text style={[styles.infoText, { color: colors.textMuted }]}>
             Theme preferences are saved locally and persist across app launches.
@@ -427,12 +650,67 @@ export function SettingsScreen() {
             style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
             accessibilityRole="header"
           >
+            Wallet
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            Connect a Stellar wallet such as LOBSTR through WalletConnect.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("Wallet")}
+            accessibilityRole="button"
+            accessibilityLabel="Open wallet"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>Manage Wallet</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text
+            style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
+            accessibilityRole="header"
+          >
+            Publisher Leaderboard
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 16 }]}>
+            See which publishers earn the most on MindVault.
+          </Text>
+          <TouchableOpacity
+            style={[shared.button, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("Leaderboard")}
+            accessibilityRole="button"
+            accessibilityLabel="Open publisher leaderboard"
+          >
+            <Text style={[shared.buttonText, { color: "#ffffff" }]}>View Leaderboard</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}>
+          <Text
+            style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}
+            accessibilityRole="header"
+          >
             Local Data
           </Text>
           <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
             Clear data stored on this device. Wallet and API keys are not affected here; use
             the wallet wipe to remove them.
           </Text>
+          <TouchableOpacity
+            style={{ minHeight: 44, justifyContent: "center", marginBottom: 12 }}
+            onPress={() =>
+              openExternalUrl(PRIVACY_POLICY_URL).catch(() =>
+                Alert.alert("Error", "Unable to open the privacy policy")
+              )
+            }
+            accessibilityRole="link"
+            accessibilityLabel="Privacy policy"
+            accessibilityHint="Opens what the app stores, what it sends, and how to delete it"
+          >
+            <Text style={[styles.infoText, { color: colors.primary, fontWeight: "600" }]}>
+              Privacy policy: what is stored and how to delete it
+            </Text>
+          </TouchableOpacity>
           {STORAGE_GROUPS.map((group) => {
             const busy = clearingGroup === group.id;
             return (
@@ -607,6 +885,41 @@ export function SettingsScreen() {
 
         <View
           style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 32 }]}
+          accessibilityLabel="Stellar network"
+        >
+          <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
+            Stellar network
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
+            Current: {getNetworkConfig(network).label}
+          </Text>
+          {NETWORK_IDS.map((id) => (
+            <TouchableOpacity
+              key={id}
+              style={[
+                shared.button,
+                styles.networkButton,
+                { backgroundColor: id === network ? colors.primary : colors.neutralBg },
+              ]}
+              onPress={() => handleNetworkChange(id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Select ${getNetworkConfig(id).label.toLowerCase()}`}
+              accessibilityState={{ selected: id === network }}
+            >
+              <Text
+                style={[
+                  shared.buttonText,
+                  id === network ? shared.buttonText : { color: colors.text },
+                ]}
+              >
+                {getNetworkConfig(id).label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View
+          style={[styles.infoCard, { backgroundColor: colors.neutralBg, marginTop: 16 }]}
           accessibilityLabel="About"
         >
           <Text style={[styles.title, { fontSize: 16, color: colors.text, marginBottom: 8 }]}>
@@ -614,7 +927,7 @@ export function SettingsScreen() {
           </Text>
           {[
             { label: "App version", value: appVersion, color: colors.text },
-            { label: "Network", value: DEFAULT_STELLAR_NETWORK, color: colors.text },
+            { label: "Network", value: network, color: colors.text },
             { label: "API URL", value: savedUrl, color: colors.text },
             { label: "Server status", value: serverStatus, color: serverStatusColor },
           ].map((row) => (
@@ -764,6 +1077,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     paddingVertical: 6,
+  },
+  networkButton: {
+    marginBottom: 8,
   },
   aboutRow: {
     flexDirection: "row",

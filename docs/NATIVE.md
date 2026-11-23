@@ -55,6 +55,33 @@ If no existing option or plugin covers what you need, write a small local
 [config plugin](https://docs.expo.dev/config-plugins/introduction/) and add it
 to `plugins`.
 
+## Publish notifications
+
+`expo-notifications` (installed with `npx expo install expo-notifications`) sends a
+local notification when a publish reaches `on-chain` or `rejected` status. Basic
+local notifications need no config plugin, so there is no native change to
+prebuild; rebuild the development client after changing native dependencies.
+
+- **iOS:** permission is checked with `getPermissionsAsync()` and requested with
+  `requestPermissionsAsync()` only when a publish starts. Alerts and sound are
+  requested; badges are not. If the user denied access in Settings, no further
+  prompt is shown and no notification is scheduled. A notification received in
+  the foreground is displayed by the handler registered in
+  `src/services/notifications.ts`.
+- **Android:** `POST_NOTIFICATIONS` is requested at the same point on Android 13
+  and newer. Older versions need no runtime prompt. The default Expo channel is
+  used; users can disable alerts in system settings, which the permission check
+  respects.
+- **Deep link:** the notification payload carries the resource id and
+  `mindvault://resources/<id>`. Tapping it runs the response listener registered
+  by `App.tsx` and opens `ResourceDetail` through the same linking configuration
+  used by QR codes. The `mindvault` scheme is declared in `app.json`.
+
+To verify, publish a resource on a physical device or development build, leave
+the app while verification is pending, and confirm the notification appears when
+the status becomes terminal. Tapping it must open the published resource. Local
+notifications do not require push credentials.
+
 ## Reference
 
 - [Expo documentation on prebuild](https://docs.expo.dev/workflow/prebuild/)

@@ -1,6 +1,7 @@
 import {
   fetchAnalytics,
   fetchMe,
+  fetchPublicPublisher,
   maskApiKey,
   registerPublisher,
   revokeApiKey,
@@ -50,15 +51,88 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
+describe("fetchPublicPublisher", () => {
+  const listing = (id: string, walletAddress: string) => ({
+    id,
+    title: `Resource ${id}`,
+    price: "1.00",
+    resourceType: "file",
+    walletAddress,
+    verificationStatus: "verified",
+    onchainStatus: "registered",
+    listed: true,
+    accessUrl: `https://example.com/resources/${id}`,
+  });
+
+  function mockRoutes(routes: Record<string, { status: number; body: unknown }>) {
+    const fetchMock = jest.fn(async (url: string) => {
+      const path = url.slice(getApiBaseUrl().length).split("?")[0];
+      const { status, body } = routes[path];
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+        headers: { get: () => "application/json" },
+      };
+    });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+    return fetchMock;
+  }
+
+  it("loads the profile and only the resources owned by that wallet", async () => {
+    const fetchMock = mockRoutes({
+      [`/publishers/wallet/${profile.walletAddress}`]: { status: 200, body: profile },
+      "/resources": {
+        status: 200,
+        body: [listing("r1", profile.walletAddress), listing("r2", "GOTHERWALLET")],
+      },
+    });
+
+    const result = await fetchPublicPublisher(profile.walletAddress);
+
+    expect(result?.publisher).toEqual(profile);
+    expect(result?.resources.map((resource) => resource.id)).toEqual(["r1"]);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `${getApiBaseUrl()}/publishers/wallet/${profile.walletAddress}`,
+      `${getApiBaseUrl()}/resources?owner=${profile.walletAddress}&limit=100`,
+    ]);
+  });
+
+  it("resolves to null when no publisher owns the wallet", async () => {
+    mockRoutes({
+      [`/publishers/wallet/${profile.walletAddress}`]: {
+        status: 404,
+        body: { error: "No publisher found for this wallet" },
+      },
+      "/resources": { status: 200, body: [] },
+    });
+
+    await expect(fetchPublicPublisher(profile.walletAddress)).resolves.toBeNull();
+  });
+
+  it("rethrows other errors with the server message", async () => {
+    mockRoutes({
+      [`/publishers/wallet/${profile.walletAddress}`]: { status: 200, body: profile },
+      "/resources": { status: 400, body: { error: "Invalid query params" } },
+    });
+
+    await expect(fetchPublicPublisher(profile.walletAddress)).rejects.toThrow(
+      "Invalid query params"
+    );
+  });
+});
+
 describe("fetchMe", () => {
   it("requests /publishers/me on the configured API with the stored key", async () => {
     mockGetApiKey.mockResolvedValue("stored-key");
     const fetchMock = mockFetch(profile);
 
     await expect(fetchMe()).resolves.toEqual(profile);
-    expect(fetchMock).toHaveBeenCalledWith(`${getApiBaseUrl()}/publishers/me`, {
-      headers: { "x-api-key": "stored-key" },
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getApiBaseUrl()}/publishers/me`,
+      expect.objectContaining({ method: "GET", headers: { "x-api-key": "stored-key" } })
+    );
   });
 
   it("uses an explicit key instead of the stored one, for validating a new key", async () => {
@@ -66,7 +140,7 @@ describe("fetchMe", () => {
     const fetchMock = mockFetch(profile);
 
     await fetchMe("candidate-key");
-    expect(fetchMock.mock.calls[0][1]).toEqual({ headers: { "x-api-key": "candidate-key" } });
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { "x-api-key": "candidate-key" } });
   });
 
   it("throws without calling the API when no key is stored", async () => {
@@ -105,16 +179,17 @@ describe("fetchAnalytics", () => {
     mockGetApiKey.mockResolvedValue("stored-key");
     const fetchMock = mockFetch(analytics);
     await expect(fetchAnalytics()).resolves.toEqual(analytics);
-    expect(fetchMock).toHaveBeenCalledWith(`${getApiBaseUrl()}/publishers/me/analytics`, {
-      headers: { "x-api-key": "stored-key" },
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getApiBaseUrl()}/publishers/me/analytics`,
+      expect.objectContaining({ method: "GET", headers: { "x-api-key": "stored-key" } })
+    );
   });
 
   it("uses an explicit key without reading storage", async () => {
     const fetchMock = mockFetch(analytics);
     await fetchAnalytics("candidate-key");
     expect(mockGetApiKey).not.toHaveBeenCalled();
-    expect(fetchMock.mock.calls[0][1]).toEqual({ headers: { "x-api-key": "candidate-key" } });
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { "x-api-key": "candidate-key" } });
   });
 
   it("does not fetch without a key", async () => {
@@ -165,7 +240,11 @@ describe("rotateApiKey", () => {
       `${getApiBaseUrl()}/publishers/me/api-key/rotate`,
       expect.objectContaining({
         method: "POST",
-        headers: { "x-api-key": "old-key-123456" },
+        headers: expect.objectContaining({
+          "x-api-key": "old-key-123456",
+          "X-Timestamp": expect.stringMatching(/^\d{10}$/),
+          "X-Signature": expect.stringMatching(/^[0-9a-f]{64}$/),
+        }),
       })
     );
     expect(mockStoreApiKey).toHaveBeenCalledWith("new-key-abcdef");
@@ -207,6 +286,14 @@ describe("rotateApiKey", () => {
     expect(mockStoreApiKey).not.toHaveBeenCalled();
   });
 
+  it("keeps the central client's network error message", async () => {
+    mockGetApiKey.mockResolvedValue("old-key-123456");
+    global.fetch = jest.fn().mockRejectedValue(new TypeError("Network request failed"));
+
+    await expect(rotateApiKey()).rejects.toThrow("Network error. Please check your connection.");
+    expect(mockStoreApiKey).not.toHaveBeenCalled();
+  });
+
   it("fails without calling the API when no key is stored", async () => {
     mockGetApiKey.mockResolvedValue(null);
     const fetchMock = mockFetch({ apiKey: "new-key" });
@@ -235,7 +322,11 @@ describe("revokeApiKey", () => {
       `${getApiBaseUrl()}/publishers/me/api-key`,
       expect.objectContaining({
         method: "DELETE",
-        headers: { "x-api-key": "old-key-123456" },
+        headers: expect.objectContaining({
+          "x-api-key": "old-key-123456",
+          "X-Timestamp": expect.stringMatching(/^\d{10}$/),
+          "X-Signature": expect.stringMatching(/^[0-9a-f]{64}$/),
+        }),
       })
     );
     expect(mockClearApiKey).toHaveBeenCalledTimes(1);
@@ -363,5 +454,22 @@ describe("registerPublisher", () => {
         walletAddress: profile.walletAddress,
       })
     ).rejects.toThrow("Internal server error");
+  });
+});
+
+describe("fetchLeaderboard", () => {
+  it("requests the leaderboard endpoint and returns the rows", async () => {
+    const rows = [{ id: "p1", name: "Ada", walletAddress: "G1", joinedAt: "x", totalResources: 1, listedResources: 1, verifiedResources: 0, totalSales: 2, totalEarned: "1.0000" }];
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => rows,
+      text: async () => JSON.stringify(rows),
+    }) as unknown as typeof fetch;
+    const { fetchLeaderboard } = require("./publishers");
+    await expect(fetchLeaderboard()).resolves.toEqual(rows);
+    expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(`${getApiBaseUrl()}/publishers/leaderboard`);
+    global.fetch = originalFetch;
   });
 });

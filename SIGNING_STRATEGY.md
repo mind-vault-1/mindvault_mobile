@@ -33,6 +33,10 @@ For the **production** publisher flow, we will implement **Option 1: WalletConne
 
 However, to enable rapid development and testing (as requested in Issue #16), we have implemented **Option 3: In-App Signer** as a Proof-of-Concept (PoC). This PoC is available on the `DevSignerScreen` (accessible via Settings) and allows developers to easily generate and sign dummy Soroban transactions using a provided secret key without needing external wallets on the simulator/device.
 
+### Implementation status
+
+Steps 1–4 are implemented: see [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the project ID setup and the Wallet screen. The app uses `@walletconnect/sign-client` (the Stellar namespace needs no chain-specific provider). Wiring `stellar_signXDR` into the publisher signing sheets is the remaining step; `signXdrWithWallet` is ready for it.
+
 ## Current Network Configuration
 
 Note: the `stellar:pubnet` in step 3 above is just an illustrative example for the not-yet-implemented WalletConnect flow — it is **not** the app's actual current default. The app currently defaults to **Testnet**, configured via `app.json`'s `expo.extra.networkPassphrase`. See the [README's "Stellar Network Configuration" section](./README.md#stellar-network-configuration) for the full breakdown, including where each screen/flow gets its passphrase from and the one exception (register/price-edit flows take the passphrase from the backend's API response).

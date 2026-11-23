@@ -52,12 +52,22 @@
         {
           "cameraPermission": "Allow MindVault to access your camera to scan QR codes."
         }
-      ]
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow MindVault to save QR codes to your photos.",
+          "savePhotosPermission": "Allow MindVault to save QR codes to your photos.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      "expo-localization"
     ],
     "extra": {
       "apiUrl": "http://localhost:4021",
       "network": "testnet",
-      "networkPassphrase": "Test SDF Network ; September 2015"
+      "networkPassphrase": "Test SDF Network ; September 2015",
+      "walletConnectProjectId": ""
     }
   }
 }

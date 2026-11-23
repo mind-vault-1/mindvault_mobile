@@ -1,7 +1,8 @@
 import React from "react";
 import { Linking } from "react-native";
-import { act, fireEvent } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 
+import { checkUsdcForPayment } from "../api/horizon";
 import { appNetworkId, prepareResourceAccess, signPaymentTransaction, submitSignedPayment, type PaymentChallenge } from "../api/payment";
 import { renderWithProviders } from "../test-utils";
 import { PaywallModal } from "./PaywallModal";
@@ -10,15 +11,38 @@ jest.mock("../api/payment", () => ({
   appNetworkId: jest.fn(() => "stellar:testnet"),
   sorobanRpcUrl: jest.fn(() => "https://soroban-testnet.stellar.org"),
   prepareResourceAccess: jest.fn(), signPaymentTransaction: jest.fn(), submitSignedPayment: jest.fn(),
+  priceToAtomicUnits: jest.fn((value: string) => {
+    const [whole, fraction = ""] = value.trim().split(".");
+    return BigInt(`${whole}${fraction.padEnd(7, "0").slice(0, 7)}`);
+  }),
 }));
 jest.mock("../utils/validateStellarSecret", () => ({
   validateStellarSecret: (secret: string) => ({ isValid: secret === "S-test-secret", errorMessage: "Enter a key" }),
+}));
+jest.mock("../api/horizon", () => ({
+  checkUsdcForPayment: jest.fn(),
+}));
+jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
+jest.mock("./ToastProvider", () => ({
+  useToast: () => ({ show: jest.fn(), success: jest.fn(), error: jest.fn(), info: jest.fn() }),
+}));
+jest.mock("../services/wallet", () => ({
+  getPublicKey: jest.fn().mockResolvedValue("GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7"),
+}));
+jest.mock("@react-navigation/native", () => ({
+  ...jest.requireActual("@react-navigation/native"),
+  useNavigation: () => ({
+    navigate: (...args: unknown[]) => mockNavigate(...args),
+    goBack: jest.fn(),
+  }),
 }));
 
 const mockPrepare = prepareResourceAccess as jest.MockedFunction<typeof prepareResourceAccess>;
 const mockSign = signPaymentTransaction as jest.MockedFunction<typeof signPaymentTransaction>;
 const mockSubmit = submitSignedPayment as jest.MockedFunction<typeof submitSignedPayment>;
 const mockNetwork = appNetworkId as jest.MockedFunction<typeof appNetworkId>;
+const mockCheckUsdc = checkUsdcForPayment as jest.MockedFunction<typeof checkUsdcForPayment>;
+const mockNavigate = jest.fn();
 const challenge: PaymentChallenge = {
   x402Version: 2, resource: { url: "https://api.example.com/resources/book", description: "Handbook" },
   accepted: { scheme: "exact", network: "stellar:testnet", amount: "12500000", asset: "C-USDC", payTo: "G-payee", maxTimeoutSeconds: 60, extra: { areFeesSponsored: true } },
@@ -35,6 +59,7 @@ function deferred<T>() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockNetwork.mockReturnValue("stellar:testnet");
+  mockCheckUsdc.mockResolvedValue({ status: "ok" });
   mockPrepare.mockResolvedValue({ type: "payment", challenge });
   mockSign.mockResolvedValue("signed-payment-xdr");
   mockSubmit.mockResolvedValue({ type: "text", content: "Unlocked content" });
@@ -56,6 +81,63 @@ it.each([ ["stellar:testnet", "Stellar testnet"], ["stellar:pubnet", "Stellar ma
   expect(mockPrepare).not.toHaveBeenCalled();
 });
 
+it("does not check USDC or request a challenge when the sheet is closed before paying", () => {
+  const screen = renderWithProviders(<PaywallModal {...props} />);
+  fireEvent.press(screen.getByLabelText("Close payment"));
+
+  expect(mockCheckUsdc).not.toHaveBeenCalled();
+  expect(mockPrepare).not.toHaveBeenCalled();
+});
+
+it("blocks payment with an actionable message and a Wallet link when USDC is missing", async () => {
+  mockCheckUsdc.mockResolvedValueOnce({
+    status: "missing-trustline",
+    message: "Your wallet needs a USDC trustline before you can pay.",
+  });
+  const screen = renderWithProviders(<PaywallModal {...props} />);
+
+  fireEvent.press(await screen.findByText("Pay & Access"));
+
+  expect(await screen.findByText("Your wallet needs a USDC trustline before you can pay.")).toBeTruthy();
+  const walletLink = await screen.findByLabelText("Open Wallet");
+  fireEvent.press(walletLink);
+  expect(mockNavigate).toHaveBeenCalledWith("Wallet");
+  expect(mockPrepare).not.toHaveBeenCalled();
+  expect(mockCheckUsdc).toHaveBeenCalledWith("1.25", expect.objectContaining({ signal: expect.any(Object) }));
+});
+
+it("warns but continues when the USDC check is unavailable", async () => {
+  mockCheckUsdc.mockResolvedValueOnce({
+    status: "unavailable",
+    warning: "Couldn't check your USDC balance right now.",
+  });
+  const prepare = deferred<Awaited<ReturnType<typeof prepareResourceAccess>>>();
+  mockPrepare.mockReturnValue(prepare.promise);
+  const screen = renderWithProviders(<PaywallModal {...props} />);
+
+  fireEvent.press(await screen.findByText("Pay & Access"));
+
+  expect(await screen.findByText("Couldn't check your USDC balance right now.")).toBeTruthy();
+  expect(mockPrepare).toHaveBeenCalledTimes(1);
+  await act(async () => { prepare.resolve({ type: "payment", challenge }); });
+  expect(await screen.findByLabelText("Stellar secret key")).toBeTruthy();
+});
+
+it("requires typed confirmation before paying above the per-payment limit", async () => {
+  const screen = renderWithProviders(<PaywallModal {...props} price="10.00" />);
+  fireEvent.press(await screen.findByText("Pay & Access"));
+
+  expect(await screen.findByLabelText("Confirm high payment")).toBeTruthy();
+  expect(mockPrepare).not.toHaveBeenCalled();
+
+  fireEvent.changeText(screen.getByLabelText("Confirm high payment"), "CONFIRM");
+  await act(async () => {
+    fireEvent.press(screen.getByLabelText("Confirm high payment button"));
+  });
+
+  await waitFor(() => expect(mockPrepare).toHaveBeenCalledWith(props.accessUrl, "10.00"));
+});
+
 it("shows challenge, signing and settlement progress and then text content", async () => {
   const prepare = deferred<Awaited<ReturnType<typeof prepareResourceAccess>>>();
   const sign = deferred<string>();
@@ -66,7 +148,7 @@ it("shows challenge, signing and settlement progress and then text content", asy
   const screen = renderWithProviders(<PaywallModal {...props} />);
   fireEvent.press(await screen.findByText("Pay & Access"));
   expect(screen.getByText("Getting payment challenge…")).toBeTruthy();
-  expect(mockPrepare).toHaveBeenCalledWith(props.accessUrl, props.price);
+  await waitFor(() => expect(mockPrepare).toHaveBeenCalledWith(props.accessUrl, props.price));
   await act(async () => { prepare.resolve({ type: "payment", challenge }); });
   fireEvent.changeText(screen.getByLabelText("Stellar secret key"), "S-test-secret");
   await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Sign" })); });
@@ -77,6 +159,19 @@ it("shows challenge, signing and settlement progress and then text content", asy
   await act(async () => { settle.resolve({ type: "text", content: "Unlocked content" }); });
   expect(screen.getByText("Unlocked content")).toBeTruthy();
   expect(screen.queryByLabelText("Stellar secret key")).toBeNull();
+});
+
+it("renders markdown and JSON unlocked content through ContentViewer", async () => {
+  mockSubmit.mockResolvedValueOnce({ type: "text", content: "# Guide\nSome **bold** text" });
+  const screen = renderWithProviders(<PaywallModal {...props} />);
+  await startSigning(screen);
+  expect(await screen.findByText("Guide")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Copy content" })).toBeTruthy();
+
+  mockSubmit.mockResolvedValueOnce({ type: "text", content: '{"title":"Book"}' });
+  const jsonScreen = renderWithProviders(<PaywallModal {...props} />);
+  await startSigning(jsonScreen);
+  expect(await jsonScreen.findByText(/"title": "Book"/)).toBeTruthy();
 });
 
 it("opens external content after settlement and closes", async () => {

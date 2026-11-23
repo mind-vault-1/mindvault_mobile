@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 
 import { initializeApiBaseUrl } from "./src/api/resources";
 import { createLinkingOptions } from "./src/linking";
@@ -11,6 +12,7 @@ import {
   describeMutation,
   flushMutations,
 } from "./src/services/mutationQueue";
+import { registerPublishNotificationLinks } from "./src/services/notifications";
 import { getNavigationTheme } from "./src/theme";
 import { ThemeProvider, useAppTheme } from "./src/theme/ThemeProvider";
 import { logError } from "./src/utils/errorLogger";
@@ -19,9 +21,53 @@ import { OfflineBanner } from "./src/components/OfflineBanner";
 import { ToastProvider, useToast } from "./src/components/ToastProvider";
 import { useNetworkStatus } from "./src/hooks/useNetworkStatus";
 import { useReceiptSync } from "./src/hooks/useReceiptSync";
+import { AppLockProvider } from "./src/hooks/useAppLock";
 import { STORAGE_KEYS } from "./src/services/storage";
 
 const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
+export const BOOT_TIMEOUT_MS = 5000;
+
+const bootStartedAt = Date.now();
+let splashHidden = false;
+let bootDurationMs: number | null = null;
+
+export function getBootDurationMs(): number {
+  return bootDurationMs ?? Date.now() - bootStartedAt;
+}
+
+export function resetSplashForTests(): void {
+  splashHidden = false;
+  bootDurationMs = null;
+}
+
+async function hideAppSplash(): Promise<void> {
+  if (splashHidden) return;
+  splashHidden = true;
+  bootDurationMs = Date.now() - bootStartedAt;
+  try {
+    await SplashScreen.hideAsync();
+  } catch (error) {
+    logError("Failed to hide splash screen", error);
+  }
+}
+
+export async function hideSplashAfterBoot(
+  ready: Promise<unknown>,
+  timeoutMs: number = BOOT_TIMEOUT_MS
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      ready,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    await hideAppSplash();
+  }
+}
 
 function AppContent() {
   const { colors, colorScheme, isLoading } = useAppTheme();
@@ -32,6 +78,21 @@ function AppContent() {
 
   // Reconciles local receipts with the server in the background.
   useReceiptSync(apiUrlReady);
+
+  useEffect(() => registerPublishNotificationLinks(), []);
+
+  useEffect(() => {
+    void SplashScreen.preventAutoHideAsync().catch((error) =>
+      logError("Failed to keep splash screen visible", error)
+    );
+    const timeout = setTimeout(() => void hideAppSplash(), BOOT_TIMEOUT_MS);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  const bootReady = !isLoading && apiUrlReady && onboardingChecked;
+  useEffect(() => {
+    if (bootReady) void hideAppSplash();
+  }, [bootReady]);
 
   // Replays queued offline actions in FIFO order, with a toast per action.
   const drainMutationQueue = useCallback(() => {
@@ -73,18 +134,20 @@ function AppContent() {
 
   // Render nothing themed until the saved theme and API URL are known,
   // so there is no light/dark flash and no request to the wrong server.
-  if (isLoading || !apiUrlReady || !onboardingChecked) return null;
+  if (!bootReady) return null;
 
   return (
     <>
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <OfflineBanner isOffline={isOffline} />
-      <NavigationContainer
-        theme={getNavigationTheme(colors, colorScheme)}
-        linking={createLinkingOptions()}
-      >
-        <RootNavigator showOnboarding={showOnboarding} />
-      </NavigationContainer>
+      <AppLockProvider>
+        <NavigationContainer
+          theme={getNavigationTheme(colors, colorScheme)}
+          linking={createLinkingOptions()}
+        >
+          <RootNavigator showOnboarding={showOnboarding} />
+        </NavigationContainer>
+      </AppLockProvider>
     </>
   );
 }

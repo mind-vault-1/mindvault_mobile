@@ -62,9 +62,26 @@ async function unlockSecret(): Promise<string> {
     }
   }
 
+  return readSecret();
+}
+
+async function readSecret(): Promise<string> {
   const secret = await SecureStore.getItemAsync(SECRET_KEY);
   if (!secret) throw new Error("No wallet has been configured.");
   return secret;
+}
+
+function signWithSecret(xdr: string, passphrase: string, secret: string): string {
+  const validation = validateStellarSecret(secret);
+  if (!validation.isValid) throw new Error("The stored wallet key is invalid.");
+
+  try {
+    const transaction = TransactionBuilder.fromXDR(xdr, passphrase);
+    transaction.sign(Keypair.fromSecret(secret));
+    return transaction.toXDR();
+  } catch {
+    throw new Error("Unable to sign this Stellar transaction.");
+  }
 }
 
 /**
@@ -77,16 +94,32 @@ export async function sign(xdr: string, passphrase: string): Promise<string> {
   }
 
   const secret = await unlockSecret();
-  const validation = validateStellarSecret(secret);
-  if (!validation.isValid) throw new Error("The stored wallet key is invalid.");
+  return signWithSecret(xdr, passphrase, secret);
+}
 
-  try {
-    const transaction = TransactionBuilder.fromXDR(xdr, passphrase);
-    transaction.sign(Keypair.fromSecret(secret));
-    return transaction.toXDR();
-  } catch {
-    throw new Error("Unable to sign this Stellar transaction.");
+/** Signs with the stored wallet after an explicit biometric confirmation. */
+export async function signWithBiometrics(xdr: string, passphrase: string): Promise<string> {
+  if (!xdr.trim() || !passphrase.trim()) {
+    throw new Error("Transaction XDR and network passphrase are required.");
   }
+  if (!(await isBiometricAvailable())) {
+    throw new Error("Biometric authentication is unavailable for this wallet.");
+  }
+
+  let result: LocalAuthentication.LocalAuthenticationResult;
+  try {
+    result = await LocalAuthentication.authenticateAsync({
+      promptMessage: "Confirm signing with your Stellar wallet",
+    });
+  } catch {
+    throw new Error("Biometric authentication failed.");
+  }
+  if (!result.success) {
+    throw new Error("Biometric authentication was not completed.");
+  }
+
+  const secret = await readSecret();
+  return signWithSecret(xdr, passphrase, secret);
 }
 
 /** Permanently removes the local wallet keypair. */

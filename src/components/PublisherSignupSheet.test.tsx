@@ -5,6 +5,15 @@ import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { PublisherSignupSheet } from "./PublisherSignupSheet";
 import { registerPublisher } from "../api/publishers";
 import { storeApiKey } from "../services/secureStorage";
+import { copySensitive } from "../utils/clipboard";
+
+const mockToastInfo = jest.fn();
+jest.mock("./ToastProvider", () => ({
+  useToast: () => ({ show: jest.fn(), success: jest.fn(), error: jest.fn(), info: mockToastInfo }),
+}));
+jest.mock("../utils/clipboard", () => ({
+  copySensitive: jest.fn().mockResolvedValue(() => undefined),
+}));
 
 jest.mock("../api/publishers", () => ({
   ...jest.requireActual("../api/publishers"),
@@ -71,6 +80,7 @@ jest.mock("../theme/ThemeProvider", () => {
 
 const mockedRegisterPublisher = registerPublisher as jest.MockedFunction<typeof registerPublisher>;
 const mockedStoreApiKey = storeApiKey as jest.MockedFunction<typeof storeApiKey>;
+const mockedCopySensitive = copySensitive as jest.MockedFunction<typeof copySensitive>;
 
 describe("PublisherSignupSheet", () => {
   beforeEach(() => {
@@ -185,6 +195,41 @@ describe("PublisherSignupSheet", () => {
       expect(getByText("Account Created!")).toBeTruthy();
       expect(getByText("sk_live_abcdef123456")).toBeTruthy();
     });
+  });
+
+  it("copies the API key with automatic clipboard clearing", async () => {
+    mockedRegisterPublisher.mockResolvedValue({
+      id: "pub-123",
+      name: "Test",
+      email: "test@example.com",
+      walletAddress: "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
+      apiKey: "sk_live_abcdef123456",
+      createdAt: "2026-10-20T12:00:00Z",
+    });
+    mockedStoreApiKey.mockResolvedValue(undefined);
+
+    const { getByPlaceholderText, getByText } = render(
+      <PublisherSignupSheet visible={true} onClose={jest.fn()} onSuccess={jest.fn()} />
+    );
+
+    fireEvent.changeText(getByPlaceholderText("Your name or organization"), "Test");
+    fireEvent.changeText(getByPlaceholderText("you@example.com"), "test@example.com");
+    fireEvent.changeText(
+      getByPlaceholderText("G... (56 characters)"),
+      "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7"
+    );
+    fireEvent.press(getByText("Create Account"));
+
+    await waitFor(() => expect(getByText("Account Created!")).toBeTruthy());
+    fireEvent.press(getByText("Copy Key"));
+
+    await waitFor(() =>
+      expect(mockedCopySensitive).toHaveBeenCalledWith(
+        "sk_live_abcdef123456",
+        mockToastInfo
+      )
+    );
+    expect(getByText("Copied!")).toBeTruthy();
   });
 
   it("shows error alert when registration fails with 409", async () => {

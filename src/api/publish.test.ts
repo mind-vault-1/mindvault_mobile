@@ -1,5 +1,6 @@
 import { Buffer } from "buffer";
 
+import { notifyPublishResult, requestPublishNotificationsPermission } from "../services/notifications";
 import { getApiKey } from "../services/secureStorage";
 import { PAYMENT_SIGNATURE_HEADER } from "./payment";
 import {
@@ -18,6 +19,11 @@ jest.mock("../services/secureStorage", () => ({
   getApiKey: jest.fn(),
   storeApiKey: jest.fn(),
   clearApiKey: jest.fn(),
+}));
+
+jest.mock("../services/notifications", () => ({
+  notifyPublishResult: jest.fn().mockResolvedValue(true),
+  requestPublishNotificationsPermission: jest.fn().mockResolvedValue(true),
 }));
 
 const { Keypair, StrKey } = jest.requireActual("@stellar/stellar-sdk");
@@ -83,6 +89,8 @@ beforeEach(() => {
   fetchMock = jest.fn();
   global.fetch = fetchMock as unknown as typeof global.fetch;
   mockedGetApiKey.mockResolvedValue("publisher-key");
+  (notifyPublishResult as jest.Mock).mockClear();
+  (requestPublishNotificationsPermission as jest.Mock).mockClear();
 });
 
 describe("validatePublishLink", () => {
@@ -239,7 +247,20 @@ describe("fetchPublishStatus and pollPublishStatus", () => {
     await pollPromise;
 
     expect(statuses).toEqual(["verifying", "on-chain"]);
+    expect(requestPublishNotificationsPermission).toHaveBeenCalled();
+    expect(notifyPublishResult).toHaveBeenCalledWith("res-1", "on-chain");
     jest.useRealTimers();
+  });
+
+  it("notifies once when verification is rejected", async () => {
+    fetchMock.mockResolvedValue(
+      mockResponse(200, { ...createdResource, verificationStatus: "rejected" })
+    );
+
+    await pollPublishStatus("res-2", () => undefined, () => false, 100);
+
+    expect(notifyPublishResult).toHaveBeenCalledWith("res-2", "rejected");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("stops polling when cancelled", async () => {

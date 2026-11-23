@@ -31,7 +31,8 @@ import { getResourceTypeLabel } from "../types";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
-import { openExternalUrl, stellarExpertAccountUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
+import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
+import { ResourceQrSheet } from "../components/ResourceQrSheet";
 import { shareResource } from "../utils/shareResource";
 import { hapticImpact } from "../utils/haptics";
 
@@ -211,6 +212,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
   const [isTransientError, setIsTransientError] = useState(false);
   const toast = useToast();
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const [qrVisible, setQrVisible] = useState(false);
   const [leaseStatus, setLeaseStatus] = useState<LeaseStatus | null>(null);
   const [countdown, setCountdown] = useState<string>("");
 
@@ -341,12 +343,6 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     if (outcome === "error") {
       toast.error("Unable to share URL");
     }
-  }
-
-  function handleOpenOwner() {
-    if (!resource) return;
-    const url = stellarExpertAccountUrl({ accountId: resource.walletAddress });
-    openExternalUrl(url).catch(() => toast.error("Unable to open explorer"));
   }
 
   function handleOpenTx() {
@@ -492,17 +488,27 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         <View style={styles.infoRow}>
           <Text style={styles.label}>Owner</Text>
           <Pressable
-            onPress={handleOpenOwner}
+            onPress={() => navigation.navigate("PublisherPublic", { address: resource.walletAddress })}
             style={styles.linkTarget}
             accessibilityRole="link"
             accessibilityLabel={`Owner: ${resource.walletAddress}`}
-            accessibilityHint="Opens the owner's account in Stellar Explorer"
+            accessibilityHint="Opens the publisher's profile"
           >
             <Text style={[typography.body, styles.linkText]}>
               {shortenAddress(resource.walletAddress)}
             </Text>
           </Pressable>
         </View>
+
+        <Pressable
+          style={[shared.button, styles.actionButton]}
+          onPress={() => navigation.navigate("Catalog", { owner: resource.walletAddress })}
+          accessibilityRole="button"
+          accessibilityLabel="More from this publisher"
+          accessibilityHint="Opens the catalog filtered to this publisher"
+        >
+          <Text style={shared.buttonText}>More from this publisher</Text>
+        </Pressable>
 
         {resource.onchainTxHash ? (
           <View style={styles.infoRow}>
@@ -656,7 +662,24 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         >
           <Text style={shared.buttonText}>Share Access URL</Text>
         </Pressable>
+
+        <Pressable
+          style={[shared.button, styles.actionButton]}
+          onPress={() => setQrVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Show QR code"
+          accessibilityHint="Opens a scannable QR code for this resource"
+        >
+          <Text style={shared.buttonText}>Share as QR code</Text>
+        </Pressable>
       </ScrollView>
+
+      <ResourceQrSheet
+        visible={qrVisible}
+        resourceId={resource.id}
+        resourceTitle={resource.title}
+        onClose={() => setQrVisible(false)}
+      />
 
       <PaywallModal
         key={resource.id}

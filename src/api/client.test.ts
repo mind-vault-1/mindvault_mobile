@@ -45,6 +45,31 @@ describe('request', () => {
     expect(JSON.parse(init.body)).toEqual({ price: '2' });
   });
 
+  it('returns text and validates it with a schema when requested', async () => {
+    const fetchMock = useFetch(jest.fn().mockResolvedValue({
+      ...response(null),
+      text: async () => 'free content',
+    }));
+
+    const result = await request<string>(URL, {
+      responseType: 'text',
+      schema: (value) => {
+        if (typeof value !== 'string') throw new Error('Expected text');
+        return value.toUpperCase();
+      },
+    });
+
+    expect(result.data).toBe('FREE CONTENT');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a GET when retry is disabled', async () => {
+    const fetchMock = useFetch(jest.fn().mockRejectedValue(new TypeError('Network request failed')));
+
+    await expect(request(URL, { retry: false })).rejects.toMatchObject({ kind: 'network' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('resolves undefined for an empty 204 response', async () => {
     const fetchMock = useFetch(jest.fn().mockResolvedValue(response(undefined, 204)));
 
@@ -69,6 +94,13 @@ describe('request', () => {
     await expect(
       request(URL, { fallbackMessage: (status) => (status === 404 ? 'Not here' : 'Other') })
     ).rejects.toMatchObject({ kind: 'http', status: 404, message: 'Not here' });
+  });
+
+  it('can ignore the server error body and use only the fallback message', async () => {
+    useFetch(jest.fn().mockResolvedValue(response({ error: 'Bad price' }, 400)));
+
+    await expect(request(URL, { ignoreErrorBody: true, fallbackMessage: 'Fixed message' }))
+      .rejects.toMatchObject({ kind: 'http', status: 400, message: 'Fixed message' });
   });
 
   it('retries a GET after a 5xx and returns the later success', async () => {

@@ -13,6 +13,9 @@ import { DevSignerScreen } from "./screens/DevSignerScreen";
 import { PublisherResourcesScreen } from "./screens/PublisherResourcesScreen";
 import { PublisherProfileScreen } from "./screens/PublisherProfileScreen";
 import { PublisherAnalyticsScreen } from "./screens/PublisherAnalyticsScreen";
+import { PublisherPublicScreen } from "./screens/PublisherPublicScreen";
+import { WalletScreen } from "./screens/WalletScreen";
+import { LeaderboardScreen } from "./screens/LeaderboardScreen";
 import { PurchaseHistoryScreen } from "./screens/PurchaseHistoryScreen";
 import { ReceiptDetailScreen } from "./screens/ReceiptDetailScreen";
 import { PublishResourceScreen } from "./screens/PublishResourceScreen";
@@ -22,7 +25,8 @@ import { WalletScreen } from "./screens/WalletScreen";
 
 export type RootStackParamList = {
   Onboarding: undefined;
-  Catalog: undefined;
+  /** `owner` opens the catalog filtered to one publisher wallet. */
+  Catalog: { owner?: string } | undefined;
   ResourceDetail: { resourceId: string };
   Scanner: undefined;
   Settings: undefined;
@@ -31,6 +35,9 @@ export type RootStackParamList = {
   PublisherResourceDetail: { resourceId: string };
   PublisherProfile: undefined;
   PublisherAnalytics: undefined;
+  PublisherPublic: { address: string };
+  Leaderboard: undefined;
+  Wallet: undefined;
   PurchaseHistory: undefined;
   ReceiptDetail: { txHash: string };
   PublishResource: undefined;
@@ -108,6 +115,17 @@ export function RootNavigator({ showOnboarding }: RootNavigatorProps) {
         name="PublisherAnalytics"
         component={PublisherAnalyticsScreen}
         options={{ title: "Publisher Analytics" }}
+      />
+      <Stack.Screen
+        name="PublisherPublic"
+        component={PublisherPublicScreen}
+        options={{ title: "Publisher" }}
+      />
+      <Stack.Screen name="Wallet" component={WalletScreen} options={{ title: "Wallet" }} />
+      <Stack.Screen
+        name="Leaderboard"
+        component={LeaderboardScreen}
+        options={{ title: "Leaderboard" }}
       />
       <Stack.Screen
         name="PurchaseHistory"
