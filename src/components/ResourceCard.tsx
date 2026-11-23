@@ -15,6 +15,7 @@ import { getResourceTypeLabel } from "../types";
 import { isImageCached, rememberImage } from "../utils/imageCache";
 import { shareResource } from "../utils/shareResource";
 import { hapticImpact } from "../utils/haptics";
+import { useFavorite } from "../services/favorites";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { EditPriceSheet } from "./EditPriceSheet";
@@ -130,6 +131,43 @@ export function ResourceThumbnail({
         onError={() => setStatus("failed")}
       />
     </View>
+  );
+}
+
+/**
+ * Heart toggle that saves a resource on this device. State comes from the shared
+ * favourites store, so every card and the detail screen stay in step.
+ */
+export function FavoriteButton({
+  resourceId,
+  title,
+}: {
+  resourceId: string;
+  title: string;
+}) {
+  const { colors } = useAppTheme();
+  const { isFavorite, toggle } = useFavorite(resourceId);
+
+  return (
+    <Pressable
+      onPress={() => {
+        void hapticImpact();
+        void toggle();
+      }}
+      hitSlop={8}
+      style={styles.favoriteButton}
+      accessibilityRole="togglebutton"
+      accessibilityLabel={`Favourite ${title}`}
+      accessibilityHint="Saves this resource on this device"
+      accessibilityState={{ checked: isFavorite }}
+    >
+      <Text
+        style={[styles.favoriteIcon, { color: isFavorite ? colors.danger : colors.textMuted }]}
+        accessible={false}
+      >
+        {isFavorite ? "♥" : "♡"}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -255,6 +293,7 @@ export function ResourceCard({
       <View style={styles.footer}>
         <Text style={typography.price}>{resource.price} USDC</Text>
         <View style={styles.actions}>
+          <FavoriteButton resourceId={resource.id} title={resource.title} />
           <Pressable
             onPress={handleShare}
             style={[shared.button, dynamicStyles.shareButton]}
@@ -366,6 +405,15 @@ const styles = StyleSheet.create({
   },
   fallbackIcon: {
     fontSize: 32,
+  },
+  favoriteButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  favoriteIcon: {
+    fontSize: 24,
   },
   badges: {
     flexDirection: "row",
