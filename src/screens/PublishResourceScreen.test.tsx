@@ -162,7 +162,8 @@ it("publishes and shows the new resource with its access URL", async () => {
       price: "1.5",
       description: "A guide",
     },
-    undefined
+    undefined,
+    "publish|Stellar handbook|https://example.com/handbook|1.5|A guide"
   );
 
   fireEvent.press(screen.getByRole("button", { name: "Copy access URL" }));
@@ -242,10 +243,77 @@ it("pays the verification fee and then publishes", async () => {
 
   expect(await screen.findByText(resource.accessUrl)).toBeTruthy();
   expect(mockedSign).toHaveBeenCalledWith(challenge, "SECRET", "https://rpc.example.com");
-  expect(mockedPublishLink).toHaveBeenLastCalledWith(expect.any(Object), {
-    challenge,
-    transaction: "signed-xdr",
+  expect(mockedPublishLink).toHaveBeenLastCalledWith(
+    expect.any(Object),
+    {
+      challenge,
+      transaction: "signed-xdr",
+    },
+    "publish|Stellar handbook|https://example.com/handbook|1.5|A guide"
+  );
+});
+
+it("reuses the idempotency key when retrying after a failure", async () => {
+  mockedPublishLink
+    .mockRejectedValueOnce(new Error("Network timeout"))
+    .mockResolvedValueOnce({ type: "published", resource });
+  const screen = await renderScreen();
+
+  fillForm(screen);
+  fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+
+  expect(await screen.findByText("Network timeout")).toBeTruthy();
+  expect(mockedPublishLink).toHaveBeenCalledTimes(1);
+  const firstKey = mockedPublishLink.mock.calls[0][2];
+  expect(firstKey).toBe("publish|Stellar handbook|https://example.com/handbook|1.5|A guide");
+
+  // Retry submitting the form
+  fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+
+  expect(await screen.findByText("Stellar handbook")).toBeTruthy();
+  expect(mockedPublishLink).toHaveBeenCalledTimes(2);
+  const secondKey = mockedPublishLink.mock.calls[1][2];
+  expect(secondKey).toBe(firstKey);
+});
+
+it("prevents double submission while publish request is in-flight", async () => {
+  let resolvePublish: (val: any) => void;
+  const publishPromise = new Promise((resolve) => {
+    resolvePublish = resolve;
   });
+  mockedPublishLink.mockReturnValue(publishPromise as any);
+  const screen = await renderScreen();
+
+  fillForm(screen);
+  fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+
+  // Should display clear "Still processing…" messaging
+  expect(screen.getByText("Still processing…")).toBeTruthy();
+
+  // Try to submit again while in-flight
+  fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+  expect(mockedPublishLink).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    resolvePublish!({ type: "published", resource });
+  });
+  expect(await screen.findByText("Stellar handbook")).toBeTruthy();
+});
+
+it("displays clear still processing error message when server reports request still processing", async () => {
+  mockedPublishLink.mockRejectedValue(
+    new Error("Your publish request is still processing. Please wait a moment before retrying.")
+  );
+  const screen = await renderScreen();
+
+  fillForm(screen);
+  fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+
+  expect(
+    await screen.findByText(
+      "Your publish request is still processing. Please wait a moment before retrying."
+    )
+  ).toBeTruthy();
 });
 
 it("shows a server error and keeps the form", async () => {

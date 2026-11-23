@@ -17,6 +17,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { signPaymentTransaction, sorobanRpcUrl, type PaymentChallenge } from "../api/payment";
 import {
   ALLOWED_UPLOAD_MIME_TYPES,
+  buildPublishIdempotencyKey,
   DESCRIPTION_MAX_LENGTH,
   MAX_UPLOAD_BYTES,
   pollPublishStatus,
@@ -175,6 +176,12 @@ function createStyles(colors: ThemeColors) {
     secondary: { backgroundColor: colors.neutralBg },
     secondaryText: { color: colors.text, fontWeight: "600" },
     disabled: { opacity: 0.5 },
+    submittingContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: spacing.sm,
+    },
     progressTrack: {
       height: 6,
       borderRadius: 3,
@@ -205,6 +212,7 @@ export function PublishResourceScreen() {
   const [timelineStatus, setTimelineStatus] = useState<PublishStatus>({ status: "submitted" });
   const [queued, setQueued] = useState<QueuedMutation | null>(null);
   const [queuedDone, setQueuedDone] = useState(false);
+  const [currentIdempotencyKey, setCurrentIdempotencyKey] = useState<string | null>(null);
   const queuedRef = useRef<QueuedMutation | null>(null);
   const uploadRef = useRef<AbortController | null>(null);
 
@@ -246,19 +254,13 @@ export function PublishResourceScreen() {
 
   function update(key: Field, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setCurrentIdempotencyKey(null);
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
   function publishIdempotencyKey(): string {
-    const parts = [
-      "publish",
-      form.title.trim(),
-      form.url.trim(),
-      form.price.trim(),
-      form.description.trim(),
-    ];
-    if (file) parts.push(file.name);
-    return parts.join("|");
+    const base = buildPublishIdempotencyKey(form);
+    return mode === "file" && file ? `${base}|${file.name}` : base;
   }
 
   async function pickFile() {
@@ -278,20 +280,31 @@ export function PublishResourceScreen() {
     });
     setErrors((prev) => ({ ...prev, file: undefined }));
     setSubmitError(null);
+    setCurrentIdempotencyKey(null);
   }
 
   function cancelUpload() {
     uploadRef.current?.abort();
   }
 
-  async function submit(payment?: { challenge: PaymentChallenge; transaction: string }) {
+  function selectMode(next: PublishMode) {
+    setMode(next);
+    setCurrentIdempotencyKey(null);
     setSubmitError(null);
+  }
+
+  async function submit(payment?: { challenge: PaymentChallenge; transaction: string }) {
+    if (submitting) return;
+    setSubmitError(null);
+    const key = currentIdempotencyKey ?? publishIdempotencyKey();
+    setCurrentIdempotencyKey(key);
+
     if (isOffline) {
       // Offline: persist the action — the UI shows "Queued", never a spinner.
       const entry = await enqueueMutation({
         kind: "publish",
         payload: { input: form, payment, title: form.title.trim() },
-        idempotencyKey: publishIdempotencyKey(),
+        idempotencyKey: key,
       });
       queuedRef.current = entry;
       setQueued(entry);
@@ -308,18 +321,19 @@ export function PublishResourceScreen() {
               { ...form, file },
               {
                 payment,
-                idempotencyKey: publishIdempotencyKey(),
+                idempotencyKey: key,
                 onProgress: setProgress,
                 signal: controller.signal,
               }
             )
-          : await publishLink(form, payment);
+          : await publishLink(form, payment, key);
       if (result.type === "payment") {
         setFee({ challenge: result.challenge, amount: result.fee });
         return;
       }
       setFee(null);
       setPublished(result.resource);
+      setCurrentIdempotencyKey(null);
       toast.success("Resource published");
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to publish resource");
@@ -331,6 +345,7 @@ export function PublishResourceScreen() {
   }
 
   function handleSubmit() {
+    if (submitting) return;
     const found =
       mode === "file"
         ? file
@@ -365,6 +380,7 @@ export function PublishResourceScreen() {
     queuedRef.current = null;
     setQueued(null);
     setQueuedDone(false);
+    setCurrentIdempotencyKey(null);
   }
 
   async function handleRetry() {
@@ -568,7 +584,7 @@ export function PublishResourceScreen() {
           <Pressable
             key={option.value}
             style={[styles.button, mode === option.value ? null : styles.secondary]}
-            onPress={() => setMode(option.value)}
+            onPress={() => selectMode(option.value)}
             disabled={submitting || !!fee}
             accessibilityRole="button"
             accessibilityLabel={option.label}
@@ -693,7 +709,10 @@ export function PublishResourceScreen() {
               accessibilityState={{ disabled: submitting, busy: submitting }}
             >
               {submitting ? (
-                <ActivityIndicator color={colors.onPrimary} />
+                <View style={styles.submittingContent}>
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
+                  <Text style={styles.buttonText}>Still processing…</Text>
+                </View>
               ) : (
                 <Text style={styles.buttonText}>Pay and publish</Text>
               )}
@@ -710,7 +729,10 @@ export function PublishResourceScreen() {
           accessibilityState={{ disabled: submitting, busy: submitting }}
         >
           {submitting ? (
-            <ActivityIndicator color={colors.onPrimary} />
+            <View style={styles.submittingContent}>
+              <ActivityIndicator color={colors.onPrimary} size="small" />
+              <Text style={styles.buttonText}>Still processing…</Text>
+            </View>
           ) : (
             <Text style={styles.buttonText}>Publish</Text>
           )}

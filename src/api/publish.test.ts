@@ -7,6 +7,7 @@ import { PAYMENT_SIGNATURE_HEADER } from "./payment";
 import {
   MAX_UPLOAD_BYTES,
   atomicToDisplay,
+  buildPublishIdempotencyKey,
   fetchPublishStatus,
   pollPublishStatus,
   publishFile,
@@ -191,6 +192,7 @@ describe("publishLink", () => {
     expect(url).toMatch(/\/resources$/);
     expect(init.method).toBe("POST");
     expect(init.headers["x-api-key"]).toBe("publisher-key");
+    expect(init.headers["Idempotency-Key"]).toBe(buildPublishIdempotencyKey(validInput));
     expect(JSON.parse(init.body)).toEqual({
       resourceType: "link",
       title: "Stellar handbook",
@@ -198,6 +200,23 @@ describe("publishLink", () => {
       price: "1.5",
       description: "A guide",
     });
+  });
+
+  it("reuses provided idempotency key when provided", async () => {
+    fetchMock.mockResolvedValue(mockResponse(201, createdResource));
+
+    await publishLink(validInput, undefined, "custom-idem-key");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers["Idempotency-Key"]).toBe("custom-idem-key");
+  });
+
+  it("surfaces clear still processing message on 409 conflict", async () => {
+    fetchMock.mockResolvedValue(mockResponse(409, { error: "Conflict" }));
+
+    await expect(publishLink(validInput)).rejects.toThrow(
+      "Your publish request is still processing. Please wait a moment before retrying."
+    );
   });
 
   it("returns the verification fee challenge on 402", async () => {
@@ -378,6 +397,14 @@ describe("publishFile", () => {
       Buffer.from(options.headers[PAYMENT_SIGNATURE_HEADER], "base64").toString("utf8")
     );
     expect(signature.payload).toEqual({ transaction: "signed-xdr" });
+  });
+
+  it("surfaces clear still processing message on 409 conflict", async () => {
+    mockUpload({ status: 409, body: JSON.stringify({ error: "Conflict" }) });
+
+    await expect(publishFile(fileInput)).rejects.toThrow(
+      "Your publish request is still processing. Please wait a moment before retrying."
+    );
   });
 
   it("surfaces forbidden and server errors", async () => {

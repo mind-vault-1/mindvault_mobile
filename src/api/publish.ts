@@ -19,6 +19,8 @@ import { getRequestPath, hashMultipartBody, signPublisherRequest } from "../util
 export const TITLE_MAX_LENGTH = 120;
 export const DESCRIPTION_MAX_LENGTH = 2000;
 const USDC_DECIMALS = 7;
+const STILL_PROCESSING_MESSAGE =
+  "Your publish request is still processing. Please wait a moment before retrying.";
 
 /** What the publisher fills in on the Publish screen. */
 export interface PublishLinkInput {
@@ -82,6 +84,17 @@ export function atomicToDisplay(amount: string): string {
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
+/** Generates a scoped idempotency key for publishing a link resource. */
+export function buildPublishIdempotencyKey(input: PublishLinkInput): string {
+  return [
+    "publish",
+    input.title.trim(),
+    input.url.trim(),
+    input.price.trim(),
+    input.description.trim(),
+  ].join("|");
+}
+
 export type PublishResult =
   | { type: "published"; resource: Resource }
   | { type: "payment"; challenge: PaymentChallenge; fee: string };
@@ -115,6 +128,7 @@ export async function publishLink(
   payment?: { challenge: PaymentChallenge; transaction: string },
   idempotencyKey?: string
 ): Promise<PublishResult> {
+  const key = idempotencyKey ?? buildPublishIdempotencyKey(input);
   const body = {
     resourceType: "link",
     title: input.title.trim(),
@@ -130,7 +144,7 @@ export async function publishLink(
         method: "POST",
         body,
         headers: {
-          ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+          ...(key ? { "Idempotency-Key": key } : {}),
           ...(payment
             ? {
                 [PAYMENT_SIGNATURE_HEADER]: encodePaymentSignature(
@@ -141,15 +155,21 @@ export async function publishLink(
             : {}),
         },
       },
-      "Failed to publish resource"
+      "Failed to publish resource",
+      [402, 409]
     );
     return { type: "published", resource };
   } catch (error) {
-    if (!(error instanceof ApiError) || error.status !== 402) throw error;
-    if (payment) {
-      throw new Error("The verification fee was not accepted. Check your USDC balance and try again.");
+    if (error instanceof ApiError && error.status === 402) {
+      if (payment) {
+        throw new Error("The verification fee was not accepted. Check your USDC balance and try again.");
+      }
+      return { type: "payment", ...readVerificationFee(error.headers?.get(PAYMENT_REQUIRED_HEADER) ?? null) };
     }
-    return { type: "payment", ...readVerificationFee(error.headers?.get(PAYMENT_REQUIRED_HEADER) ?? null) };
+    if (error instanceof ApiError && error.status === 409) {
+      throw new Error(STILL_PROCESSING_MESSAGE);
+    }
+    throw error;
   }
 }
 
@@ -319,6 +339,8 @@ function readPublishResponse(
       )?.[1] ?? null;
     return { type: "payment", ...readVerificationFee(challengeHeader) };
   }
+
+  if (status === 409) throw new Error(STILL_PROCESSING_MESSAGE);
 
   throw new Error(
     extractApiErrorMessageFromBody(
