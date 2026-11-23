@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Modal,
   Pressable,
   StyleSheet,
@@ -33,6 +32,7 @@ import { ContentViewer } from "./ContentViewer";
 import { LeaseSheet } from "./LeaseSheet";
 import { getRegistryClient } from "../api/leases";
 import { hapticError, hapticSuccess } from "../utils/haptics";
+import { openExternalUrl } from "../utils/stellarExpert";
 import { getPublicKey } from "../services/wallet";
 import { DEFAULT_PER_PAYMENT_LIMIT, loadPreferences } from "../services/preferences";
 
@@ -274,7 +274,7 @@ export function PaywallModal({
     void hapticSuccess();
     setResult(access);
     if (access.type === "external") {
-      await Linking.openURL(access.url);
+      await openExternalUrl(access.url);
       if (isActive(run)) close();
     } else {
       setPhase("result");
