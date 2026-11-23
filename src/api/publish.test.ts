@@ -42,6 +42,7 @@ jest.mock("expo-file-system", () => ({
 const FileSystem = jest.requireMock("expo-file-system") as {
   readAsStringAsync: jest.Mock;
   createUploadTask: jest.Mock;
+  FileSystemUploadType: { MULTIPART: number };
 };
 
 const { Keypair, StrKey } = jest.requireActual("@stellar/stellar-sdk");
