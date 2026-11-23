@@ -10,6 +10,8 @@ import { prepareResourceAccess } from "../api/payment";
 import { fetchVerification, type VerificationDetails } from "../api/verification";
 import { shareResource } from "../utils/shareResource";
 import { openExternalUrl } from "../utils/stellarExpert";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { FAVORITES_KEY, resetFavoritesForTests } from "../services/favorites";
 import { ResourceDetailScreen } from "./ResourceDetailScreen";
 import { ToastProvider } from "../components/ToastProvider";
 
@@ -30,6 +32,9 @@ jest.mock("../api/leases", () => ({
   fetchLeaseStatus: jest.fn(),
 }));
 jest.mock("../services/wallet", () => ({ getPublicKey: jest.fn() }));
+jest.mock("react-native-qrcode-svg", () => "QRCode");
+jest.mock("expo-media-library", () => ({}));
+jest.mock("expo-file-system", () => ({}));
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
 jest.mock("../utils/shareResource", () => ({ shareResource: jest.fn().mockResolvedValue("shared") }));
 jest.mock("../utils/stellarExpert", () => ({
@@ -78,7 +83,7 @@ const resource = {
   updatedAt: "2025-06-15T12:30:00.000Z",
 };
 
-const navigation = { setOptions: jest.fn(), goBack: jest.fn() } as any;
+const navigation = { setOptions: jest.fn(), goBack: jest.fn(), navigate: jest.fn() } as any;
 const route = { params: { resourceId: resource.id } } as any;
 
 function renderScreen() {
@@ -251,13 +256,32 @@ it("shares through the resource helper", async () => {
   );
 });
 
-it("shows a toast when opening Stellar Expert fails", async () => {
+it("opens the owner's public publisher profile", async () => {
   mockedFetchResource.mockResolvedValue(resource);
-  mockedOpenExternalUrl.mockRejectedValue(new Error("cannot open"));
   const screen = renderScreen();
   fireEvent.press(await screen.findByLabelText(`Owner: ${resource.walletAddress}`));
 
-  expect(await screen.findByText("Unable to open explorer")).toBeTruthy();
+  expect(navigation.navigate).toHaveBeenCalledWith("PublisherPublic", {
+    address: resource.walletAddress,
+  });
+  expect(mockedOpenExternalUrl).not.toHaveBeenCalled();
+});
+
+it("opens the catalog filtered to the publisher", async () => {
+  mockedFetchResource.mockResolvedValue(resource);
+  const screen = renderScreen();
+  fireEvent.press(await screen.findByLabelText("More from this publisher"));
+
+  expect(navigation.navigate).toHaveBeenCalledWith("Catalog", {
+    owner: resource.walletAddress,
+  });
+});
+
+it("opens the QR code sheet", async () => {
+  mockedFetchResource.mockResolvedValue(resource);
+  const screen = renderScreen();
+  fireEvent.press(await screen.findByLabelText("Show QR code"));
+  expect(await screen.findByLabelText("Save QR code to Photos")).toBeTruthy();
 });
 
 describe("collapsible verification section", () => {
@@ -462,5 +486,42 @@ describe("refreshing", () => {
       resolve(resource);
       await first;
     });
+  });
+});
+
+describe("favourite toggle", () => {
+  beforeEach(async () => {
+    await AsyncStorage.removeItem(FAVORITES_KEY);
+    resetFavoritesForTests();
+    mockedFetchResource.mockResolvedValue(resource);
+  });
+
+  it("saves the resource on this device and exposes the checked state", async () => {
+    const screen = renderScreen();
+    const heart = await screen.findByRole("togglebutton", { name: `Favourite ${resource.title}` });
+    expect(heart.props.accessibilityState).toEqual({ checked: false });
+
+    await act(async () => {
+      fireEvent.press(heart);
+    });
+
+    expect(
+      screen.getByLabelText(`Favourite ${resource.title}`).props.accessibilityState
+    ).toEqual({ checked: true });
+    expect(JSON.parse((await AsyncStorage.getItem(FAVORITES_KEY)) as string)).toEqual({
+      version: 1,
+      ids: [resource.id],
+    });
+  });
+
+  it("shows a previously saved resource as a favourite", async () => {
+    await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify({ version: 1, ids: [resource.id] }));
+    const screen = renderScreen();
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(`Favourite ${resource.title}`).props.accessibilityState
+      ).toEqual({ checked: true })
+    );
   });
 });

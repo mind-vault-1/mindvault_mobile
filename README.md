@@ -12,13 +12,17 @@ React Native companion app for [MindVault](https://github.com/mindvault) — bro
 
 ## Architecture
 
-New here? Read the [architecture guide](docs/ARCHITECTURE.md) for the layers, data flow, storage keys and the signing and payment flows.
+New here? Read the [architecture guide](docs/ARCHITECTURE.md) for the layers, data flow, storage keys and the signing and payment flows. The [mobile API contract](docs/API.md) lists every endpoint, header, error and server source link used by the app.
+
+## Privacy
+
+The [privacy and data-handling notes](docs/PRIVACY.md) list every value the app stores, how long it is kept and how to delete it, plus what leaves the device and what never does. Settings links to them from the **Local Data** section. Update them in the same PR as any change that stores new data or sends data somewhere new.
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 20+ (SDK 53 dropped support for Node 18)
 - npm or pnpm
-- [Expo Go](https://expo.dev/go) on your phone, or Xcode / Android Studio for simulators
+- [Expo Go](https://expo.dev/go) on your phone, or Xcode / Android Studio for simulators. On Android, push notifications are not available in Expo Go under SDK 53 — use a development build to test them.
 
 ## Setup
 
@@ -68,6 +72,26 @@ Publisher resources require an API key for authentication:
 - **API Key Origin:** Publisher API keys are issued by your MindVault backend server.
 - **Server Configuration:** On self-hosted servers, configure your keys using the `PUBLISHER_API_KEYS` environment variable or generate one through your server's admin interface.
 - **App Usage:** Enter the key in the **Publisher Resources** tab or Publisher Settings modal to view and manage your resources.
+
+### Signed publisher writes
+
+Authenticated publisher writes (`POST`/`DELETE`) are signed with HMAC-SHA256 when the server enables `REQUIRE_REQUEST_SIGNATURE`, including link publishes, API-key rotation, and API-key revocation. Publisher registration is public and is not signed because no key exists yet. The app sends:
+
+- `X-Timestamp`: current Unix time in seconds
+- `X-Signature`: hex HMAC of `METHOD\npath\nX-Timestamp\nSHA256(body)` using the publisher API key as the secret
+- `Idempotency-Key`: only when the caller supplies one; it is appended as a fifth canonical line
+
+The canonical string, body hash and signature are byte-for-byte compatible with `server/src/utils/requestSignature.ts`. The implementation in `src/utils/requestSignature.ts` is pure JavaScript (including SHA-256 and UTF-8 encoding) because Hermes has no `node:crypto`.
+
+### Wipe wallet and sign out
+
+The **Wallet** screen has a **Wipe wallet & sign out** action. After you type `WIPE` to confirm, the app deletes the Stellar secret/public key, the publisher API key and all active WalletConnect sessions from secure storage, clears the in-memory wallet state and returns to the disconnected state. This cannot be undone: back up any key you still need before wiping. See [privacy and data-handling notes](docs/PRIVACY.md) for the full list of stored values and deletion behaviour.
+
+### Screen-capture protection
+
+`expo-screen-capture` blocks screenshots and screen recording while the `SignTransactionSheet` signing sheet or the developer `DevSigner` screen is visible, and releases the block on close/blur. The block is keyed so the two screens cannot unlock each other prematurely.
+
+Before a payment starts, the paywall reads the stored public key and checks Horizon for a USDC trustline and enough balance to cover the displayed price. A missing trustline or short balance stops the flow with an **Open Wallet** link; if Horizon cannot be reached, a warning is shown and the normal payment flow continues. No Horizon request is made until **Pay & Access** is pressed, and closing the sheet cancels any in-flight check. The classic USDC issuer defaults to the official issuer for the configured network; self-hosted deployments with a different issuer can set `expo.extra.usdcIssuer` in `app.json`.
 
 ## Stellar Network Configuration
 
@@ -137,6 +161,8 @@ The `android/` and `ios/` directories are generated at build time. See the [nati
 | `npm run ios`       | Run the app on an iOS device or simulator using Expo's development build    |
 | `npm run web`       | Run the app in a web browser                                                |
 | `npm run typecheck` | Run TypeScript type checking without emitting files                         |
+| `npm run lint`      | Run ESLint (fails on more than 4 warnings)                                   |
+| `npm run validate-deps` | Check installed dependency versions against the Expo SDK                |
 | `npm test`          | Run tests with Jest                                                         |
 
 ## Related

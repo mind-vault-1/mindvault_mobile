@@ -21,7 +21,7 @@ import {
 } from "../api/verification";
 import { useAppForeground } from "../hooks/useAppForeground";
 import { getPublicKey } from "../services/wallet";
-import { ResourceThumbnail } from "../components/ResourceCard";
+import { FavoriteButton, ResourceThumbnail } from "../components/ResourceCard";
 import { StatusBadge } from "../components/StatusBadge";
 import { PaywallModal } from "../components/PaywallModal";
 import { useToast } from "../components/ToastProvider";
@@ -31,9 +31,11 @@ import { getResourceTypeLabel } from "../types";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
-import { openExternalUrl, stellarExpertAccountUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
+import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
+import { ResourceQrSheet } from "../components/ResourceQrSheet";
 import { shareResource } from "../utils/shareResource";
 import { hapticImpact } from "../utils/haptics";
+import { t } from "../i18n";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ResourceDetail">;
 
@@ -56,10 +58,10 @@ function formatTimestamp(value: string | undefined): string | null {
 
 function getResourceTimestamp(resource: Resource): { label: string; text: string } | null {
   const updatedAt = formatTimestamp(resource.updatedAt);
-  if (updatedAt) return { label: "Last updated", text: updatedAt };
+  if (updatedAt) return { label: t("detail.lastUpdated"), text: updatedAt };
 
   const publishedAt = formatTimestamp(resource.publishedAt);
-  if (publishedAt) return { label: "Published", text: publishedAt };
+  if (publishedAt) return { label: t("detail.published"), text: publishedAt };
 
   return null;
 }
@@ -115,6 +117,15 @@ function createStyles(colors: ThemeColors) {
       color: colors.textSubtle,
       fontSize: 14,
       lineHeight: 20,
+    },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: spacing.sm,
+    },
+    titleText: {
+      flex: 1,
     },
     actionButton: {
       alignSelf: "stretch",
@@ -211,6 +222,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
   const [isTransientError, setIsTransientError] = useState(false);
   const toast = useToast();
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const [qrVisible, setQrVisible] = useState(false);
   const [leaseStatus, setLeaseStatus] = useState<LeaseStatus | null>(null);
   const [countdown, setCountdown] = useState<string>("");
 
@@ -228,7 +240,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
       const remainingMs = new Date(expiresAt).getTime() - Date.now();
       if (remainingMs <= 0) {
         if (timer) clearInterval(timer);
-        setCountdown("Expired");
+        setCountdown(t("detail.expired"));
         setLeaseStatus((prev) => (prev ? { ...prev, hasActiveLease: false, state: "Expired" } : null));
         return;
       }
@@ -258,7 +270,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
       setVerificationDetails(data);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to load verification details";
+        err instanceof Error ? err.message : t("detail.verificationLoadError");
       setVerificationError(message);
     } finally {
       setVerificationLoading(false);
@@ -299,7 +311,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
             setError(err.message);
             setIsTransientError(err.isTransient);
           } else {
-            setError("An unexpected error occurred.");
+            setError(t("detail.unexpectedError"));
             setIsTransientError(true);
           }
         }
@@ -332,27 +344,21 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
     if (!resource) return;
     await Clipboard.setStringAsync(resource.accessUrl);
     void hapticImpact();
-    toast.success("Resource URL copied");
+    toast.success(t("detail.urlCopied"));
   }
 
   async function handleShare() {
     if (!resource) return;
     const outcome = await shareResource(resource.title, resource.accessUrl);
     if (outcome === "error") {
-      toast.error("Unable to share URL");
+      toast.error(t("detail.shareError"));
     }
-  }
-
-  function handleOpenOwner() {
-    if (!resource) return;
-    const url = stellarExpertAccountUrl({ accountId: resource.walletAddress });
-    openExternalUrl(url).catch(() => toast.error("Unable to open explorer"));
   }
 
   function handleOpenTx() {
     if (!resource?.onchainTxHash) return;
     const url = stellarExpertTxUrl({ txHash: resource.onchainTxHash });
-    openExternalUrl(url).catch(() => toast.error("Unable to open explorer"));
+    openExternalUrl(url).catch(() => toast.error(t("detail.explorerError")));
   }
 
   if (loading) {
@@ -376,7 +382,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
               onPress={() => void loadResource()}
             >
               <Text style={[shared.buttonText, shared.primaryButtonText]}>
-                Try Again
+                {t("detail.tryAgain")}
               </Text>
             </Pressable>
           ) : null}
@@ -390,7 +396,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
                 isTransientError ? undefined : shared.primaryButtonText,
               ]}
             >
-              Go Back
+              {t("detail.goBack")}
             </Text>
           </Pressable>
         </View>
@@ -420,11 +426,16 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
             resourceType={resource.resourceType}
           />
         ) : null}
-        <Text style={typography.subtitle}>Resource</Text>
-        <Text style={typography.title}>{resource.title}</Text>
+        <Text style={typography.subtitle}>{t("detail.resourceSubtitle")}</Text>
+        <View style={styles.titleRow}>
+          <Text style={[typography.title, styles.titleText]}>{resource.title}</Text>
+          <FavoriteButton resourceId={resource.id} title={resource.title} />
+        </View>
 
         {resource.publisherName ? (
-          <Text style={typography.body}>Published by {resource.publisherName}</Text>
+          <Text style={typography.body}>
+            {t("detail.publishedBy", { publisherName: resource.publisherName })}
+          </Text>
         ) : null}
 
         {timestamp ? (
@@ -440,63 +451,75 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
             <View
               style={[styles.leaseBadge, { backgroundColor: colors.primaryMuted }]}
               accessibilityRole="text"
-              accessibilityLabel={`Active lease. Access until ${new Date(leaseStatus.expiresAt).toLocaleTimeString()}${countdown ? `, ${countdown} remaining` : ""}`}
+              accessibilityLabel={t("detail.activeLeaseLabel", {
+                time: new Date(leaseStatus.expiresAt).toLocaleTimeString(),
+                remaining: countdown ? `, ${countdown} remaining` : "",
+              })}
             >
               <Text style={[styles.leaseBadgeText, { color: colors.primary }]}>
-                Access until {new Date(leaseStatus.expiresAt).toLocaleTimeString()} {countdown ? `(${countdown})` : ""}
+                {countdown
+                  ? t("detail.accessUntil", {
+                      time: new Date(leaseStatus.expiresAt).toLocaleTimeString(),
+                      remaining: countdown,
+                    })
+                  : t("detail.accessUntilNoRemaining", {
+                      time: new Date(leaseStatus.expiresAt).toLocaleTimeString(),
+                    })}
               </Text>
             </View>
           ) : leaseStatus?.state === "Expired" ? (
             <View
               style={[styles.leaseBadge, { backgroundColor: colors.dangerBg ?? "#fee2e2" }]}
               accessibilityRole="text"
-              accessibilityLabel="Lease expired"
+              accessibilityLabel={t("detail.leaseExpired")}
             >
               <Text style={[styles.leaseBadgeText, { color: colors.danger }]}>
-                Lease expired
+                {t("detail.leaseExpired")}
               </Text>
             </View>
           ) : null}
         </View>
 
         <Text style={[typography.price, styles.price]}>
-          {resource.price} USDC
+          {t("detail.priceUsdc", { price: resource.price })}
         </Text>
 
         {leaseStatus?.hasActiveLease ? (
           <Pressable
             style={[shared.button, shared.primaryButton, styles.actionButton]}
             accessibilityRole="button"
-            accessibilityLabel="Open resource"
+            accessibilityLabel={t("detail.openResource")}
             onPress={() => {
               if (resource.accessUrl) {
                 void openExternalUrl(resource.accessUrl);
               } else {
-                toast.info("Resource is unlocked and active");
+                toast.info(t("detail.unlockedActive"));
               }
             }}
           >
-            <Text style={[shared.buttonText, shared.primaryButtonText]}>Open</Text>
+            <Text style={[shared.buttonText, shared.primaryButtonText]}>{t("detail.open")}</Text>
           </Pressable>
         ) : (
           <Pressable
             style={[shared.button, shared.primaryButton, styles.actionButton]}
             accessibilityRole="button"
-            accessibilityLabel={`Unlock for ${resource.price} USDC`}
+            accessibilityLabel={t("detail.unlockForPrice", { price: resource.price })}
             onPress={() => setPaywallVisible(true)}
           >
-            <Text style={[shared.buttonText, shared.primaryButtonText]}>Unlock for {resource.price} USDC</Text>
+            <Text style={[shared.buttonText, shared.primaryButtonText]}>
+              {t("detail.unlockForPrice", { price: resource.price })}
+            </Text>
           </Pressable>
         )}
 
         <View style={styles.infoRow}>
-          <Text style={styles.label}>Owner</Text>
+          <Text style={styles.label}>{t("detail.owner")}</Text>
           <Pressable
-            onPress={handleOpenOwner}
+            onPress={() => navigation.navigate("PublisherPublic", { address: resource.walletAddress })}
             style={styles.linkTarget}
             accessibilityRole="link"
-            accessibilityLabel={`Owner: ${resource.walletAddress}`}
-            accessibilityHint="Opens the owner's account in Stellar Explorer"
+            accessibilityLabel={t("detail.ownerLabel", { address: resource.walletAddress })}
+            accessibilityHint={t("detail.ownerHint")}
           >
             <Text style={[typography.body, styles.linkText]}>
               {shortenAddress(resource.walletAddress)}
@@ -504,15 +527,25 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
 
+        <Pressable
+          style={[shared.button, styles.actionButton]}
+          onPress={() => navigation.navigate("Catalog", { owner: resource.walletAddress })}
+          accessibilityRole="button"
+          accessibilityLabel={t("detail.moreFromPublisher")}
+          accessibilityHint={t("detail.moreFromPublisherHint")}
+        >
+          <Text style={shared.buttonText}>{t("detail.moreFromPublisher")}</Text>
+        </Pressable>
+
         {resource.onchainTxHash ? (
           <View style={styles.infoRow}>
-            <Text style={styles.label}>Tx</Text>
+            <Text style={styles.label}>{t("detail.tx")}</Text>
             <Pressable
               onPress={handleOpenTx}
               style={styles.linkTarget}
               accessibilityRole="link"
-              accessibilityLabel={`Transaction: ${resource.onchainTxHash}`}
-              accessibilityHint="Opens the transaction in Stellar Explorer"
+              accessibilityLabel={t("detail.txLabel", { txHash: resource.onchainTxHash })}
+              accessibilityHint={t("detail.txHint")}
             >
               <Text
                 style={[typography.body, styles.linkText, styles.mono]}
@@ -526,7 +559,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         ) : null}
 
         <View style={styles.infoRow}>
-          <Text style={styles.label}>Type</Text>
+          <Text style={styles.label}>{t("detail.type")}</Text>
           <Text style={typography.body}>{getResourceTypeLabel(resource.resourceType)}</Text>
         </View>
 
@@ -535,11 +568,11 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
             style={styles.verificationHeader}
             onPress={toggleVerification}
             accessibilityRole="button"
-            accessibilityLabel="Verification"
+            accessibilityLabel={t("detail.verification")}
             accessibilityState={{ expanded: verificationExpanded }}
-            accessibilityHint="Toggles the verification details section"
+            accessibilityHint={t("detail.verificationToggleHint")}
           >
-            <Text style={styles.verificationHeaderTitle}>Verification</Text>
+            <Text style={styles.verificationHeaderTitle}>{t("detail.verification")}</Text>
             <Text style={styles.verificationChevron}>
               {verificationExpanded ? "▲" : "▼"}
             </Text>
@@ -548,17 +581,17 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
           {verificationExpanded ? (
             <View
               style={styles.verificationContent}
-              accessibilityLabel="Verification details"
+              accessibilityLabel={t("detail.verificationDetails")}
             >
               {verificationLoading ? (
                 <View
                   style={styles.verificationLoadingRow}
                   accessibilityRole="progressbar"
-                  accessibilityLabel="Loading verification details"
+                  accessibilityLabel={t("detail.loadingVerificationLabel")}
                 >
                   <ActivityIndicator color={colors.primary} size="small" />
                   <Text style={styles.verificationLoadingText}>
-                    Loading verification details…
+                    {t("detail.loadingVerification")}
                   </Text>
                 </View>
               ) : verificationError ? (
@@ -570,18 +603,18 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
                     style={styles.retryButton}
                     onPress={() => void loadVerification()}
                     accessibilityRole="button"
-                    accessibilityLabel="Retry loading verification"
+                    accessibilityLabel={t("detail.retryVerificationLabel")}
                   >
-                    <Text style={styles.retryText}>Retry</Text>
+                    <Text style={styles.retryText}>{t("detail.retry")}</Text>
                   </Pressable>
                 </View>
               ) : verificationDetails ? (
                 <View style={{ gap: spacing.sm }}>
                   <View style={styles.infoRow}>
-                    <Text style={styles.label}>Status</Text>
+                    <Text style={styles.label}>{t("detail.status")}</Text>
                     <Text
                       style={typography.body}
-                      accessibilityLabel={`Verification Status: ${verificationDetails.status}`}
+                      accessibilityLabel={t("detail.statusLabel", { status: verificationDetails.status })}
                     >
                       {verificationDetails.status}
                     </Text>
@@ -590,22 +623,22 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
                   {verificationDetails.verification ? (
                     <>
                       <View style={styles.infoRow}>
-                        <Text style={styles.label}>Originality</Text>
+                        <Text style={styles.label}>{t("detail.originality")}</Text>
                         <Text style={typography.body}>
                           {verificationDetails.verification.isOriginal
-                            ? "Original"
-                            : "Possible copy"}
+                            ? t("detail.original")
+                            : t("detail.possibleCopy")}
                         </Text>
                       </View>
                       <View style={styles.infoRow}>
-                        <Text style={styles.label}>Confidence</Text>
+                        <Text style={styles.label}>{t("detail.confidence")}</Text>
                         <Text style={typography.body}>
                           {formatConfidence(verificationDetails.verification.confidence)}
                         </Text>
                       </View>
                       {verificationDetails.verification.flags.length > 0 ? (
                         <View style={{ gap: 2 }}>
-                          <Text style={styles.label}>Notes</Text>
+                          <Text style={styles.label}>{t("detail.notes")}</Text>
                           {verificationDetails.verification.flags.map((flag) => (
                             <Text key={flag} style={typography.body}>
                               • {flag}
@@ -615,7 +648,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
                       ) : null}
                       {formatTimestamp(verificationDetails.verification.checkedAt) ? (
                         <View style={styles.infoRow}>
-                          <Text style={styles.label}>Checked</Text>
+                          <Text style={styles.label}>{t("detail.checked")}</Text>
                           <Text style={styles.metadata}>
                             {formatTimestamp(verificationDetails.verification.checkedAt)}
                           </Text>
@@ -623,7 +656,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
                       ) : null}
                     </>
                   ) : (
-                    <Text style={styles.metadata}>No AI check has run for this resource yet.</Text>
+                    <Text style={styles.metadata}>{t("detail.noAiCheck")}</Text>
                   )}
                 </View>
               ) : null}
@@ -632,7 +665,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         </View>
 
         <View style={styles.infoRow}>
-          <Text style={styles.label}>Access URL</Text>
+          <Text style={styles.label}>{t("detail.accessUrl")}</Text>
         </View>
         <Text 
           style={styles.urlText}
@@ -646,7 +679,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
           onPress={handleCopy}
         >
           <Text style={shared.buttonText}>
-            Copy Access URL
+            {t("detail.copyAccessUrl")}
           </Text>
         </Pressable>
 
@@ -654,9 +687,26 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
           style={[shared.button, styles.actionButton]}
           onPress={handleShare}
         >
-          <Text style={shared.buttonText}>Share Access URL</Text>
+          <Text style={shared.buttonText}>{t("detail.shareAccessUrl")}</Text>
+        </Pressable>
+
+        <Pressable
+          style={[shared.button, styles.actionButton]}
+          onPress={() => setQrVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel={t("detail.showQrCode")}
+          accessibilityHint={t("detail.showQrCodeHint")}
+        >
+          <Text style={shared.buttonText}>{t("detail.shareAsQrCode")}</Text>
         </Pressable>
       </ScrollView>
+
+      <ResourceQrSheet
+        visible={qrVisible}
+        resourceId={resource.id}
+        resourceTitle={resource.title}
+        onClose={() => setQrVisible(false)}
+      />
 
       <PaywallModal
         key={resource.id}

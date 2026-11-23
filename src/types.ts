@@ -28,6 +28,8 @@ export interface CatalogFilters {
   sort?: CatalogSort;
   minPrice?: string;
   maxPrice?: string;
+  /** Wallet address of the publisher whose resources to show. */
+  owner?: string;
 }
 
 export type CatalogSort = "newest" | "price_asc" | "price_desc" | "title";

@@ -5,6 +5,7 @@ import { listReceipts } from "../services/receipts";
 
 import {
   encodePaymentSignature,
+  fetchReceipt,
   parsePaymentRequired,
   prepareResourceAccess,
   priceToAtomicUnits,
@@ -12,6 +13,7 @@ import {
   submitSignedPayment,
   type PaymentChallenge,
 } from "./payment";
+import { getApiBaseUrl } from "./resources";
 
 // jest.setup.js stubs the SDK; this suite needs the real one, with only the
 // network-facing pieces (Soroban RPC and contract assembly) mocked.
@@ -152,6 +154,37 @@ describe("encodePaymentSignature", () => {
   });
 });
 
+describe("fetchReceipt", () => {
+  const receipt = {
+    id: "pay-1", resourceId: "res-1", resourceTitle: "Doc", amount: "10000000",
+    asset: ASSET, network: "stellar:testnet", txHash: "tx-1", payer: PAY_TO,
+    paidAt: "2026-10-20T12:00:00Z", verified: true,
+  };
+
+  it("returns a validated receipt", async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, JSON.stringify(receipt), { "content-type": "application/json" }));
+    await expect(fetchReceipt("pay-1")).resolves.toEqual(receipt);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getApiBaseUrl()}/payments/pay-1/receipt`,
+      expect.objectContaining({ method: "GET" })
+    );
+  });
+
+  it("rejects a malformed receipt", async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, JSON.stringify({ id: "pay-1" }), { "content-type": "application/json" }));
+    await expect(fetchReceipt("pay-1")).rejects.toThrow("The server returned an unexpected response.");
+  });
+
+  it("normalizes a missing resource title", async () => {
+    fetchMock.mockResolvedValue(mockResponse(
+      200,
+      JSON.stringify({ ...receipt, resourceTitle: null }),
+      { "content-type": "application/json" }
+    ));
+    await expect(fetchReceipt("pay-1")).resolves.toEqual({ ...receipt, resourceTitle: "" });
+  });
+});
+
 describe("prepareResourceAccess", () => {
   it("returns the content directly when the server answers 200", async () => {
     fetchMock.mockResolvedValue(mockResponse(200, "free content", { "content-type": "text/plain" }));
@@ -174,6 +207,22 @@ describe("prepareResourceAccess", () => {
     });
   });
 
+  it("opens binary responses externally without buffering the body", async () => {
+    const text = jest.fn();
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: (name: string) => name.toLowerCase() === "content-type" ? "application/octet-stream" : null },
+      text,
+    });
+
+    await expect(prepareResourceAccess(URL, "1.00")).resolves.toEqual({
+      type: "ready",
+      result: { type: "external", url: URL },
+    });
+    expect(text).not.toHaveBeenCalled();
+  });
+
   it("surfaces other errors", async () => {
     fetchMock.mockResolvedValue(mockResponse(500, JSON.stringify({ error: "Storage offline" })));
     await expect(prepareResourceAccess(URL, "1.00")).rejects.toThrow("Storage offline");
@@ -190,9 +239,10 @@ describe("submitSignedPayment", () => {
       type: "text",
       content: "paid content",
     });
-    expect(fetchMock).toHaveBeenCalledWith(URL, {
+    expect(fetchMock).toHaveBeenCalledWith(URL, expect.objectContaining({
+      method: "GET",
       headers: { "PAYMENT-SIGNATURE": encodePaymentSignature(challenge, "signed-tx") },
-    });
+    }));
   });
 
   it("explains a rejected payment", async () => {

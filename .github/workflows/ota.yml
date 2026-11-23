@@ -1,0 +1,250 @@
+name: OTA rollout
+
+# Publishes a JS/asset update to the `production` channel in three stages with
+# EAS Update percentage rollouts: 10% (canary), then 50%, then 100%.
+#
+# - Every stage is a job on the `ota-production` environment, so a required
+#   reviewer approves it before it runs or can read EXPO_TOKEN. The preflight
+#   job refuses to start when that environment has no required reviewers.
+# - After the 10% and 50% stages the workflow watches the API server. A failed
+#   readiness probe or a 5xx spike reverts the rollout and stops the run.
+#
+# Runbook and one-time setup: docs/RELEASES.md
+#   environment `ota-production`   required reviewers; secrets EXPO_TOKEN, METRICS_TOKEN
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "Update message, e.g. fix: catalog price filter"
+        required: true
+        type: string
+
+concurrency:
+  group: ota-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # update:revert-update-rollout needs eas-cli 16.14.0 or later.
+  EAS_CLI_VERSION: "16.32.0"
+  HEALTH_WATCH_MINUTES: "15"
+  MAX_5XX_PERCENT: "2"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      # A job that names a missing environment creates it with no protection,
+      # so check the approval gate exists before any stage can run.
+      - name: Require reviewers on ota-production
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          environment=$(gh api "repos/$REPO/environments/ota-production") || {
+            echo "::error::Create the ota-production environment first (docs/RELEASES.md)."
+            exit 1
+          }
+          jq -e '[.protection_rules[]? | select((.reviewers // []) | length > 0)] | length > 0' \
+            <<< "$environment" > /dev/null || {
+            echo "::error::ota-production has no required reviewers; refusing to publish."
+            exit 1
+          }
+
+  canary:
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: ota-production
+    timeout-minutes: 45
+    outputs:
+      groups: ${{ steps.publish.outputs.groups }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # eas update reads only the `cli` block of eas.json, so the update would
+      # otherwise be bundled without the production EXPO_PUBLIC_* values.
+      - name: Use the production profile's env
+        run: jq -r '.build.production.env | to_entries[] | "\(.key)=\(.value)"' eas.json >> "$GITHUB_ENV"
+
+      - name: Check the server before publishing
+        env:
+          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 10 -o /dev/null "$EXPO_PUBLIC_API_URL/health/ready" ||
+            { echo "::error::$EXPO_PUBLIC_API_URL/health/ready is failing; not publishing."; exit 1; }
+          curl -fsS --max-time 10 -o /dev/null -H "Authorization: Bearer $METRICS_TOKEN" "$EXPO_PUBLIC_API_URL/metrics" ||
+            { echo "::error::Cannot read $EXPO_PUBLIC_API_URL/metrics; check METRICS_TOKEN."; exit 1; }
+
+      - name: Publish to 10% of production
+        id: publish
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          MESSAGE: ${{ inputs.message }}
+        run: |
+          set -euo pipefail
+          npx --yes eas-cli@$EAS_CLI_VERSION update \
+            --channel production \
+            --rollout-percentage 10 \
+            --message "$MESSAGE" \
+            --non-interactive \
+            --json > "$RUNNER_TEMP/update.json"
+          groups=$(jq -r '[.[].group] | unique | join(" ")' "$RUNNER_TEMP/update.json")
+          [ -n "$groups" ] || { echo "::error::eas update returned no update group"; exit 1; }
+          echo "groups=$groups" >> "$GITHUB_OUTPUT"
+
+      # Keep in sync with the same step in promote-50.
+      - name: Watch server health
+        id: watch
+        env:
+          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Prints "<requests> <5xx responses>" counted since the server started.
+          counts() {
+            curl -fsS --max-time 10 -H "Authorization: Bearer $METRICS_TOKEN" "$EXPO_PUBLIC_API_URL/metrics" |
+              awk '/^http_request_duration_seconds_count[{ ]/ { all += $NF; if (/status_code="5/) bad += $NF }
+                   END { printf "%d %d\n", all, bad }'
+          }
+          start=$(counts)
+          for minute in $(seq "$HEALTH_WATCH_MINUTES"); do
+            sleep 60
+            curl -fsS --max-time 10 -o /dev/null "$EXPO_PUBLIC_API_URL/health/ready" ||
+              { echo "::error::/health/ready failed after $minute min."; exit 1; }
+          done
+          end=$(counts)
+          read -r all0 bad0 <<< "$start"
+          read -r all1 bad1 <<< "$end"
+          requests=$((all1 - all0))
+          errors=$((bad1 - bad0))
+          if [ "$requests" -lt 0 ]; then
+            echo "::error::Server metrics reset during the watch (restart?); cannot judge the rollout."
+            exit 1
+          fi
+          echo "$errors of $requests requests returned 5xx in $HEALTH_WATCH_MINUTES min."
+          if [ $((errors * 100)) -gt $((requests * MAX_5XX_PERCENT)) ]; then
+            echo "::error::5xx rate is above $MAX_5XX_PERCENT%."
+            exit 1
+          fi
+
+      - name: Revert the rollout
+        if: failure() && steps.watch.outcome == 'failure'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          UPDATE_GROUPS: ${{ steps.publish.outputs.groups }}
+        run: |
+          set -euo pipefail
+          for group in $UPDATE_GROUPS; do
+            npx --yes eas-cli@$EAS_CLI_VERSION update:revert-update-rollout \
+              --group "$group" --message "Revert: server health check failed" --non-interactive
+          done
+
+  promote-50:
+    needs: canary
+    runs-on: ubuntu-latest
+    environment: ota-production
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Use the production profile's env
+        run: jq -r '.build.production.env | to_entries[] | "\(.key)=\(.value)"' eas.json >> "$GITHUB_ENV"
+
+      - name: Roll out to 50% of production
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          UPDATE_GROUPS: ${{ needs.canary.outputs.groups }}
+        run: |
+          set -euo pipefail
+          for group in $UPDATE_GROUPS; do
+            npx --yes eas-cli@$EAS_CLI_VERSION update:edit "$group" --rollout-percentage 50 --non-interactive
+          done
+
+      # Keep in sync with the same step in canary.
+      - name: Watch server health
+        id: watch
+        env:
+          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Prints "<requests> <5xx responses>" counted since the server started.
+          counts() {
+            curl -fsS --max-time 10 -H "Authorization: Bearer $METRICS_TOKEN" "$EXPO_PUBLIC_API_URL/metrics" |
+              awk '/^http_request_duration_seconds_count[{ ]/ { all += $NF; if (/status_code="5/) bad += $NF }
+                   END { printf "%d %d\n", all, bad }'
+          }
+          start=$(counts)
+          for minute in $(seq "$HEALTH_WATCH_MINUTES"); do
+            sleep 60
+            curl -fsS --max-time 10 -o /dev/null "$EXPO_PUBLIC_API_URL/health/ready" ||
+              { echo "::error::/health/ready failed after $minute min."; exit 1; }
+          done
+          end=$(counts)
+          read -r all0 bad0 <<< "$start"
+          read -r all1 bad1 <<< "$end"
+          requests=$((all1 - all0))
+          errors=$((bad1 - bad0))
+          if [ "$requests" -lt 0 ]; then
+            echo "::error::Server metrics reset during the watch (restart?); cannot judge the rollout."
+            exit 1
+          fi
+          echo "$errors of $requests requests returned 5xx in $HEALTH_WATCH_MINUTES min."
+          if [ $((errors * 100)) -gt $((requests * MAX_5XX_PERCENT)) ]; then
+            echo "::error::5xx rate is above $MAX_5XX_PERCENT%."
+            exit 1
+          fi
+
+      - name: Revert the rollout
+        if: failure() && steps.watch.outcome == 'failure'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          UPDATE_GROUPS: ${{ needs.canary.outputs.groups }}
+        run: |
+          set -euo pipefail
+          for group in $UPDATE_GROUPS; do
+            npx --yes eas-cli@$EAS_CLI_VERSION update:revert-update-rollout \
+              --group "$group" --message "Revert: server health check failed" --non-interactive
+          done
+
+  promote-100:
+    needs: [canary, promote-50]
+    runs-on: ubuntu-latest
+    environment: ota-production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Roll out to all of production
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          UPDATE_GROUPS: ${{ needs.canary.outputs.groups }}
+        run: |
+          set -euo pipefail
+          for group in $UPDATE_GROUPS; do
+            npx --yes eas-cli@$EAS_CLI_VERSION update:edit "$group" --rollout-percentage 100 --non-interactive
+          done

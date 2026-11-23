@@ -1,13 +1,18 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Account, Keypair, TransactionBuilder, Networks, Asset, Operation } from "@stellar/stellar-sdk";
-import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "@react-navigation/native";
+import * as ScreenCapture from "expo-screen-capture";
+import { useToast } from "../components/ToastProvider";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { copySensitive } from "../utils/clipboard";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
+
+const SCREEN_CAPTURE_KEY = "mindvault-dev-signer";
 
 export function DevSignerScreen() {
   const { colors, typography, shared, spacing } = useAppTheme();
+  const toast = useToast();
   
   const [secretKey, setSecretKey] = useState("");
   const [signedXdr, setSignedXdr] = useState("");
@@ -15,11 +20,16 @@ export function DevSignerScreen() {
   const [isSigning, setIsSigning] = useState(false);
   const [touched, setTouched] = useState(false);
 
-  // Clear the secret whenever the screen loses focus. Unmounting already
-  // discards state, so this covers navigating away while it stays mounted.
+  // Clear the secret and release the capture block whenever the screen loses
+  // focus. Unmounting already discards state, so this covers navigating away
+  // while the screen stays mounted.
   useFocusEffect(
     useCallback(() => {
-      return () => setSecretKey("");
+      void ScreenCapture.preventScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => undefined);
+      return () => {
+        setSecretKey("");
+        void ScreenCapture.allowScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => undefined);
+      };
     }, [])
   );
 
@@ -29,10 +39,9 @@ export function DevSignerScreen() {
   const handleCopyXdr = async () => {
     if (!signedXdr) return;
     try {
-      await Clipboard.setStringAsync(signedXdr);
-      Alert.alert("Copied", "Signed XDR copied to clipboard.");
+      await copySensitive(signedXdr, toast.success);
     } catch {
-      Alert.alert("Copy failed", "Unable to copy the signed XDR.");
+      toast.error("Unable to copy the signed XDR.");
     }
   };
 

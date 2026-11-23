@@ -442,3 +442,57 @@ describe("PublisherResourcesScreen - resource detail", () => {
     expect(mockNavigation.navigate).toHaveBeenCalledWith("PublisherResourceDetail", { resourceId: "r2" });
   });
 });
+
+describe("PublisherResourcesScreen - bulk actions", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedGetStoredApiKey.mockResolvedValue("stored-test-key");
+    mockedFetchPublisherResources.mockResolvedValue([
+      createResource({ id: "bulk-1", title: "Bulk One" }),
+      createResource({ id: "bulk-2", title: "Bulk Two" }),
+    ]);
+  });
+
+  it("enters selection mode on long-press", async () => {
+    const screen = renderScreen();
+
+    fireEvent(await screen.findByTestId("bulk-row-bulk-1"), "longPress");
+
+    expect(await screen.findByText("1 selected")).toBeTruthy();
+    expect(screen.getByLabelText("Select Bulk One")).toBeTruthy();
+  });
+
+  it("asks for confirmation before bulk delist and cancels without calling the API", async () => {
+    const screen = renderScreen();
+
+    fireEvent(await screen.findByTestId("bulk-row-bulk-1"), "longPress");
+    fireEvent.press(await screen.findByLabelText("Delist selected resources"));
+
+    expect(await screen.findByText("Delist selected resources?")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("Cancel bulk delist"));
+
+    await waitFor(() => expect(screen.queryByText("Delist selected resources?")).toBeNull());
+    expect(mockedDelistResource).not.toHaveBeenCalled();
+  });
+
+  it("reports partial failures and keeps successful delists applied", async () => {
+    mockedDelistResource
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("Second resource is locked"));
+
+    const screen = renderScreen();
+
+    fireEvent(await screen.findByTestId("bulk-row-bulk-1"), "longPress");
+    fireEvent(await screen.findByTestId("bulk-row-bulk-2"), "longPress");
+    fireEvent.press(await screen.findByLabelText("Delist selected resources"));
+    fireEvent.press(await screen.findByLabelText("Confirm bulk delist"));
+
+    expect(
+      await screen.findByText(/1 of 2 delisted; 1 failed.*Second resource is locked/)
+    ).toBeTruthy();
+    expect(mockedDelistResource).toHaveBeenCalledWith("bulk-1");
+    expect(mockedDelistResource).toHaveBeenCalledWith("bulk-2");
+    await waitFor(() => expect(screen.queryByText("Bulk One")).toBeNull());
+    expect(screen.getByText("Bulk Two")).toBeTruthy();
+  });
+});

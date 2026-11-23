@@ -73,6 +73,7 @@ jest.mock("@react-navigation/native", () => {
   const React = require("react");
   return {
     useFocusEffect: (effect: () => void | (() => void)) => {
+      (globalThis as any).__catalogFocusEffect = effect;
       React.useEffect(() => effect(), []);
     },
   };
@@ -206,11 +207,11 @@ describe("CatalogScreen search debounce", () => {
   });
 });
 
-function renderCatalog() {
+function renderCatalog(route?: { params?: { owner?: string } }, nav: any = navigation) {
   return render(
     <ThemeProvider>
       <ToastProvider>
-        <CatalogScreen navigation={navigation} />
+        <CatalogScreen navigation={nav} route={route} />
       </ToastProvider>
     </ThemeProvider>
   );
@@ -663,5 +664,65 @@ describe("CatalogScreen search history", () => {
     for (const name of ["Search for stellar", "Remove stellar from recent searches", "Clear all recent searches"]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
+  });
+});
+
+describe("CatalogScreen owner filter", () => {
+  const OWNER = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7";
+
+  it("filters by the owner from the route and shows a removable chip", async () => {
+    const nav = { navigate: jest.fn(), setParams: jest.fn() };
+    const { getByLabelText } = renderCatalog({ params: { owner: OWNER } }, nav);
+    await waitFor(() =>
+      expect(mockedFetchCatalog).toHaveBeenCalledWith({ owner: OWNER })
+    );
+
+    mockedFetchCatalog.mockClear();
+    fireEvent.press(getByLabelText(/Remove publisher filter/));
+    expect(nav.setParams).toHaveBeenCalledWith({ owner: undefined });
+    await waitFor(() => expect(mockedFetchCatalog).toHaveBeenCalled());
+    expect(mockedFetchCatalog.mock.calls[mockedFetchCatalog.mock.calls.length - 1]?.[0]).toBeUndefined();
+  });
+
+  it("restores a persisted owner filter", async () => {
+    mockedGetItem.mockImplementation(async (key: string) =>
+      key.includes("filters") ? JSON.stringify({ owner: OWNER }) : null
+    );
+    renderCatalog();
+    await waitFor(() =>
+      expect(mockedFetchCatalog).toHaveBeenCalledWith({ owner: OWNER })
+    );
+  });
+
+  it("persists the owner with the other filters", async () => {
+    renderCatalog({ params: { owner: OWNER } });
+    await waitFor(() =>
+      expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining(`"owner":"${OWNER}"`)
+      )
+    );
+  });
+});
+
+describe("CatalogScreen refresh on focus", () => {
+  it("shows the relative update time and refetches stale data on focus", async () => {
+    const now = new Date("2026-11-23T12:00:00Z");
+    jest.setSystemTime(now);
+    const screen = renderCatalog();
+
+    await waitFor(() => expect(mockedFetchCatalog).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Updated .*ago/)).toBeTruthy();
+
+    const focus = () => act(() => {
+      (globalThis as any).__catalogFocusEffect?.();
+    });
+
+    focus();
+    expect(mockedFetchCatalog).toHaveBeenCalledTimes(1);
+
+    jest.setSystemTime(new Date(now.getTime() + 61_000));
+    focus();
+    await waitFor(() => expect(mockedFetchCatalog).toHaveBeenCalledTimes(2));
   });
 });

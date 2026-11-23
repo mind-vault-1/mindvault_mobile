@@ -9,17 +9,24 @@ import {
   View,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import * as DocumentPicker from "expo-document-picker";
 import Constants from "expo-constants";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { signPaymentTransaction, sorobanRpcUrl, type PaymentChallenge } from "../api/payment";
 import {
+  ALLOWED_UPLOAD_MIME_TYPES,
+  buildPublishIdempotencyKey,
   DESCRIPTION_MAX_LENGTH,
+  MAX_UPLOAD_BYTES,
   pollPublishStatus,
+  publishFile,
   publishLink,
+  validatePublishFile,
   validatePublishLink,
-  type PublishLinkErrors,
+  type PickedFile,
+  type PublishFileErrors,
   type PublishLinkInput,
   type PublishStatus,
 } from "../api/publish";
@@ -33,6 +40,7 @@ import {
   subscribeMutations,
   type QueuedMutation,
 } from "../services/mutationQueue";
+import { formatBytes } from "../services/storage";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
@@ -40,6 +48,8 @@ import type { Resource } from "../types";
 import { hapticImpact } from "../utils/haptics";
 
 type Navigation = NativeStackNavigationProp<RootStackParamList, "PublishResource">;
+
+type PublishMode = "link" | "file";
 
 const EMPTY_FORM: PublishLinkInput = { title: "", url: "", price: "", description: "" };
 
@@ -65,6 +75,11 @@ const FIELDS: {
     placeholder: "What buyers get",
     multiline: true,
   },
+];
+
+const MODES: { value: PublishMode; title: string; label: string }[] = [
+  { value: "link", title: "Link", label: "Publish a link" },
+  { value: "file", title: "File", label: "Publish a file" },
 ];
 
 function createStyles(colors: ThemeColors) {
@@ -161,6 +176,19 @@ function createStyles(colors: ThemeColors) {
     secondary: { backgroundColor: colors.neutralBg },
     secondaryText: { color: colors.text, fontWeight: "600" },
     disabled: { opacity: 0.5 },
+    submittingContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: spacing.sm,
+    },
+    progressTrack: {
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: colors.neutralBg,
+      overflow: "hidden",
+    },
+    progressFill: { height: 6, backgroundColor: colors.primary },
   });
 }
 
@@ -172,7 +200,10 @@ export function PublishResourceScreen() {
   const { isOffline } = useNetworkStatus();
 
   const [form, setForm] = useState<PublishLinkInput>(EMPTY_FORM);
-  const [errors, setErrors] = useState<PublishLinkErrors>({});
+  const [mode, setMode] = useState<PublishMode>("link");
+  const [file, setFile] = useState<PickedFile | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [errors, setErrors] = useState<PublishFileErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [fee, setFee] = useState<{ challenge: PaymentChallenge; amount: string } | null>(null);
@@ -181,7 +212,9 @@ export function PublishResourceScreen() {
   const [timelineStatus, setTimelineStatus] = useState<PublishStatus>({ status: "submitted" });
   const [queued, setQueued] = useState<QueuedMutation | null>(null);
   const [queuedDone, setQueuedDone] = useState(false);
+  const [currentIdempotencyKey, setCurrentIdempotencyKey] = useState<string | null>(null);
   const queuedRef = useRef<QueuedMutation | null>(null);
+  const uploadRef = useRef<AbortController | null>(null);
 
   // Keep the Queued card in sync with the offline queue (retry status, replay).
   useEffect(() => {
@@ -221,27 +254,57 @@ export function PublishResourceScreen() {
 
   function update(key: Field, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setCurrentIdempotencyKey(null);
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
   function publishIdempotencyKey(): string {
-    return [
-      "publish",
-      form.title.trim(),
-      form.url.trim(),
-      form.price.trim(),
-      form.description.trim(),
-    ].join("|");
+    const base = buildPublishIdempotencyKey(form);
+    return mode === "file" && file ? `${base}|${file.name}` : base;
+  }
+
+  async function pickFile() {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ALLOWED_UPLOAD_MIME_TYPES,
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (result.canceled) return;
+
+    const asset = result.assets[0];
+    setFile({
+      uri: asset.uri,
+      name: asset.name,
+      size: asset.size ?? 0,
+      mimeType: asset.mimeType ?? "application/octet-stream",
+    });
+    setErrors((prev) => ({ ...prev, file: undefined }));
+    setSubmitError(null);
+    setCurrentIdempotencyKey(null);
+  }
+
+  function cancelUpload() {
+    uploadRef.current?.abort();
+  }
+
+  function selectMode(next: PublishMode) {
+    setMode(next);
+    setCurrentIdempotencyKey(null);
+    setSubmitError(null);
   }
 
   async function submit(payment?: { challenge: PaymentChallenge; transaction: string }) {
+    if (submitting) return;
     setSubmitError(null);
+    const key = currentIdempotencyKey ?? publishIdempotencyKey();
+    setCurrentIdempotencyKey(key);
+
     if (isOffline) {
       // Offline: persist the action — the UI shows "Queued", never a spinner.
       const entry = await enqueueMutation({
         kind: "publish",
         payload: { input: form, payment, title: form.title.trim() },
-        idempotencyKey: publishIdempotencyKey(),
+        idempotencyKey: key,
       });
       queuedRef.current = entry;
       setQueued(entry);
@@ -249,26 +312,53 @@ export function PublishResourceScreen() {
       return;
     }
     setSubmitting(true);
+    const controller = new AbortController();
+    uploadRef.current = controller;
     try {
-      const result = await publishLink(form, payment);
+      const result =
+        mode === "file" && file
+          ? await publishFile(
+              { ...form, file },
+              {
+                payment,
+                idempotencyKey: key,
+                onProgress: setProgress,
+                signal: controller.signal,
+              }
+            )
+          : await publishLink(form, payment, key);
       if (result.type === "payment") {
         setFee({ challenge: result.challenge, amount: result.fee });
         return;
       }
       setFee(null);
       setPublished(result.resource);
+      setCurrentIdempotencyKey(null);
       toast.success("Resource published");
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to publish resource");
     } finally {
+      uploadRef.current = null;
+      setProgress(null);
       setSubmitting(false);
     }
   }
 
   function handleSubmit() {
-    const found = validatePublishLink(form);
+    if (submitting) return;
+    const found =
+      mode === "file"
+        ? file
+          ? validatePublishFile({ ...form, file })
+          : { file: "Choose a file to publish." }
+        : validatePublishLink(form);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
+    // A file upload cannot be replayed later, so it needs a live connection.
+    if (mode === "file" && isOffline) {
+      setSubmitError("Connect to the internet to upload a file.");
+      return;
+    }
     void submit();
   }
 
@@ -280,6 +370,8 @@ export function PublishResourceScreen() {
 
   function reset() {
     setForm(EMPTY_FORM);
+    setFile(null);
+    setProgress(null);
     setErrors({});
     setFee(null);
     setPublished(null);
@@ -288,6 +380,7 @@ export function PublishResourceScreen() {
     queuedRef.current = null;
     setQueued(null);
     setQueuedDone(false);
+    setCurrentIdempotencyKey(null);
   }
 
   async function handleRetry() {
@@ -482,11 +575,29 @@ export function PublishResourceScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.intro}>
-        Publish a link that buyers unlock with a USDC payment. The server may charge a
-        one-time verification fee.
+        Publish a link or a file that buyers unlock with a USDC payment. The server may
+        charge a one-time verification fee.
       </Text>
 
-      {FIELDS.map((field) => (
+      <View style={styles.actions}>
+        {MODES.map((option) => (
+          <Pressable
+            key={option.value}
+            style={[styles.button, mode === option.value ? null : styles.secondary]}
+            onPress={() => selectMode(option.value)}
+            disabled={submitting || !!fee}
+            accessibilityRole="button"
+            accessibilityLabel={option.label}
+            accessibilityState={{ selected: mode === option.value }}
+          >
+            <Text style={mode === option.value ? styles.buttonText : styles.secondaryText}>
+              {option.title}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {FIELDS.filter((field) => field.key !== "url" || mode === "link").map((field) => (
         <View key={field.key} style={styles.field}>
           <Text style={styles.label}>{field.label}</Text>
           <TextInput
@@ -514,6 +625,57 @@ export function PublishResourceScreen() {
           ) : null}
         </View>
       ))}
+
+      {mode === "file" ? (
+        <View style={styles.card}>
+          <Text style={styles.muted}>
+            Up to {formatBytes(MAX_UPLOAD_BYTES)}. PDF, image, text or archive files.
+          </Text>
+          <View style={styles.actions}>
+            <Pressable
+              style={[styles.button, styles.secondary, submitting && styles.disabled]}
+              onPress={() => void pickFile()}
+              disabled={submitting}
+              accessibilityRole="button"
+              accessibilityLabel="Choose a file"
+            >
+              <Text style={styles.secondaryText}>{file ? "Change file" : "Choose file"}</Text>
+            </Pressable>
+          </View>
+          {file ? (
+            <Text style={styles.muted} accessibilityLabel={`Selected file ${file.name}`}>
+              {file.name} · {formatBytes(file.size)}
+            </Text>
+          ) : null}
+          {errors.file ? (
+            <Text accessibilityRole="alert" style={styles.fieldError}>
+              {errors.file}
+            </Text>
+          ) : null}
+          {submitting ? (
+            <>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[styles.progressFill, { width: `${Math.round((progress ?? 0) * 100)}%` }]}
+                />
+              </View>
+              <Text style={styles.muted} accessibilityLabel="Upload progress">
+                Uploading… {Math.round((progress ?? 0) * 100)}%
+              </Text>
+              <View style={styles.actions}>
+                <Pressable
+                  style={[styles.button, styles.secondary]}
+                  onPress={cancelUpload}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel upload"
+                >
+                  <Text style={styles.secondaryText}>Cancel upload</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : null}
+        </View>
+      ) : null}
 
       {submitError ? (
         <Text accessibilityRole="alert" style={styles.banner}>
@@ -547,7 +709,10 @@ export function PublishResourceScreen() {
               accessibilityState={{ disabled: submitting, busy: submitting }}
             >
               {submitting ? (
-                <ActivityIndicator color={colors.onPrimary} />
+                <View style={styles.submittingContent}>
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
+                  <Text style={styles.buttonText}>Still processing…</Text>
+                </View>
               ) : (
                 <Text style={styles.buttonText}>Pay and publish</Text>
               )}
@@ -564,7 +729,10 @@ export function PublishResourceScreen() {
           accessibilityState={{ disabled: submitting, busy: submitting }}
         >
           {submitting ? (
-            <ActivityIndicator color={colors.onPrimary} />
+            <View style={styles.submittingContent}>
+              <ActivityIndicator color={colors.onPrimary} size="small" />
+              <Text style={styles.buttonText}>Still processing…</Text>
+            </View>
           ) : (
             <Text style={styles.buttonText}>Publish</Text>
           )}

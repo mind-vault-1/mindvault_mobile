@@ -1,5 +1,6 @@
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import * as WebBrowser from "expo-web-browser";
 import { Alert, Share } from "react-native";
 import {
   NavigationContainer,
@@ -9,9 +10,19 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { SettingsScreen } from "./SettingsScreen";
 import { getDefaultApiBaseUrl } from "../api/apiSettings";
+import { getNetwork, resetNetworkForTests, setNetwork } from "../config/network";
 import { RootNavigator, type RootStackParamList } from "../navigation";
+import { AppLockProvider } from "../hooks/useAppLock";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { renderWithProviders, setupFetchMock } from "../test-utils";
+
+jest.mock("expo-web-browser", () => ({ openBrowserAsync: jest.fn() }));
+jest.mock("expo-local-authentication", () => ({
+  hasHardwareAsync: jest.fn().mockResolvedValue(true),
+  isEnrolledAsync: jest.fn().mockResolvedValue(true),
+  authenticateAsync: jest.fn().mockResolvedValue({ success: true }),
+  supportedAuthenticationTypesAsync: jest.fn().mockResolvedValue([]),
+}));
 
 jest.mock("@react-navigation/native", () => ({
   ...jest.requireActual("@react-navigation/native"),
@@ -42,6 +53,7 @@ function setDev(value: boolean) {
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  resetNetworkForTests();
   setupFetchMock();
 });
 
@@ -50,7 +62,11 @@ afterEach(() => {
 });
 
 async function renderSettings() {
-  const screen = renderWithProviders(<SettingsScreen />);
+  const screen = renderWithProviders(
+    <AppLockProvider>
+      <SettingsScreen />
+    </AppLockProvider>
+  );
   await screen.findByDisplayValue(getDefaultApiBaseUrl());
   return screen;
 }
@@ -60,7 +76,9 @@ async function routeNames() {
   render(
     <ThemeProvider>
       <NavigationContainer ref={ref}>
-        <RootNavigator showOnboarding={false} />
+        <AppLockProvider>
+          <RootNavigator showOnboarding={false} />
+        </AppLockProvider>
       </NavigationContainer>
     </ThemeProvider>
   );
@@ -158,6 +176,44 @@ describe("about section", () => {
   });
 });
 
+describe("stellar network", () => {
+  it("switches between test networks without a restart", async () => {
+    setNetwork("testnet");
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const screen = await renderSettings();
+
+    fireEvent.press(screen.getByLabelText("Select futurenet"));
+
+    expect(getNetwork()).toBe("futurenet");
+    expect(screen.getByText("Current: Futurenet")).toBeTruthy();
+    expect(screen.getByLabelText("Network: futurenet")).toBeTruthy();
+    alertSpy.mockRestore();
+  });
+
+  it("requires typed MAINNET confirmation before switching to mainnet", async () => {
+    setNetwork("testnet");
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    let promptCallback: ((value?: string) => void) | undefined;
+    const promptSpy = jest
+      .spyOn(Alert, "prompt")
+      .mockImplementation((_title, _message, callback) => {
+        promptCallback = callback as ((value?: string) => void) | undefined;
+      });
+    const screen = await renderSettings();
+
+    fireEvent.press(screen.getByLabelText("Select mainnet"));
+    promptCallback?.("mainnet");
+    expect(getNetwork()).toBe("testnet");
+
+    fireEvent.press(screen.getByLabelText("Select mainnet"));
+    promptCallback?.("MAINNET");
+    expect(getNetwork()).toBe("mainnet");
+
+    promptSpy.mockRestore();
+    alertSpy.mockRestore();
+  });
+});
+
 describe("local data", () => {
   type AlertButton = { text: string; style?: string; onPress?: () => void };
 
@@ -210,6 +266,20 @@ describe("local data", () => {
     const screen = await renderSettings();
     expect(screen.getByText(/Wallet and API keys are not affected here/)).toBeTruthy();
   });
+
+  it("links to the privacy policy next to the clear buttons", async () => {
+    const openBrowser = WebBrowser.openBrowserAsync as jest.Mock;
+    openBrowser.mockClear().mockResolvedValue({ type: "opened" });
+    const screen = await renderSettings();
+
+    fireEvent.press(screen.getByLabelText("Privacy policy"));
+
+    await waitFor(() =>
+      expect(openBrowser).toHaveBeenCalledWith(
+        "https://github.com/mind-vault-1/mindvault_mobile/blob/main/docs/PRIVACY.md"
+      )
+    );
+  });
 });
 
 describe("haptics", () => {
@@ -227,5 +297,35 @@ describe("haptics", () => {
       expect(await AsyncStorage.getItem("@mindvault_haptics_enabled")).toBe("false")
     );
     expect(screen.getByLabelText("Haptic feedback").props.value).toBe(false);
+  });
+});
+
+describe("spending guard", () => {
+  it("saves the per-payment limit in the versioned preferences store", async () => {
+    const screen = await renderSettings();
+    fireEvent.changeText(screen.getByLabelText("Per-payment limit (USDC)"), "7.50");
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Save spending limit"));
+    });
+
+    await waitFor(async () =>
+      expect(await AsyncStorage.getItem("@mindvault_preferences:v1")).toBe(
+        JSON.stringify({ version: 1, perPaymentLimit: "7.50" })
+      )
+    );
+  });
+
+  it("rejects an invalid per-payment limit", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const screen = await renderSettings();
+    fireEvent.changeText(screen.getByLabelText("Per-payment limit (USDC)"), "0");
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Save spending limit"));
+    });
+
+    await waitFor(() => expect(alert).toHaveBeenCalledWith("Invalid limit", expect.any(String)));
+    alert.mockRestore();
   });
 });
