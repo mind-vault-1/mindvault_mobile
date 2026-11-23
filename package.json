@@ -70,7 +70,7 @@
     "qrcode": "^1.5.4",
     "react-test-renderer": "19.0.0",
     "ts-jest": "^29.4.12",
-    "typescript": "~5.8.3"
+    "typescript": "~7.0.2"
   },
   "expo": {
     "doctor": {
