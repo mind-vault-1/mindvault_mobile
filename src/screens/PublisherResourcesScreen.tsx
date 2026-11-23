@@ -43,6 +43,7 @@ import { logError } from "../utils/errorLogger";
 import { useBulkSelection } from "../hooks/useBulkSelection";
 import { validatePrice } from "../hooks/useEditPrice";
 import { SignTransactionSheet } from "../components/SignTransactionSheet";
+import { t } from "../i18n";
 
 type PublisherResourcesNavigation = NativeStackNavigationProp<
   RootStackParamList,
@@ -446,7 +447,7 @@ export function PublisherResourcesScreen() {
         return true;
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to fetch publisher resources";
+          err instanceof Error ? err.message : t("publisher.failedFetchResources");
         setError(message);
         return false;
       } finally {
@@ -519,7 +520,7 @@ export function PublisherResourcesScreen() {
 
   const handleSaveApiKey = async () => {
     if (!apiKey.trim()) {
-      setError("Please enter an API key");
+      setError(t("publisher.enterApiKeyError"));
       return;
     }
 
@@ -533,9 +534,9 @@ export function PublisherResourcesScreen() {
       setAuthenticated(true);
       setResources(testData);
       setApiKey("");
-      toast.success("API key saved successfully");
+      toast.success(t("publisher.apiKeySaved"));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to authenticate";
+      const message = err instanceof Error ? err.message : t("publisher.failedAuthenticate");
       setError(message);
     } finally {
       setLoading(false);
@@ -555,9 +556,9 @@ export function PublisherResourcesScreen() {
       setResources([]);
       setSearch("");
       setError(null);
-      toast.success("Logged out successfully");
+      toast.success(t("publisher.loggedOut"));
     } catch {
-      setError("Failed to logout");
+      setError(t("publisher.failedLogout"));
     }
   };
 
@@ -569,9 +570,9 @@ export function PublisherResourcesScreen() {
       setAuthenticated(true);
       setShowSignup(false);
       const loaded = await loadResources(normalizedKey);
-      if (loaded) toast.success("Publisher account created successfully");
+      if (loaded) toast.success(t("publisher.accountCreated"));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save publisher API key";
+      const message = err instanceof Error ? err.message : t("publisher.failedSaveKey");
       setError(message);
     }
   }, [loadResources, toast]);
@@ -591,7 +592,7 @@ export function PublisherResourcesScreen() {
     setResources((prev) =>
       prev.map((r) => (r.id === resourceId ? { ...r, price: newPrice } : r))
     );
-    toast.success("Price updated successfully");
+    toast.success(t("publisher.priceUpdated"));
   }, [toast]);
 
   /**
@@ -615,7 +616,7 @@ export function PublisherResourcesScreen() {
         setResources((prev) => prev.filter((r) => r.id !== transferredId));
       }
       setTransferResource(null);
-      toast.success("Ownership transferred successfully");
+      toast.success(t("publisher.ownershipTransferred"));
     },
     [transferResource, toast]
   );
@@ -686,7 +687,7 @@ export function PublisherResourcesScreen() {
         idempotencyKey: `delist:${target.id}`,
       });
       setDelistTarget(null);
-      toast.info("Queued — delist will complete when you're back online");
+      toast.info(t("publisher.delistQueued"));
       return;
     }
 
@@ -697,10 +698,10 @@ export function PublisherResourcesScreen() {
       await delistResource(target.id);
       setResources((prev) => prev.filter((r) => r.id !== target.id));
       setDelistTarget(null);
-      toast.success("Resource delisted");
+      toast.success(t("publisher.resourceDelisted"));
     } catch (err) {
       logError("publisherResources.delist", err);
-      setDelistError(err instanceof Error ? err.message : "Failed to delist resource");
+      setDelistError(err instanceof Error ? err.message : t("publisher.failedDelistResource"));
     } finally {
       setDelisting(false);
     }
@@ -773,9 +774,11 @@ export function PublisherResourcesScreen() {
         setBulkPriceQueue([]);
         setPendingBulkPrice(null);
         toast.error(
-          `Bulk price update stopped after ${completed} of ${queue.length} resources: ${
-            err instanceof Error ? err.message : "Could not prepare a price update."
-          }`,
+          t("publisher.bulkPriceStopped", {
+            completed,
+            total: queue.length,
+            error: err instanceof Error ? err.message : t("publisher.couldNotPreparePrice"),
+          })
         );
       }
     },
@@ -818,7 +821,7 @@ export function PublisherResourcesScreen() {
           setBulkBusy(false);
           setBulkPriceQueue([]);
           bulkSelection.clear();
-          toast.success(`Price updated for ${completed} resources`);
+          toast.success(t("publisher.bulkPriceUpdated", { count: completed, suffix: completed === 1 ? "" : "s" }));
         } else {
           await prepareBulkPriceAt(
             bulkPriceQueue,
@@ -833,9 +836,11 @@ export function PublisherResourcesScreen() {
         setBulkBusy(false);
         setBulkPriceQueue([]);
         toast.error(
-          `Bulk price update stopped after ${pending.index} of ${bulkPriceQueue.length} resources: ${
-            err instanceof Error ? err.message : "Could not submit a price update."
-          }`,
+          t("publisher.bulkPriceStopped", {
+            completed: pending.index,
+            total: bulkPriceQueue.length,
+            error: err instanceof Error ? err.message : t("publisher.couldNotSubmitPrice"),
+          })
         );
       }
     },
@@ -847,7 +852,7 @@ export function PublisherResourcesScreen() {
     setBulkPriceQueue([]);
     setBulkBusy(false);
     if (bulkPriceCompleted > 0) {
-      toast.info(`Bulk price update cancelled after ${bulkPriceCompleted} resources`);
+      toast.info(t("publisher.bulkPriceCancelled", { count: bulkPriceCompleted, suffix: bulkPriceCompleted === 1 ? "" : "s" }));
     }
   }, [bulkPriceCompleted, toast]);
 
@@ -873,7 +878,7 @@ export function PublisherResourcesScreen() {
           }
         } catch (err) {
           failed += 1;
-          firstError ??= err instanceof Error ? err.message : "Unable to delist resource.";
+          firstError ??= err instanceof Error ? err.message : t("publisher.unableDelistResource");
           logError("publisherResources.bulkDelist", err);
         }
       }
@@ -888,16 +893,20 @@ export function PublisherResourcesScreen() {
       setBulkDelistVisible(false);
       if (failed > 0) {
         toast.error(
-          `${completedIds.size + (isOffline ? targets.length - failed : 0)} of ${targets.length} ${
-            isOffline ? "queued" : "delisted"
-          }; ${failed} failed. ${firstError ?? ""}`.trim(),
+          t("publisher.bulkDelistPartial", {
+            succeeded: completedIds.size + (isOffline ? targets.length - failed : 0),
+            total: targets.length,
+            action: isOffline ? t("publisher.queuedAction") : t("publisher.delistedAction"),
+            failed,
+            error: firstError ?? "",
+          }).trim()
         );
       } else {
         bulkSelection.clear();
         toast.success(
           isOffline
-            ? `Queued ${targets.length} resources to delist`
-            : `Delisted ${targets.length} resources`,
+            ? t("publisher.bulkDelistQueued", { count: targets.length, suffix: targets.length === 1 ? "" : "s" })
+            : t("publisher.bulkDelisted", { count: targets.length, suffix: targets.length === 1 ? "" : "s" })
         );
       }
     } finally {
@@ -910,7 +919,7 @@ export function PublisherResourcesScreen() {
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <View style={[styles.container, styles.emptyState]}>
         <ActivityIndicator color={colors.primary} size="large" />
-        <Text style={styles.emptyBody}>Checking saved API key…</Text>
+        <Text style={styles.emptyBody}>{t("publisher.checkingSavedKey")}</Text>
       </View>
     </SafeAreaView>
   );
@@ -920,15 +929,15 @@ export function PublisherResourcesScreen() {
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <View style={styles.container}>
         <View style={styles.authSection}>
-          <Text style={typography.title}>Publisher Resources</Text>
-          <Text style={typography.subtitle}>Enter your API key to view your resources</Text>
+          <Text style={typography.title}>{t("publisher.title")}</Text>
+          <Text style={typography.subtitle}>{t("publisher.enterApiKeySubtitle")}</Text>
 
           <View style={styles.formGroup}>
-            <Text style={styles.label}>API Key</Text>
+            <Text style={styles.label}>{t("publisher.apiKeyLabel")}</Text>
             <TextInput
               value={apiKey}
               onChangeText={handleApiKeyChange}
-              placeholder="Enter your API key…"
+              placeholder={t("publisher.apiKeyPlaceholder")}
               placeholderTextColor={colors.textSubtle}
               secureTextEntry
               style={styles.input}
@@ -950,7 +959,7 @@ export function PublisherResourcesScreen() {
             style={[shared.button, shared.primaryButton, loading && styles.disabledButton]}
           >
             <Text style={[shared.buttonText, shared.primaryButtonText]}>
-              {loading ? "Authenticating…" : "Authenticate"}
+              {loading ? t("publisher.authenticating") : t("publisher.authenticate")}
             </Text>
           </Pressable>
 
@@ -959,44 +968,44 @@ export function PublisherResourcesScreen() {
             disabled={loading}
             style={[shared.button, styles.secondaryButton, loading && styles.disabledButton]}
           >
-            <Text style={styles.secondaryButtonText}>Create a publisher account</Text>
+            <Text style={styles.secondaryButtonText}>{t("publisher.createAccount")}</Text>
           </Pressable>
 
           <Pressable onPress={goToPublicCatalog} style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>Back to Public Catalog</Text>
+            <Text style={styles.secondaryButtonText}>{t("publisher.backToCatalog")}</Text>
           </Pressable>
 
           <View style={styles.helpCard}>
             <View style={styles.helpHeaderRow}>
-              <Text style={styles.helpTitle}>🔑 Where do API keys come from?</Text>
+              <Text style={styles.helpTitle}>{t("publisher.apiKeyHelpTitle")}</Text>
               <Pressable
                 onPress={() => setShowHelp((prev) => !prev)}
                 style={styles.helpToggleButton}
               >
                 <Text style={styles.helpToggleText}>
-                  {showHelp ? "Hide Guide" : "Setup Guide"}
+                  {showHelp ? t("publisher.hideGuide") : t("publisher.setupGuide")}
                 </Text>
               </Pressable>
             </View>
             <Text style={styles.helpBody}>
-              Publisher API keys are generated by your MindVault API server administrator or configured in server environment variables.
+              {t("publisher.apiKeyHelpBody")}
             </Text>
             {showHelp ? (
               <View style={styles.helpDetails}>
                 <Text style={styles.helpStep}>
-                  1. Ensure your MindVault server is running and reachable.
+                  {t("publisher.apiKeyHelpStep1")}
                 </Text>
                 <Text style={styles.helpStep}>
-                  2. Obtain an API key configured in `PUBLISHER_API_KEYS` on your server.
+                  {t("publisher.apiKeyHelpStep2")}
                 </Text>
                 <Text style={styles.helpStep}>
-                  3. Enter the key above and tap Authenticate to access your resources.
+                  {t("publisher.apiKeyHelpStep3")}
                 </Text>
               </View>
             ) : null}
           </View>
 
-          <Text style={styles.apiHint}>API: {getApiBaseUrl()}</Text>
+          <Text style={styles.apiHint}>{t("publisher.apiBaseUrl", { url: getApiBaseUrl() })}</Text>
         </View>
       </View>
 
@@ -1023,18 +1032,18 @@ export function PublisherResourcesScreen() {
           <View style={styles.header}>
             <View style={styles.titleRow}>
               <View>
-                <Text style={typography.title}>My Resources</Text>
-                <Text style={typography.subtitle}>Your published resources</Text>
+                <Text style={typography.title}>{t("publisher.myResources")}</Text>
+                <Text style={typography.subtitle}>{t("publisher.myResourcesSubtitle")}</Text>
               </View>
               <Pressable onPress={goToPublicCatalog} style={styles.backButton}>
-                <Text style={styles.backButtonText}>← Public</Text>
+                <Text style={styles.backButtonText}>{t("publisher.publicNav")}</Text>
               </Pressable>
             </View>
 
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Search your resources…"
+              placeholder={t("publisher.searchPlaceholder")}
               placeholderTextColor={colors.textSubtle}
               style={styles.searchInput}
               autoCapitalize="none"
@@ -1043,14 +1052,14 @@ export function PublisherResourcesScreen() {
             />
 
             <View>
-              <Text style={styles.label}>Sort by</Text>
+              <Text style={styles.label}>{t("publisher.sortBy")}</Text>
               <View style={styles.filterRow}>
                 {(["newest", "price_asc", "price_desc", "title"] as const).map((option) => {
                   const labels: Record<typeof option, string> = {
-                    newest: "Newest",
-                    price_asc: "Price: Low to High",
-                    price_desc: "Price: High to Low",
-                    title: "Title",
+                    newest: t("publisher.sortNewest"),
+                    price_asc: t("publisher.sortPriceAsc"),
+                    price_desc: t("publisher.sortPriceDesc"),
+                    title: t("publisher.sortTitle"),
                   };
                   const isActive = sortBy === option;
                   return (
@@ -1072,14 +1081,14 @@ export function PublisherResourcesScreen() {
             </View>
 
             <View>
-              <Text style={styles.label}>Verification Status</Text>
+              <Text style={styles.label}>{t("publisher.verificationStatus")}</Text>
               <View style={styles.filterRow}>
                 {(["all", "verified", "pending", "rejected"] as const).map((option) => {
                   const labels: Record<typeof option, string> = {
-                    all: "All",
-                    verified: "Verified",
-                    pending: "Pending",
-                    rejected: "Rejected",
+                    all: t("publisher.filterAll"),
+                    verified: t("publisher.filterVerified"),
+                    pending: t("publisher.filterPending"),
+                    rejected: t("publisher.filterRejected"),
                   };
                   const isActive = verificationFilter === option;
                   return (
@@ -1101,13 +1110,13 @@ export function PublisherResourcesScreen() {
             </View>
 
             <View>
-              <Text style={styles.label}>On-Chain Status</Text>
+              <Text style={styles.label}>{t("publisher.onChainStatus")}</Text>
               <View style={styles.filterRow}>
                 {(["all", "registered", "unregistered"] as const).map((option) => {
                   const labels: Record<typeof option, string> = {
-                    all: "All",
-                    registered: "Registered",
-                    unregistered: "Not Registered",
+                    all: t("publisher.filterAll"),
+                    registered: t("publisher.filterRegistered"),
+                    unregistered: t("publisher.filterUnregistered"),
                   };
                   const isActive = onchainStatusFilter === option;
                   return (
@@ -1136,40 +1145,40 @@ export function PublisherResourcesScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={
                   bulkSelection.allVisibleSelected
-                    ? "Clear visible resource selection"
-                    : "Select all visible resources"
+                    ? t("publisher.clearVisibleLabel")
+                    : t("publisher.selectVisibleLabel")
                 }
                 accessibilityState={{
                   disabled: bulkBusy || loading || filteredResources.length === 0,
                 }}
               >
                 <Text style={styles.bulkButtonText}>
-                  {bulkSelection.allVisibleSelected ? "Clear visible" : "Select visible"}
+                  {bulkSelection.allVisibleSelected ? t("publisher.clearVisible") : t("publisher.selectVisible")}
                 </Text>
               </Pressable>
               {bulkSelection.selectedCount > 0 ? (
                 <>
                   <Text style={styles.label}>
-                    {bulkSelection.selectedCount} selected
+                    {t("publisher.selectedCount", { count: bulkSelection.selectedCount })}
                   </Text>
                   <Pressable
                     onPress={() => setBulkPriceVisible(true)}
                     disabled={bulkBusy}
                     style={styles.bulkButton}
                     accessibilityRole="button"
-                    accessibilityLabel="Set price for selected resources"
+                    accessibilityLabel={t("publisher.setPriceSelectedLabel")}
                   >
-                    <Text style={styles.bulkButtonText}>Set price</Text>
+                    <Text style={styles.bulkButtonText}>{t("publisher.setPrice")}</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => setBulkDelistVisible(true)}
                     disabled={bulkBusy}
                     style={[styles.bulkButton, styles.bulkDangerButton]}
                     accessibilityRole="button"
-                    accessibilityLabel="Delist selected resources"
+                    accessibilityLabel={t("publisher.delistSelectedLabel")}
                   >
                     <Text style={[styles.bulkButtonText, { color: colors.danger }]}>
-                      Delist
+                      {t("publisher.delist")}
                     </Text>
                   </Pressable>
                   <Pressable
@@ -1177,17 +1186,17 @@ export function PublisherResourcesScreen() {
                     disabled={bulkBusy}
                     style={styles.bulkButton}
                     accessibilityRole="button"
-                    accessibilityLabel="Clear selected resources"
+                    accessibilityLabel={t("publisher.clearSelectionLabel")}
                   >
-                    <Text style={styles.bulkButtonText}>Clear selection</Text>
+                    <Text style={styles.bulkButtonText}>{t("publisher.clearSelection")}</Text>
                   </Pressable>
                 </>
               ) : null}
               {bulkBusy ? (
                 <Text style={styles.label}>
                   {bulkPriceQueue.length > 0
-                    ? `Price update ${bulkPriceCompleted + 1} of ${bulkPriceQueue.length}`
-                    : "Applying bulk action…"}
+                    ? t("publisher.priceUpdateProgress", { current: bulkPriceCompleted + 1, total: bulkPriceQueue.length })
+                    : t("publisher.applyingBulkAction")}
                 </Text>
               ) : null}
             </View>
@@ -1196,7 +1205,7 @@ export function PublisherResourcesScreen() {
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{error}</Text>
                 <Pressable onPress={handleRefresh} style={styles.retryButton}>
-                  <Text style={styles.retryText}>Retry</Text>
+                  <Text style={styles.retryText}>{t("publisher.retry")}</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -1213,13 +1222,13 @@ export function PublisherResourcesScreen() {
               onPress={() => navigation.navigate("PublishResource")}
               style={styles.publishButton}
               accessibilityRole="button"
-              accessibilityLabel="Publish a link"
+              accessibilityLabel={t("publisher.publishLink")}
             >
-              <Text style={styles.publishButtonText}>Publish a link</Text>
+              <Text style={styles.publishButtonText}>{t("publisher.publishLink")}</Text>
             </Pressable>
 
             <Pressable onPress={handleLogout} style={styles.logoutButton}>
-              <Text style={styles.logoutButtonText}>Logout</Text>
+              <Text style={styles.logoutButtonText}>{t("publisher.logout")}</Text>
             </Pressable>
           </View>
         }
@@ -1229,8 +1238,8 @@ export function PublisherResourcesScreen() {
             onLongPress={() => bulkSelection.toggle(item.id)}
             delayLongPress={300}
             accessibilityRole="button"
-            accessibilityLabel={`Bulk actions for ${item.title}`}
-            accessibilityHint="Long-press to toggle selection for bulk actions"
+            accessibilityLabel={t("publisher.bulkActionsFor", { title: item.title })}
+            accessibilityHint={t("publisher.bulkSelectHint")}
           >
             <View style={styles.selectionRow}>
               <Pressable
@@ -1245,10 +1254,10 @@ export function PublisherResourcesScreen() {
                   checked: bulkSelection.isSelected(item.id),
                   disabled: bulkBusy,
                 }}
-                accessibilityLabel={`Select ${item.title}`}
+                accessibilityLabel={t("publisher.selectTitle", { title: item.title })}
               >
                 <Text style={styles.bulkButtonText}>
-                  {bulkSelection.isSelected(item.id) ? "Selected" : "Select"}
+                  {bulkSelection.isSelected(item.id) ? t("publisher.selected") : t("publisher.select")}
                 </Text>
               </Pressable>
             </View>
@@ -1267,10 +1276,10 @@ export function PublisherResourcesScreen() {
               }
               style={styles.manageButton}
               accessibilityRole="button"
-              accessibilityLabel={`Manage ${item.title}`}
-              accessibilityHint="Opens stats, on-chain info and actions for this resource"
+              accessibilityLabel={t("publisher.manageTitle", { title: item.title })}
+              accessibilityHint={t("publisher.manageResourceHint")}
             >
-              <Text style={styles.manageButtonText}>Manage resource ›</Text>
+              <Text style={styles.manageButtonText}>{t("publisher.manageResource")}</Text>
             </Pressable>
           </Pressable>
         )}
@@ -1279,12 +1288,12 @@ export function PublisherResourcesScreen() {
           !loading ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>
-                {resources.length > 0 ? "No matches" : "No resources"}
+                {resources.length > 0 ? t("publisher.noMatches") : t("publisher.noResources")}
               </Text>
               <Text style={styles.emptyBody}>
                 {resources.length > 0
-                  ? "Try a different search term."
-                  : "You haven't published any resources yet."}
+                  ? t("publisher.noMatchesBody")
+                  : t("publisher.noResourcesBody")}
               </Text>
             </View>
           ) : null
@@ -1319,9 +1328,9 @@ export function PublisherResourcesScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard} testID="delist-modal">
-            <Text style={typography.title}>Delist resource?</Text>
+            <Text style={typography.title}>{t("publisher.delistResourceTitle")}</Text>
             <Text style={[typography.body, styles.modalBody]}>
-              {delistTarget?.title} will no longer be listed in the public catalog.
+              {t("publisher.delistResourceBody", { title: delistTarget?.title ?? "" })}
             </Text>
 
             {delistError ? (
@@ -1336,10 +1345,10 @@ export function PublisherResourcesScreen() {
                 disabled={delisting}
                 style={[shared.button, styles.modalCancelButton]}
                 accessibilityRole="button"
-                accessibilityLabel="Cancel delist"
+                accessibilityLabel={t("publisher.cancelDelistLabel")}
                 accessibilityState={{ disabled: delisting }}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>{t("publisher.cancel")}</Text>
               </Pressable>
               <Pressable
                 onPress={() => void handleConfirmDelist()}
@@ -1350,14 +1359,14 @@ export function PublisherResourcesScreen() {
                   delisting ? styles.disabledButton : null,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Confirm delist"
-                accessibilityHint="Removes this resource from the public catalog"
+                accessibilityLabel={t("publisher.confirmDelistLabel")}
+                accessibilityHint={t("publisher.delistHint")}
                 accessibilityState={{ disabled: delisting, busy: delisting }}
               >
                 {delisting ? (
                   <ActivityIndicator color="#ffffff" />
                 ) : (
-                  <Text style={shared.buttonText}>Delist</Text>
+                  <Text style={shared.buttonText}>{t("publisher.delist")}</Text>
                 )}
               </Pressable>
             </View>
@@ -1375,10 +1384,9 @@ export function PublisherResourcesScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={typography.title}>Delist selected resources?</Text>
+            <Text style={typography.title}>{t("publisher.delistSelectedTitle")}</Text>
             <Text style={[typography.body, styles.modalBody]}>
-              {selectedResources.length} selected resources will be removed from the public
-              catalog. This action cannot be undone.
+              {t("publisher.bulkDelistBody", { count: selectedResources.length })}
             </Text>
             <View style={styles.modalActions}>
               <Pressable
@@ -1386,22 +1394,22 @@ export function PublisherResourcesScreen() {
                 disabled={bulkBusy}
                 style={[shared.button, styles.modalCancelButton]}
                 accessibilityRole="button"
-                accessibilityLabel="Cancel bulk delist"
+                accessibilityLabel={t("publisher.cancelBulkDelistLabel")}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>{t("publisher.cancel")}</Text>
               </Pressable>
               <Pressable
                 onPress={() => void handleBulkDelist()}
                 disabled={bulkBusy}
                 style={[shared.button, styles.modalConfirmButton]}
                 accessibilityRole="button"
-                accessibilityLabel="Confirm bulk delist"
+                accessibilityLabel={t("publisher.confirmBulkDelistLabel")}
                 accessibilityState={{ disabled: bulkBusy, busy: bulkBusy }}
               >
                 {bulkBusy ? (
                   <ActivityIndicator color="#ffffff" />
                 ) : (
-                  <Text style={shared.buttonText}>Delist {selectedResources.length}</Text>
+                  <Text style={shared.buttonText}>{t("publisher.delistCount", { count: selectedResources.length })}</Text>
                 )}
               </Pressable>
             </View>
@@ -1417,36 +1425,35 @@ export function PublisherResourcesScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={typography.title}>Set price for selected resources</Text>
+            <Text style={typography.title}>{t("publisher.setPriceSelectedTitle")}</Text>
             <Text style={[typography.body, styles.modalBody]}>
-              A separate Stellar transaction will be prepared and signed for each of the{" "}
-              {selectedResources.length} selected resources.
+              {t("publisher.bulkPriceBody", { count: selectedResources.length })}
             </Text>
             <TextInput
               value={bulkPriceValue}
               onChangeText={setBulkPriceValue}
-              placeholder="New price"
+              placeholder={t("publisher.newPricePlaceholder")}
               placeholderTextColor={colors.textSubtle}
               keyboardType="decimal-pad"
               style={styles.bulkInput}
-              accessibilityLabel="Bulk price"
+              accessibilityLabel={t("publisher.bulkPriceLabel")}
             />
             <View style={styles.modalActions}>
               <Pressable
                 onPress={() => setBulkPriceVisible(false)}
                 style={[shared.button, styles.modalCancelButton]}
                 accessibilityRole="button"
-                accessibilityLabel="Cancel bulk price"
+                accessibilityLabel={t("publisher.cancelBulkPriceLabel")}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>{t("publisher.cancel")}</Text>
               </Pressable>
               <Pressable
                 onPress={handleStartBulkPrice}
                 style={[shared.button, styles.modalConfirmButton]}
                 accessibilityRole="button"
-                accessibilityLabel="Continue bulk price update"
+                accessibilityLabel={t("publisher.continueBulkPriceLabel")}
               >
-                <Text style={shared.buttonText}>Continue</Text>
+                <Text style={shared.buttonText}>{t("publisher.continue")}</Text>
               </Pressable>
             </View>
           </View>
@@ -1458,7 +1465,7 @@ export function PublisherResourcesScreen() {
           visible
           unsignedXdr={pendingBulkPrice.unsignedXdr}
           networkPassphrase={pendingBulkPrice.networkPassphrase}
-          action={`update the price for ${pendingBulkPrice.resource.title}`}
+          action={t("publisher.updatePriceAction", { title: pendingBulkPrice.resource.title })}
           onSigned={handleBulkPriceSigned}
           onCancel={handleCancelBulkPrice}
         />

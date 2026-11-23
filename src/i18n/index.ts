@@ -3,19 +3,25 @@ import { I18n } from "i18n-js";
 
 import catalog from "./en/catalog.json";
 import detail from "./en/detail.json";
+import publisher from "./en/publisher.json";
 import scanner from "./en/scanner.json";
+import settings from "./en/settings.json";
 
 export type TranslationKey =
   | keyof typeof catalog
   | keyof typeof detail
-  | keyof typeof scanner;
+  | keyof typeof publisher
+  | keyof typeof scanner
+  | keyof typeof settings;
 
 type Variables = Record<string, string | number>;
 
 const translations = {
   ...catalog,
   ...detail,
+  ...publisher,
   ...scanner,
+  ...settings,
 };
 
 const i18n = new I18n({ en: translations });
