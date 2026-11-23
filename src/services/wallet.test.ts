@@ -1,8 +1,8 @@
+import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
 import { Keypair, Networks, TransactionBuilder, Operation, Asset, Account } from "@stellar/stellar-sdk";
 
-
-import { generateWallet, getPublicKey, importWallet, sign, wipe } from "./wallet";
+import { generateWallet, getPublicKey, importWallet, sign, signWithBiometrics, wipe } from "./wallet";
 
 jest.unmock("@stellar/stellar-sdk");
 
@@ -18,6 +18,7 @@ jest.mock("expo-local-authentication", () => ({
 }));
 
 const store = SecureStore as jest.Mocked<typeof SecureStore>;
+const localAuth = LocalAuthentication as jest.Mocked<typeof LocalAuthentication>;
 const walletSecretKey = "mindvault_wallet_secret";
 const walletPublicKey = "mindvault_wallet_public";
 
@@ -26,6 +27,9 @@ beforeEach(() => {
   store.setItemAsync.mockResolvedValue();
   store.deleteItemAsync.mockResolvedValue();
   store.getItemAsync.mockResolvedValue(null);
+  localAuth.hasHardwareAsync.mockResolvedValue(true);
+  localAuth.isEnrolledAsync.mockResolvedValue(true);
+  localAuth.authenticateAsync.mockResolvedValue({ success: true });
 });
 
 describe("wallet service", () => {
@@ -79,6 +83,44 @@ describe("wallet service", () => {
     const signed = await sign(transaction.toXDR(), Networks.TESTNET);
     expect(signed).not.toBe(transaction.toXDR());
     expect(signed).not.toContain(keypair.secret());
+  });
+
+  it("requires biometric confirmation before signing with the stored wallet", async () => {
+    const keypair = Keypair.random();
+    store.getItemAsync.mockImplementation(async (key) =>
+      key === walletSecretKey ? keypair.secret() : null
+    );
+    const transaction = new TransactionBuilder(
+      new Account(keypair.publicKey(), "1"),
+      { fee: "100", networkPassphrase: Networks.TESTNET }
+    ).addOperation(Operation.payment({
+      destination: Keypair.random().publicKey(),
+      asset: Asset.native(),
+      amount: "1",
+    })).setTimeout(30).build();
+
+    const signed = await signWithBiometrics(transaction.toXDR(), Networks.TESTNET);
+
+    expect(localAuth.authenticateAsync).toHaveBeenCalledTimes(1);
+    expect(signed).not.toBe(transaction.toXDR());
+    expect(signed).not.toContain(keypair.secret());
+  });
+
+  it("does not sign when biometric confirmation fails", async () => {
+    const keypair = Keypair.random();
+    store.getItemAsync.mockImplementation(async (key) =>
+      key === walletSecretKey ? keypair.secret() : null
+    );
+    localAuth.authenticateAsync.mockResolvedValue({ success: false, error: "user_canceled" });
+    const transaction = new TransactionBuilder(
+      new Account(keypair.publicKey(), "1"),
+      { fee: "100", networkPassphrase: Networks.TESTNET }
+    ).addOperation(Operation.bumpSequence({ bumpTo: "2" })).setTimeout(30).build();
+
+    await expect(signWithBiometrics(transaction.toXDR(), Networks.TESTNET)).rejects.toThrow(
+      "Biometric authentication was not completed."
+    );
+    expect(store.getItemAsync).not.toHaveBeenCalledWith(walletSecretKey);
   });
 
   it("rejects invalid XDR with a safe message", async () => {

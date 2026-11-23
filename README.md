@@ -12,7 +12,7 @@ React Native companion app for [MindVault](https://github.com/mindvault) — bro
 
 ## Architecture
 
-New here? Read the [architecture guide](docs/ARCHITECTURE.md) for the layers, data flow, storage keys and the signing and payment flows.
+New here? Read the [architecture guide](docs/ARCHITECTURE.md) for the layers, data flow, storage keys and the signing and payment flows. The [mobile API contract](docs/API.md) lists every endpoint, header, error and server source link used by the app.
 
 ## Privacy
 

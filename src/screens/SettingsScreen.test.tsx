@@ -299,3 +299,33 @@ describe("haptics", () => {
     expect(screen.getByLabelText("Haptic feedback").props.value).toBe(false);
   });
 });
+
+describe("spending guard", () => {
+  it("saves the per-payment limit in the versioned preferences store", async () => {
+    const screen = await renderSettings();
+    fireEvent.changeText(screen.getByLabelText("Per-payment limit (USDC)"), "7.50");
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Save spending limit"));
+    });
+
+    await waitFor(async () =>
+      expect(await AsyncStorage.getItem("@mindvault_preferences:v1")).toBe(
+        JSON.stringify({ version: 1, perPaymentLimit: "7.50" })
+      )
+    );
+  });
+
+  it("rejects an invalid per-payment limit", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const screen = await renderSettings();
+    fireEvent.changeText(screen.getByLabelText("Per-payment limit (USDC)"), "0");
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Save spending limit"));
+    });
+
+    await waitFor(() => expect(alert).toHaveBeenCalledWith("Invalid limit", expect.any(String)));
+    alert.mockRestore();
+  });
+});

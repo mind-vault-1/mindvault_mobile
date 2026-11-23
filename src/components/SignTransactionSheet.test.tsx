@@ -1,13 +1,17 @@
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { Account, Keypair, Operation, TransactionBuilder } from "@stellar/stellar-sdk";
 import * as ScreenCapture from "expo-screen-capture";
 import { Linking, type EmitterSubscription } from "react-native";
 
 import { signTransactionXdr } from "../api/resources";
 import { authenticate, isAvailable } from "../services/biometrics";
+import { getPublicKey, signWithBiometrics } from "../services/wallet";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { SEP7_CALLBACK_URL } from "../utils/sep7";
 import { SignTransactionSheet } from "./SignTransactionSheet";
+
+jest.unmock("@stellar/stellar-sdk");
 
 jest.mock("../api/resources", () => ({
   DEFAULT_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015",
@@ -16,6 +20,10 @@ jest.mock("../api/resources", () => ({
 jest.mock("../services/biometrics", () => ({
   authenticate: jest.fn(),
   isAvailable: jest.fn(),
+}));
+jest.mock("../services/wallet", () => ({
+  getPublicKey: jest.fn(),
+  signWithBiometrics: jest.fn(),
 }));
 jest.mock("expo-screen-capture", () => ({
   preventScreenCaptureAsync: jest.fn().mockResolvedValue(undefined),
@@ -49,8 +57,23 @@ const mockedAuthenticate = authenticate as jest.Mock;
 const mockedIsAvailable = isAvailable as jest.Mock;
 const mockedPreventCapture = ScreenCapture.preventScreenCaptureAsync as jest.Mock;
 const mockedAllowCapture = ScreenCapture.allowScreenCaptureAsync as jest.Mock;
+const mockedGetPublicKey = getPublicKey as jest.Mock;
+const mockedSignWithBiometrics = signWithBiometrics as jest.Mock;
 const VALID_SECRET = "SCXZ7ZA2UUWX4SWVRPE3ENOZAOLG6A53YLBT6A43EFDE25N4MXZ75AAC";
+const TESTNET = "Test SDF Network ; September 2015";
+const LOCAL_KEYPAIR = Keypair.random();
 let urlListener: ((event: { url: string }) => void) | undefined;
+
+function buildTransactionXdr(source: string) {
+  return new TransactionBuilder(new Account(source, "1"), {
+    fee: "100",
+    networkPassphrase: TESTNET,
+  })
+    .addOperation(Operation.bumpSequence({ bumpTo: "2" }))
+    .setTimeout(30)
+    .build()
+    .toXDR();
+}
 
 function renderSheet(props: Partial<React.ComponentProps<typeof SignTransactionSheet>> = {}) {
   const onSigned = jest.fn();
@@ -75,6 +98,8 @@ beforeEach(() => {
   urlListener = undefined;
   mockedAuthenticate.mockResolvedValue("success");
   mockedIsAvailable.mockResolvedValue(true);
+  mockedGetPublicKey.mockResolvedValue(null);
+  mockedSignWithBiometrics.mockResolvedValue("signed-local-xdr");
   jest.spyOn(Linking, "openURL").mockResolvedValue(undefined);
   jest.spyOn(Linking, "getInitialURL").mockResolvedValue(null);
   jest.spyOn(Linking, "addEventListener").mockImplementation((_event, handler) => {
@@ -276,5 +301,36 @@ it("explains when a wallet declines the SEP-7 request", async () => {
   });
 
   expect(await screen.findByText(/Signing was declined/)).toBeTruthy();
+  expect(screen.onSigned).not.toHaveBeenCalled();
+});
+
+it("shows the source account and fee before signing with the local wallet", async () => {
+  const xdr = buildTransactionXdr(LOCAL_KEYPAIR.publicKey());
+  mockedGetPublicKey.mockResolvedValue(LOCAL_KEYPAIR.publicKey());
+  const screen = renderSheet({ unsignedXdr: xdr });
+
+  expect(await screen.findByLabelText("Local wallet signing")).toBeTruthy();
+  expect(screen.getByText(new RegExp(`Source account: ${LOCAL_KEYPAIR.publicKey()}`))).toBeTruthy();
+  expect(screen.getByText(/Fee: 0\.0000100 XLM/)).toBeTruthy();
+
+  fireEvent.press(screen.getByLabelText("Sign with this device's wallet"));
+
+  await waitFor(() =>
+    expect(mockedSignWithBiometrics).toHaveBeenCalledWith(xdr, TESTNET)
+  );
+  await waitFor(() => expect(screen.onSigned).toHaveBeenCalledWith("signed-local-xdr"));
+});
+
+it("does not submit when local-wallet biometric confirmation fails", async () => {
+  const xdr = buildTransactionXdr(LOCAL_KEYPAIR.publicKey());
+  mockedGetPublicKey.mockResolvedValue(LOCAL_KEYPAIR.publicKey());
+  mockedSignWithBiometrics.mockRejectedValueOnce(
+    new Error("Biometric authentication was not completed.")
+  );
+  const screen = renderSheet({ unsignedXdr: xdr });
+
+  fireEvent.press(await screen.findByLabelText("Sign with this device's wallet"));
+
+  expect(await screen.findByText(/Biometric authentication was not completed/)).toBeTruthy();
   expect(screen.onSigned).not.toHaveBeenCalled();
 });

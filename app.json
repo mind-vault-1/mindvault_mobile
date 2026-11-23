@@ -60,7 +60,8 @@
           "savePhotosPermission": "Allow MindVault to save QR codes to your photos.",
           "isAccessMediaLocationEnabled": false
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "extra": {
       "apiUrl": "http://localhost:4021",
