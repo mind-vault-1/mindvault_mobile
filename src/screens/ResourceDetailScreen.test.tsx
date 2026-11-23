@@ -10,6 +10,8 @@ import { prepareResourceAccess } from "../api/payment";
 import { fetchVerification, type VerificationDetails } from "../api/verification";
 import { shareResource } from "../utils/shareResource";
 import { openExternalUrl } from "../utils/stellarExpert";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { FAVORITES_KEY, resetFavoritesForTests } from "../services/favorites";
 import { ResourceDetailScreen } from "./ResourceDetailScreen";
 import { ToastProvider } from "../components/ToastProvider";
 
@@ -484,5 +486,42 @@ describe("refreshing", () => {
       resolve(resource);
       await first;
     });
+  });
+});
+
+describe("favourite toggle", () => {
+  beforeEach(async () => {
+    await AsyncStorage.removeItem(FAVORITES_KEY);
+    resetFavoritesForTests();
+    mockedFetchResource.mockResolvedValue(resource);
+  });
+
+  it("saves the resource on this device and exposes the checked state", async () => {
+    const screen = renderScreen();
+    const heart = await screen.findByRole("togglebutton", { name: `Favourite ${resource.title}` });
+    expect(heart.props.accessibilityState).toEqual({ checked: false });
+
+    await act(async () => {
+      fireEvent.press(heart);
+    });
+
+    expect(
+      screen.getByLabelText(`Favourite ${resource.title}`).props.accessibilityState
+    ).toEqual({ checked: true });
+    expect(JSON.parse((await AsyncStorage.getItem(FAVORITES_KEY)) as string)).toEqual({
+      version: 1,
+      ids: [resource.id],
+    });
+  });
+
+  it("shows a previously saved resource as a favourite", async () => {
+    await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify({ version: 1, ids: [resource.id] }));
+    const screen = renderScreen();
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(`Favourite ${resource.title}`).props.accessibilityState
+      ).toEqual({ checked: true })
+    );
   });
 });
