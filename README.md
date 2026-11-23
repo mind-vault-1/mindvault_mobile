@@ -73,6 +73,22 @@ Publisher resources require an API key for authentication:
 - **Server Configuration:** On self-hosted servers, configure your keys using the `PUBLISHER_API_KEYS` environment variable or generate one through your server's admin interface.
 - **App Usage:** Enter the key in the **Publisher Resources** tab or Publisher Settings modal to view and manage your resources.
 
+### Signed publisher writes
+
+Authenticated publisher writes (`POST`/`DELETE`) are signed with HMAC-SHA256 when the server enables `REQUIRE_REQUEST_SIGNATURE`, including link publishes, API-key rotation, and API-key revocation. Publisher registration is public and is not signed because no key exists yet. The app sends:
+
+- `X-Timestamp`: current Unix time in seconds
+- `X-Signature`: hex HMAC of `METHOD\npath\nX-Timestamp\nSHA256(body)` using the publisher API key as the secret
+- `Idempotency-Key`: only when the caller supplies one; it is appended as a fifth canonical line
+
+The canonical string, body hash and signature are byte-for-byte compatible with `server/src/utils/requestSignature.ts`. The implementation in `src/utils/requestSignature.ts` is pure JavaScript (including SHA-256 and UTF-8 encoding) because Hermes has no `node:crypto`.
+
+### Screen-capture protection
+
+`expo-screen-capture` blocks screenshots and screen recording while the `SignTransactionSheet` signing sheet or the developer `DevSigner` screen is visible, and releases the block on close/blur. The block is keyed so the two screens cannot unlock each other prematurely.
+
+Before a payment starts, the paywall reads the stored public key and checks Horizon for a USDC trustline and enough balance to cover the displayed price. A missing trustline or short balance stops the flow with an **Open Wallet** link; if Horizon cannot be reached, a warning is shown and the normal payment flow continues. No Horizon request is made until **Pay & Access** is pressed, and closing the sheet cancels any in-flight check. The classic USDC issuer defaults to the official issuer for the configured network; self-hosted deployments with a different issuer can set `expo.extra.usdcIssuer` in `app.json`.
+
 ## Stellar Network Configuration
 
 The app defaults to the Stellar **Testnet**. The passphrase `Test SDF Network ; September 2015` isn't a stale date — it's Stellar's official, fixed identifier for the public testnet, defined by the Stellar Development Foundation and unchanged since the network's launch. It's the same value as `Networks.TESTNET` in `@stellar/stellar-base`.

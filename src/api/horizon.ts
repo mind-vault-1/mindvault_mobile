@@ -1,12 +1,39 @@
 import { Asset, Horizon, Operation, TransactionBuilder } from "@stellar/stellar-sdk";
 
-import type { StellarNetworkConfig } from "../config/network";
+import { getNetworkConfig, type StellarNetworkConfig } from "../config/network";
 
 export const TESTNET_USDC_ASSET_CODE = "USDC";
+const USDC_DECIMALS = 7;
 
 export interface FriendbotResult {
   funded: boolean;
   hash?: string;
+}
+
+export type UsdcPaymentCheck =
+  | { status: "ok" }
+  | { status: "missing-trustline"; message: string }
+  | { status: "insufficient-balance"; message: string }
+  | { status: "unavailable"; warning: string };
+
+export interface CheckUsdcForPaymentOptions {
+  publicKey?: string | null;
+  signal?: AbortSignal;
+}
+
+interface HorizonBalance {
+  asset_code?: string;
+  asset_issuer?: string;
+  balance?: string;
+}
+
+function parseUsdcAmount(value: string): bigint {
+  const normalized = value.trim();
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) throw new Error("Invalid USDC amount.");
+  const [whole, fraction = ""] = normalized.split(".");
+  if (fraction.length > USDC_DECIMALS) throw new Error("Too many USDC decimals.");
+  const scale = BigInt(10) ** BigInt(USDC_DECIMALS);
+  return BigInt(whole) * scale + BigInt(fraction.padEnd(USDC_DECIMALS, "0") || "0");
 }
 
 function serverFor(config: StellarNetworkConfig): Horizon.Server {
@@ -16,6 +43,59 @@ function serverFor(config: StellarNetworkConfig): Horizon.Server {
 function assertTestnetConfig(config: StellarNetworkConfig): void {
   if (!config.friendbotUrl || config.id === "mainnet") {
     throw new Error("Friendbot is available on test networks only.");
+  }
+}
+
+export async function checkUsdcForPayment(
+  price: string,
+  { publicKey, signal }: CheckUsdcForPaymentOptions = {}
+): Promise<UsdcPaymentCheck> {
+  const config = getNetworkConfig();
+  if (!config.usdcIssuer) {
+    return { status: "unavailable", warning: "USDC checks are not available on this network." };
+  }
+  if (!publicKey) {
+    return {
+      status: "unavailable",
+      warning: "Connect a wallet to check your USDC balance before paying.",
+    };
+  }
+
+  try {
+    const response = await fetch(
+      `${config.horizonUrl}/accounts/${encodeURIComponent(publicKey)}`,
+      { signal }
+    );
+    if (response.status === 404) {
+      return {
+        status: "missing-trustline",
+        message: "Your wallet needs a USDC trustline before you can pay.",
+      };
+    }
+    if (!response.ok) throw new Error(`Horizon returned ${response.status}`);
+
+    const account = (await response.json()) as { balances?: HorizonBalance[] };
+    const usdc = account.balances?.find(
+      (balance) =>
+        balance.asset_code === TESTNET_USDC_ASSET_CODE &&
+        balance.asset_issuer === config.usdcIssuer
+    );
+    if (!usdc?.balance) {
+      return {
+        status: "missing-trustline",
+        message: "Your wallet needs a USDC trustline before you can pay.",
+      };
+    }
+
+    if (parseUsdcAmount(usdc.balance) < parseUsdcAmount(price)) {
+      return {
+        status: "insufficient-balance",
+        message: "Your wallet does not have enough USDC to cover this payment.",
+      };
+    }
+    return { status: "ok" };
+  } catch {
+    return { status: "unavailable", warning: "Couldn't check your USDC balance right now." };
   }
 }
 

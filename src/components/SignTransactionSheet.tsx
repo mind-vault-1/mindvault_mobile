@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import * as ScreenCapture from "expo-screen-capture";
 import {
   ActivityIndicator,
   Linking,
@@ -16,6 +17,8 @@ import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { buildSep7TransactionUri, parseSep7Callback } from "../utils/sep7";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
+
+const SCREEN_CAPTURE_KEY = "mindvault-sign-transaction-sheet";
 
 interface SignTransactionSheetProps {
   visible: boolean;
@@ -104,6 +107,14 @@ export function SignTransactionSheet({
     });
     return () => {
       cancelled = true;
+    };
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    void ScreenCapture.preventScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => undefined);
+    return () => {
+      void ScreenCapture.allowScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => undefined);
     };
   }, [visible]);
 

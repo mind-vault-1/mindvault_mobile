@@ -2,7 +2,7 @@ import { Keypair, StrKey, contract, nativeToScVal, rpc } from "@stellar/stellar-
 import { Buffer } from "buffer";
 
 import type { AccessResult } from "../types";
-import { extractApiErrorMessage } from "../utils/errorLogger";
+import { ApiError, request } from "./client";
 import { parseResourceId } from "../utils/resourceLinks";
 import { saveReceipt } from "../services/receipts";
 import { DEFAULT_NETWORK_PASSPHRASE, DEFAULT_STELLAR_NETWORK, getApiBaseUrl } from "./resources";
@@ -239,22 +239,29 @@ export async function prepareResourceAccess(
   url: string,
   displayedPrice: string
 ): Promise<ResourceAccess> {
-  const firstRes = await fetch(url);
-
-  if (firstRes.status === 402) {
+  try {
+    const { data, headers } = await request<string | undefined>(url, {
+      responseType: "text",
+      skipBodyForBinary: true,
+      retry: false,
+      fallbackMessage: (status) => `Failed to access resource (${status}).`,
+    });
     return {
-      type: "payment",
-      challenge: parsePaymentRequired(firstRes.headers.get(PAYMENT_REQUIRED_HEADER), displayedPrice),
+      type: "ready",
+      result: await resolveResponse(headers.get("content-type"), data, url),
     };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 402) {
+      return {
+        type: "payment",
+        challenge: parsePaymentRequired(
+          error.headers?.get(PAYMENT_REQUIRED_HEADER) ?? null,
+          displayedPrice
+        ),
+      };
+    }
+    throw error;
   }
-
-  if (!firstRes.ok) {
-    throw new Error(
-      await extractApiErrorMessage(firstRes, `Failed to access resource (${firstRes.status}).`)
-    );
-  }
-
-  return { type: "ready", result: await resolveResponse(firstRes, url) };
 }
 
 /** Retries the request with the signed payment. */
@@ -263,25 +270,20 @@ export async function submitSignedPayment(
   challenge: PaymentChallenge,
   transaction: string
 ): Promise<AccessResult> {
-  const res = await fetch(url, {
+  const { data, headers: resHeaders } = await request<string | undefined>(url, {
     headers: { [PAYMENT_SIGNATURE_HEADER]: encodePaymentSignature(challenge, transaction) },
+    responseType: "text",
+    skipBodyForBinary: true,
+    retry: false,
+    fallbackMessage: (status) => status === 402
+      ? "The payment was not accepted. Check your USDC balance and try again."
+      : `Failed to access resource (${status}).`,
   });
-
-  if (!res.ok) {
-    throw new Error(
-      await extractApiErrorMessage(
-        res,
-        res.status === 402
-          ? "The payment was not accepted. Check your USDC balance and try again."
-          : `Failed to access resource (${res.status}).`
-      )
-    );
-  }
 
   // A receipt is best effort. Missing/malformed settlement metadata or a full
   // device must never turn an accepted payment into a retry (and double charge).
   try {
-    const header = res.headers.get(PAYMENT_RESPONSE_HEADER);
+    const header = resHeaders.get(PAYMENT_RESPONSE_HEADER);
     if (header) {
       const settlement = decodeBase64Json(header) as Record<string, unknown> | null;
       if (settlement?.success === true &&
@@ -303,13 +305,17 @@ export async function submitSignedPayment(
     }
   } catch { /* The content remains accessible even if a receipt cannot be saved. */ }
 
-  return resolveResponse(res, url);
+  return resolveResponse(resHeaders.get("content-type"), data, url);
 }
 
-async function resolveResponse(res: Response, fallbackUrl: string): Promise<AccessResult> {
-  const contentType = res.headers.get("content-type") ?? "";
-  if (contentType.includes("text") || contentType.includes("json")) {
-    return { type: "text", content: await res.text() };
+async function resolveResponse(
+  contentType: string | null,
+  text: string | undefined,
+  fallbackUrl: string
+): Promise<AccessResult> {
+  const type = contentType ?? "";
+  if (type.includes("text") || type.includes("json")) {
+    return { type: "text", content: text ?? "" };
   }
   // Binary and unknown content types open in the external browser.
   return { type: "external", url: fallbackUrl };
@@ -334,14 +340,55 @@ export interface ServerReceipt {
   };
 }
 
+const UNEXPECTED = "The server returned an unexpected response.";
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object") throw new Error(UNEXPECTED);
+  return value as Record<string, unknown>;
+}
+
+/** Validates `GET /payments/:id/receipt` before it reaches verification UI. */
+export const serverReceiptSchema = (value: unknown): ServerReceipt => {
+  const row = asRecord(value);
+  if (
+    typeof row.id !== "string" ||
+    (typeof row.resourceId !== "string" && row.resourceId !== null) ||
+    (typeof row.resourceTitle !== "string" && row.resourceTitle !== null) ||
+    typeof row.amount !== "string" ||
+    typeof row.asset !== "string" ||
+    typeof row.network !== "string" ||
+    typeof row.txHash !== "string" ||
+    typeof row.payer !== "string" ||
+    typeof row.paidAt !== "string" ||
+    typeof row.verified !== "boolean"
+  ) {
+    throw new Error(UNEXPECTED);
+  }
+  if (row.verificationDetails !== undefined && row.verificationDetails !== null) {
+    const details = asRecord(row.verificationDetails);
+    if (
+      typeof details.localTxHashMatch !== "boolean" ||
+      typeof details.localAmountMatch !== "boolean" ||
+      typeof details.localNetworkMatch !== "boolean"
+    ) {
+      throw new Error(UNEXPECTED);
+    }
+  }
+  // Older servers can return a null title; the verification UI already treats
+  // it as empty, so normalize here instead of failing the whole receipt.
+  return { ...row, resourceTitle: row.resourceTitle ?? "" } as ServerReceipt;
+};
+
 /** Fetches a receipt from the server for verification. */
 export async function fetchReceipt(paymentId: string): Promise<ServerReceipt> {
-  const res = await fetch(`${getApiBaseUrl()}/payments/${encodeURIComponent(paymentId)}/receipt`);
-
-  if (!res.ok) {
-    const message = await extractApiErrorMessage(res, "Failed to fetch receipt");
-    throw new Error(message);
-  }
-
-  return res.json();
+  const { data } = await request<ServerReceipt>(
+    `${getApiBaseUrl()}/payments/${encodeURIComponent(paymentId)}/receipt`,
+    {
+      fallbackMessage: "Failed to fetch receipt",
+      // The plain-fetch original made a single attempt.
+      retry: false,
+      schema: serverReceiptSchema,
+    }
+  );
+  return data;
 }
