@@ -16,7 +16,7 @@ export interface PendingPriceTransaction {
  *
  * Rules:
  * - Must not be empty or whitespace-only
- * - Must be a valid number (no non-numeric characters)
+ * - Must be a plain decimal with at most 7 fractional digits (Stellar precision)
  * - Must be greater than zero
  */
 export function validatePrice(price: string): string | null {
@@ -26,13 +26,19 @@ export function validatePrice(price: string): string | null {
     return "Price cannot be empty.";
   }
 
-  const numeric = Number(trimmed);
-
-  if (isNaN(numeric)) {
+  if (!/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    if (/^-\d+(?:\.\d+)?$/.test(trimmed)) {
+      return "Price must be greater than zero.";
+    }
     return "Price must be a valid number.";
   }
 
-  if (numeric <= 0) {
+  const [, fraction = ""] = trimmed.split(".");
+  if (fraction.length > 7) {
+    return "Price cannot have more than 7 decimal places.";
+  }
+
+  if (!/[1-9]/.test(trimmed)) {
     return "Price must be greater than zero.";
   }
 
@@ -102,6 +108,8 @@ export function useEditPrice() {
     setStatus("idle");
   }, []);
 
+  const resetError = useCallback(() => setError(null), []);
+
   return {
     status,
     error,
@@ -109,6 +117,6 @@ export function useEditPrice() {
     preparePriceEdit,
     submitSigned,
     cancelSigning,
-    resetError: () => setError(null),
+    resetError,
   };
 }

@@ -1,6 +1,7 @@
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
 import { logError } from "../utils/errorLogger";
+import { getWebStorage, isWeb } from "../utils/platform";
 
 const API_KEY_KEY = "x-api-key";
 const BIOMETRIC_LOCK_KEY = "biometric-lock-enabled";
@@ -24,7 +25,13 @@ function logStorageFailure(operation: string, err: unknown): void {
 
 export async function storeApiKey(apiKey: string): Promise<void> {
   try {
-    await SecureStore.setItemAsync(API_KEY_KEY, apiKey);
+    if (isWeb()) {
+      const storage = getWebStorage();
+      if (!storage) throw new Error("Browser storage is unavailable.");
+      storage.setItem(API_KEY_KEY, apiKey);
+    } else {
+      await SecureStore.setItemAsync(API_KEY_KEY, apiKey);
+    }
   } catch (err) {
     logStorageFailure("storeApiKey", err);
     throw new SecureStorageError("Failed to save API key to secure storage.");
@@ -33,6 +40,7 @@ export async function storeApiKey(apiKey: string): Promise<void> {
 
 /** True when the device has biometric hardware with at least one enrolment. */
 export async function isBiometricAvailable(): Promise<boolean> {
+  if (isWeb()) return false;
   try {
     const [hasHardware, isEnrolled] = await Promise.all([
       LocalAuthentication.hasHardwareAsync(),
@@ -47,6 +55,7 @@ export async function isBiometricAvailable(): Promise<boolean> {
 
 /** Whether the user opted in to "Require Face ID / fingerprint". Off by default. */
 export async function isBiometricLockEnabled(): Promise<boolean> {
+  if (isWeb()) return false;
   try {
     return (await SecureStore.getItemAsync(BIOMETRIC_LOCK_KEY)) === "true";
   } catch (err) {
@@ -61,6 +70,10 @@ export async function isBiometricLockEnabled(): Promise<boolean> {
  * lock the user out of a key they cannot unlock.
  */
 export async function setBiometricLockEnabled(enabled: boolean): Promise<boolean> {
+  if (isWeb()) {
+    if (!enabled) getWebStorage()?.removeItem(BIOMETRIC_LOCK_KEY);
+    return false;
+  }
   if (enabled && !(await isBiometricAvailable())) return false;
   try {
     if (enabled) {
@@ -95,6 +108,16 @@ async function requireBiometrics(): Promise<void> {
 }
 
 export async function getApiKey(): Promise<string | null> {
+  if (isWeb()) {
+    try {
+      const storage = getWebStorage();
+      if (!storage) throw new Error("Browser storage is unavailable.");
+      return storage.getItem(API_KEY_KEY);
+    } catch (err) {
+      logStorageFailure("getApiKey", err);
+      throw new SecureStorageError("Failed to read API key from browser storage.");
+    }
+  }
   if (await isBiometricLockEnabled()) {
     await requireBiometrics();
   }
@@ -108,7 +131,13 @@ export async function getApiKey(): Promise<string | null> {
 
 export async function clearApiKey(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(API_KEY_KEY);
+    if (isWeb()) {
+      const storage = getWebStorage();
+      if (!storage) throw new Error("Browser storage is unavailable.");
+      storage.removeItem(API_KEY_KEY);
+    } else {
+      await SecureStore.deleteItemAsync(API_KEY_KEY);
+    }
   } catch (err) {
     logStorageFailure("clearApiKey", err);
     throw new SecureStorageError("Failed to clear API key from secure storage.");
