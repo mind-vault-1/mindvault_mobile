@@ -5,22 +5,6 @@ module.exports = {
   setupFiles: ["<rootDir>/jest.setup.js"],
   resetMocks: false,
   clearMocks: false,
-  // expo-modules-core is not hoisted to the workspace root; jest-expo's setup.js
-  // references several src/* subpaths that aren't exported. Map them to their
-  // compiled equivalents in the nested package so Jest can resolve them.
-  // Map expo/src/winter to its non-native build so the native fetch polyfill
-  // (which requires ExpoFetchModule, a native module absent in Jest) is not installed.
-  // Map react-native/unstable-internals-do-not-use to a no-op (module not present in RN 0.76).
-  moduleNameMapper: {
-    "^expo-modules-core/src/Refs$":
-      "<rootDir>/node_modules/expo/node_modules/expo-modules-core/build/Refs.js",
-    "^expo-modules-core/src/uuid/uuid\\.web$":
-      "<rootDir>/node_modules/expo/node_modules/expo-modules-core/build/uuid/index.web.js",
-    "^expo-modules-core/src/web/index\\.web$":
-      "<rootDir>/node_modules/expo/node_modules/expo-modules-core/build/polyfill/index.web.js",
-    "^expo/src/winter$":
-      "<rootDir>/node_modules/server-only/empty.js",
-  },
   collectCoverage: false,
   collectCoverageFrom: [
     "src/**/*.{ts,tsx}",
