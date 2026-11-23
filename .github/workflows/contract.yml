@@ -1,0 +1,68 @@
+name: Contract
+
+# Checks the app against the server's OpenAPI spec.
+#
+# `snapshot` runs on every relevant change and needs no network: it checks that
+# the committed snapshot still provides everything the app relies on.
+# `drift` runs daily (and on demand) against the server's current spec and fails
+# when the snapshot is stale, so a server change shows up here before it reaches
+# users. To fix either failure see "Contract check" in docs/API.md.
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "scripts/check-contract.ts"
+      - "src/api/**"
+      - "src/types.ts"
+      - "package.json"
+      - ".github/workflows/contract.yml"
+  pull_request:
+    paths:
+      - "scripts/check-contract.ts"
+      - "src/api/**"
+      - "src/types.ts"
+      - "package.json"
+      - ".github/workflows/contract.yml"
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # Runs the TypeScript script via --experimental-strip-types.
+          node-version: 22
+
+      - name: Check the app against the OpenAPI snapshot
+        run: npm run contract:check
+
+  drift:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/checkout@v7
+        with:
+          repository: mind-vault-1/mindvault
+          path: server-src
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Compare the snapshot with the server's current spec
+        run: npm run contract:check -- --fresh --source server-src
