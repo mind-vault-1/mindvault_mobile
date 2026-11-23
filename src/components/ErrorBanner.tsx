@@ -19,13 +19,13 @@ function createStyles(colors: ThemeColors) {
       gap: 8,
     },
     message: {
-      color: colors.danger,
+      color: colors.onDangerBg,
       fontSize: 14,
     },
     retryButton: {
       alignSelf: "flex-start",
       borderRadius: 8,
-      backgroundColor: colors.danger,
+      backgroundColor: colors.dangerBg,
       paddingHorizontal: 12,
       paddingVertical: 8,
       minHeight: 44,
@@ -34,7 +34,7 @@ function createStyles(colors: ThemeColors) {
       alignItems: "center",
     },
     retryText: {
-      color: "#ffffff",
+      color: colors.onDangerBg,
       fontWeight: "600",
       fontSize: 13,
     },

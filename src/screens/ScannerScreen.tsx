@@ -32,7 +32,7 @@ function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: "#000",
+      backgroundColor: colors.cameraBackdrop,
     },
     centered: {
       flex: 1,
@@ -63,7 +63,7 @@ function createStyles(colors: ThemeColors) {
       position: "absolute",
       width: 30,
       height: 30,
-      borderColor: "#ffffff",
+      borderColor: colors.onCamera,
     },
     cornerTopLeft: {
       top: 0,
@@ -94,7 +94,7 @@ function createStyles(colors: ThemeColors) {
       borderBottomRightRadius: 4,
     },
     hint: {
-      color: "#ffffff",
+      color: colors.onCamera,
       fontSize: 15,
       fontWeight: "500",
       marginTop: spacing.xl,
@@ -103,12 +103,12 @@ function createStyles(colors: ThemeColors) {
       marginTop: spacing.md,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
-      backgroundColor: "rgba(200, 30, 30, 0.85)",
+      backgroundColor: colors.dangerOverlay,
       borderRadius: 8,
       maxWidth: 280,
     },
     errorText: {
-      color: "#ffffff",
+      color: colors.onCamera,
       fontSize: 13,
       fontWeight: "600",
       textAlign: "center",
@@ -119,16 +119,16 @@ function createStyles(colors: ThemeColors) {
       paddingVertical: spacing.sm,
       borderRadius: 12,
       borderWidth: 1,
-      borderColor: "#ffffff",
+      borderColor: colors.onCamera,
     },
     pasteButtonText: {
-      color: "#ffffff",
+      color: colors.onCamera,
       fontSize: 14,
       fontWeight: "600",
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: "rgba(0,0,0,0.5)",
+      backgroundColor: colors.scrim,
       justifyContent: "flex-end",
     },
     modalSheet: {
@@ -184,6 +184,9 @@ function createStyles(colors: ThemeColors) {
       alignItems: "center",
       paddingVertical: 12,
       borderRadius: 12,
+    },
+    modalConfirmText: {
+      color: colors.onPrimary,
     },
     modalDisabledButton: {
       opacity: 0.5,
@@ -384,7 +387,7 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
               accessibilityLabel={t("scanner.goToResource")}
               accessibilityState={{ disabled: pasteValue.trim().length === 0 }}
             >
-              <Text style={shared.buttonText}>{t("scanner.go")}</Text>
+              <Text style={[shared.buttonText, styles.modalConfirmText]}>{t("scanner.go")}</Text>
             </Pressable>
           </View>
         </View>

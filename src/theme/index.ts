@@ -25,7 +25,12 @@ export type ThemeColors = {
   danger: string;
   dangerBg: string;
   onDanger: string;
+  onDangerBg: string;
   neutralBg: string;
+  cameraBackdrop: string;
+  onCamera: string;
+  dangerOverlay: string;
+  scrim: string;
 };
 
 export type ColorScheme = "light" | "dark";
@@ -48,7 +53,12 @@ export const lightColors: ThemeColors = {
   danger: "#b91c1c",
   dangerBg: "#fee2e2",
   onDanger: "#ffffff",
+  onDangerBg: "#7f1d1d",
   neutralBg: "#f3f4f6",
+  cameraBackdrop: "#000000",
+  onCamera: "#ffffff",
+  dangerOverlay: "rgba(200, 30, 30, 0.85)",
+  scrim: "rgba(0, 0, 0, 0.5)",
 };
 
 // Dark theme colors
@@ -69,7 +79,12 @@ export const darkColors: ThemeColors = {
   danger: "#f87171",
   dangerBg: "#7f1d1d",
   onDanger: "#ffffff",
+  onDangerBg: "#fee2e2",
   neutralBg: "#374151",
+  cameraBackdrop: "#000000",
+  onCamera: "#ffffff",
+  dangerOverlay: "rgba(180, 30, 30, 0.88)",
+  scrim: "rgba(0, 0, 0, 0.65)",
 };
 
 // Spacing constants (same for both themes)
