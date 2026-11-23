@@ -11,6 +11,10 @@ jest.mock("../api/payment", () => ({
   appNetworkId: jest.fn(() => "stellar:testnet"),
   sorobanRpcUrl: jest.fn(() => "https://soroban-testnet.stellar.org"),
   prepareResourceAccess: jest.fn(), signPaymentTransaction: jest.fn(), submitSignedPayment: jest.fn(),
+  priceToAtomicUnits: jest.fn((value: string) => {
+    const [whole, fraction = ""] = value.trim().split(".");
+    return BigInt(`${whole}${fraction.padEnd(7, "0").slice(0, 7)}`);
+  }),
 }));
 jest.mock("../utils/validateStellarSecret", () => ({
   validateStellarSecret: (secret: string) => ({ isValid: secret === "S-test-secret", errorMessage: "Enter a key" }),
@@ -113,6 +117,21 @@ it("warns but continues when the USDC check is unavailable", async () => {
   expect(mockPrepare).toHaveBeenCalledTimes(1);
   await act(async () => { prepare.resolve({ type: "payment", challenge }); });
   expect(await screen.findByLabelText("Stellar secret key")).toBeTruthy();
+});
+
+it("requires typed confirmation before paying above the per-payment limit", async () => {
+  const screen = renderWithProviders(<PaywallModal {...props} price="10.00" />);
+  fireEvent.press(await screen.findByText("Pay & Access"));
+
+  expect(await screen.findByLabelText("Confirm high payment")).toBeTruthy();
+  expect(mockPrepare).not.toHaveBeenCalled();
+
+  fireEvent.changeText(screen.getByLabelText("Confirm high payment"), "CONFIRM");
+  await act(async () => {
+    fireEvent.press(screen.getByLabelText("Confirm high payment button"));
+  });
+
+  await waitFor(() => expect(mockPrepare).toHaveBeenCalledWith(props.accessUrl, "10.00"));
 });
 
 it("shows challenge, signing and settlement progress and then text content", async () => {
