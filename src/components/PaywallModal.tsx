@@ -35,6 +35,7 @@ import { hapticError, hapticSuccess } from "../utils/haptics";
 import { openExternalUrl } from "../utils/stellarExpert";
 import { getPublicKey } from "../services/wallet";
 import { DEFAULT_PER_PAYMENT_LIMIT, loadPreferences } from "../services/preferences";
+import { cacheContent, getCachedContent } from "../services/contentCache";
 
 type WalletNavigation = { navigate: (route: "Wallet") => void };
 
@@ -188,6 +189,7 @@ export function PaywallModal({
   const [spendingLimit, setSpendingLimit] = useState(DEFAULT_PER_PAYMENT_LIMIT);
   const [showLimitConfirm, setShowLimitConfirm] = useState(false);
   const [limitConfirmText, setLimitConfirmText] = useState("");
+  const [cachedContent, setCachedContent] = useState<string | null>(null);
 
   const flow = useRef(0);
   const busy = useRef(false);
@@ -223,7 +225,22 @@ export function PaywallModal({
       checkController.current?.abort();
       checkController.current = null;
     };
-  }, [visible, accessUrl, price, resourceTitle]);
+  }, [visible, accessUrl, price, resourceId, resourceTitle]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCachedContent(null);
+    if (visible) {
+      void getCachedContent(resourceId)
+        .then((content) => {
+          if (!cancelled) setCachedContent(content);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, resourceId]);
 
   useEffect(() => {
     if (visible && !isMainnet()) {
@@ -269,7 +286,7 @@ export function PaywallModal({
     setPhase("error");
   }
 
-  async function showResult(access: AccessResult, run: number) {
+  async function showResult(access: AccessResult, run: number, shouldCache = true) {
     if (!isActive(run)) return;
     void hapticSuccess();
     setResult(access);
@@ -277,8 +294,18 @@ export function PaywallModal({
       await openExternalUrl(access.url);
       if (isActive(run)) close();
     } else {
+      if (shouldCache) {
+        setCachedContent(access.content);
+        void cacheContent(resourceId, access.content).catch(() => undefined);
+      }
       setPhase("result");
     }
+  }
+
+  function handleOpenCachedContent() {
+    if (cachedContent === null) return;
+    const run = ++flow.current;
+    void showResult({ type: "text", content: cachedContent }, run, false);
   }
 
   function handleConfirmHighPayment() {
@@ -389,20 +416,28 @@ export function PaywallModal({
 
             {phase === "confirm" && (
               <View style={styles.body}>
-                <Text style={typography.body}>
-                  This resource requires a payment of{" "}
-                  <Text style={{ fontWeight: "700", color: colors.primary }}>
-                    {price} USDC
-                  </Text>{" "}
-                  on {networkLabel} to access.
-                </Text>
-                <Text style={styles.hint}>
-                  You'll sign the payment with your Stellar key; the server pays the network fee.
-                </Text>
-                <Text style={styles.hint} accessibilityLabel={`Spending limit ${spendingLimit} USDC per payment`}>
-                  Spending limit: {spendingLimit} USDC per payment.
-                </Text>
-                {isOverLimit ? (
+                {cachedContent !== null ? (
+                  <Text style={typography.body}>
+                    This resource is unlocked on this device and can be opened without another payment.
+                  </Text>
+                ) : (
+                  <>
+                    <Text style={typography.body}>
+                      This resource requires a payment of{" "}
+                      <Text style={{ fontWeight: "700", color: colors.primary }}>
+                        {price} USDC
+                      </Text>{" "}
+                      on {networkLabel} to access.
+                    </Text>
+                    <Text style={styles.hint}>
+                      You'll sign the payment with your Stellar key; the server pays the network fee.
+                    </Text>
+                    <Text style={styles.hint} accessibilityLabel={`Spending limit ${spendingLimit} USDC per payment`}>
+                      Spending limit: {spendingLimit} USDC per payment.
+                    </Text>
+                  </>
+                )}
+                {cachedContent === null && isOverLimit ? (
                   <Text accessibilityRole="alert" style={styles.warning}>
                     This payment is above your spending limit and needs extra confirmation.
                   </Text>
@@ -410,7 +445,7 @@ export function PaywallModal({
                 {warningMsg ? (
                   <Text accessibilityRole="alert" style={styles.warning}>{warningMsg}</Text>
                 ) : null}
-                {showLimitConfirm ? (
+                {cachedContent === null && showLimitConfirm ? (
                   <View style={styles.warningPanel}>
                     <Text accessibilityRole="alert" style={styles.warning}>
                       Type CONFIRM to allow this payment above your {spendingLimit} USDC limit.
@@ -439,15 +474,15 @@ export function PaywallModal({
                 ) : null}
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => void handlePay()}
+                  onPress={cachedContent !== null ? handleOpenCachedContent : () => void handlePay()}
                   style={[shared.button, shared.primaryButton, styles.actionBtn]}
                 >
                   <Text style={[shared.buttonText, shared.primaryButtonText]}>
-                    Pay & Access
+                    {cachedContent !== null ? "Open" : "Pay & Access"}
                   </Text>
                 </Pressable>
 
-                {showRentOption && (
+                {cachedContent === null && showRentOption && (
                   <Pressable
                     accessibilityRole="button"
                     onPress={handleOpenLeaseSheet}
