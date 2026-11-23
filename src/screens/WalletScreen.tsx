@@ -7,9 +7,11 @@ import * as Clipboard from "expo-clipboard";
 import { useToast } from "../components/ToastProvider";
 import {
   buildAddUsdcTrustlineXdr,
+  fetchWalletBalances,
   fundWithFriendbot,
   hasUsdcTrustline,
   submitSignedTransaction,
+  type WalletBalances,
 } from "../api/horizon";
 import {
   getNetwork,
@@ -25,7 +27,12 @@ import {
   type PendingConnection,
   type WalletConnectAccount,
 } from "../services/walletconnect";
-import { wipe as wipeWalletSecrets } from "../services/wallet";
+import {
+  generateWallet,
+  getPublicKey,
+  importWallet,
+  wipe as wipeWalletSecrets,
+} from "../services/wallet";
 import { clearApiKey } from "../services/secureStorage";
 import { spacing, type ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
@@ -50,8 +57,15 @@ export function WalletScreen() {
   const [wipeOpen, setWipeOpen] = useState(false);
   const [wipeText, setWipeText] = useState("");
   const [wiping, setWiping] = useState(false);
+  const [localAddress, setLocalAddress] = useState<string | null>(null);
+  const [balances, setBalances] = useState<WalletBalances | null>(null);
+  const [balancesLoading, setBalancesLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [secret, setSecret] = useState("");
   const mounted = useRef(true);
   const testnetOnly = network === "testnet";
+  const receiveAddress = account?.address ?? localAddress;
 
   useEffect(() => {
     mounted.current = true;
@@ -69,6 +83,16 @@ export function WalletScreen() {
     return () => {
       mounted.current = false;
     };
+  }, []);
+
+  useEffect(() => {
+    getPublicKey()
+      .then((key) => {
+        if (mounted.current) setLocalAddress(key);
+      })
+      .catch(() => {
+        if (mounted.current) setLocalAddress(null);
+      });
   }, []);
 
   useEffect(() => subscribeNetwork(setNetwork), []);
@@ -160,6 +184,61 @@ export function WalletScreen() {
     }
   }, [account, testnetOnly, refreshTrustline, toast]);
 
+  const refreshBalances = useCallback(async () => {
+    if (!receiveAddress) return;
+    setBalancesLoading(true);
+    setBalanceError(null);
+    try {
+      const data = await fetchWalletBalances(receiveAddress);
+      if (mounted.current) setBalances(data);
+    } catch (err) {
+      if (mounted.current) {
+        setBalanceError(err instanceof Error ? err.message : "Unable to load balances.");
+      }
+    } finally {
+      if (mounted.current) setBalancesLoading(false);
+    }
+  }, [receiveAddress]);
+
+  useEffect(() => {
+    if (status === "loading" || !receiveAddress) {
+      setBalances(null);
+      setBalanceError(null);
+      return;
+    }
+    void refreshBalances();
+  }, [receiveAddress, status, refreshBalances]);
+
+  const copyAddress = useCallback(async () => {
+    if (!receiveAddress) return;
+    await Clipboard.setStringAsync(receiveAddress);
+    toast.info("Wallet address copied");
+  }, [receiveAddress, toast]);
+
+  const createLocalWallet = useCallback(async () => {
+    try {
+      const address = await generateWallet();
+      if (!mounted.current) return;
+      setLocalAddress(address);
+      toast.success("Wallet created");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to create wallet.");
+    }
+  }, [toast]);
+
+  const importLocalWallet = useCallback(async () => {
+    try {
+      const address = await importWallet(secret.trim());
+      if (!mounted.current) return;
+      setLocalAddress(address);
+      setSecret("");
+      setImportOpen(false);
+      toast.success("Wallet imported");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to import wallet.");
+    }
+  }, [secret, toast]);
+
   const wipeEverything = useCallback(async () => {
     setWiping(true);
     try {
@@ -172,6 +251,10 @@ export function WalletScreen() {
       if (!mounted.current) return;
       setAccount(null);
       setPending(null);
+      setLocalAddress(null);
+      setBalances(null);
+      setImportOpen(false);
+      setSecret("");
       setWipeOpen(false);
       setWipeText("");
       toast.success("Wallet wiped and signed out");
@@ -306,6 +389,126 @@ export function WalletScreen() {
         {status !== "loading" ? (
           <View style={styles.card}>
             <Text style={typography.cardTitle} accessibilityRole="header">
+              Receive
+            </Text>
+            {receiveAddress ? (
+              <>
+                <Text style={styles.label}>Your address</Text>
+                <Text
+                  style={styles.address}
+                  selectable
+                  accessibilityLabel={`Wallet address ${receiveAddress}`}
+                >
+                  {receiveAddress}
+                </Text>
+                <View style={styles.qrFrame} accessible accessibilityLabel="Wallet address QR code">
+                  <QRCode value={receiveAddress} size={200} backgroundColor="#ffffff" color="#000000" />
+                </View>
+                <Pressable
+                  onPress={() => void copyAddress()}
+                  style={[shared.button, styles.action]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Copy wallet address"
+                >
+                  <Text style={shared.buttonText}>Copy address</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void refreshBalances()}
+                  disabled={balancesLoading}
+                  accessibilityRole="button"
+                  accessibilityLabel="Refresh balances"
+                  accessibilityState={{ disabled: balancesLoading, busy: balancesLoading }}
+                  style={[shared.button, styles.action]}
+                >
+                  {balancesLoading ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <Text style={shared.buttonText}>Refresh balances</Text>
+                  )}
+                </Pressable>
+                {balances ? (
+                  <View style={styles.balances}>
+                    <Text style={typography.body}>XLM: {balances.xlm}</Text>
+                    <Text style={typography.body}>USDC: {balances.usdc ?? "0"}</Text>
+                    {balances.xlm === "0" ? (
+                      <Text style={styles.hint}>This account is not funded yet.</Text>
+                    ) : null}
+                    {balances.usdc === null ? (
+                      <Text style={styles.hint}>No USDC trustline on this account.</Text>
+                    ) : null}
+                  </View>
+                ) : null}
+                {balanceError ? (
+                  <Text style={styles.error} accessibilityRole="alert">
+                    {balanceError}
+                  </Text>
+                ) : null}
+              </>
+            ) : importOpen ? (
+              <View style={styles.wipeForm}>
+                <Text style={typography.body}>Paste your Stellar secret key to import a wallet.</Text>
+                <TextInput
+                  value={secret}
+                  onChangeText={setSecret}
+                  placeholder="Stellar secret key"
+                  placeholderTextColor={colors.textMuted}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!balancesLoading}
+                  accessibilityLabel="Wallet secret key"
+                  style={styles.input}
+                />
+                <Pressable
+                  onPress={() => void importLocalWallet()}
+                  disabled={!secret.trim()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Import wallet"
+                  accessibilityState={{ disabled: !secret.trim() }}
+                  style={[shared.button, shared.primaryButton, styles.action]}
+                >
+                  <Text style={[shared.buttonText, shared.primaryButtonText]}>Import wallet</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setImportOpen(false);
+                    setSecret("");
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel import"
+                  style={styles.action}
+                >
+                  <Text style={[shared.buttonText, { color: colors.textMuted }]}>Cancel</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.wipeForm}>
+                <Text style={typography.body}>
+                  Create a local wallet or import one with a secret key to receive funds.
+                </Text>
+                <Pressable
+                  onPress={() => void createLocalWallet()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Create wallet"
+                  style={[shared.button, shared.primaryButton, styles.action]}
+                >
+                  <Text style={[shared.buttonText, shared.primaryButtonText]}>Create wallet</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setImportOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Import wallet"
+                  style={[shared.button, styles.action]}
+                >
+                  <Text style={shared.buttonText}>Import wallet</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        ) : null}
+        {status !== "loading" ? (
+          <View style={styles.card}>
+            <Text style={typography.cardTitle} accessibilityRole="header">
               Wipe wallet
             </Text>
             <Text style={typography.body}>
@@ -392,6 +595,7 @@ function createStyles(colors: ThemeColors) {
     qrFrame: { padding: spacing.md, backgroundColor: "#ffffff", borderRadius: 12 },
     testnetPanel: { gap: spacing.sm, padding: spacing.sm, borderRadius: 12, backgroundColor: colors.neutralBg },
     hint: { fontSize: 12, color: colors.textMuted },
+    balances: { gap: spacing.xs, paddingVertical: spacing.sm },
     action: { alignSelf: "stretch" },
     wipeForm: { gap: spacing.sm },
     input: {

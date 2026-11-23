@@ -3,7 +3,9 @@ import { Account, Asset, Keypair, Operation, TransactionBuilder } from "@stellar
 import {
   buildAddUsdcTrustlineXdr,
   checkUsdcForPayment,
+  fetchWalletBalances,
   fundWithFriendbot,
+  getHorizonUrl,
   hasUsdcTrustline,
   submitSignedTransaction,
 } from "./horizon";
@@ -41,6 +43,72 @@ beforeEach(() => {
 
 afterEach(() => {
   global.fetch = originalFetch;
+});
+
+describe("wallet balances", () => {
+  it("uses the configured network's Horizon URL", () => {
+    expect(getHorizonUrl()).toBe(config.horizonUrl);
+  });
+
+  it("requires a non-empty address", async () => {
+    await expect(fetchWalletBalances("")).rejects.toThrow("A wallet address is required.");
+    await expect(fetchWalletBalances("   ")).rejects.toThrow("A wallet address is required.");
+  });
+
+  it("returns XLM and USDC balances", async () => {
+    mockLoadAccount.mockResolvedValueOnce({
+      balances: [
+        { asset_type: "native", balance: "100.0000000" },
+        { asset_type: "credit_alphanum4", asset_code: "USDC", balance: "25.5000000" },
+      ],
+    });
+
+    await expect(fetchWalletBalances(publicKey)).resolves.toEqual({
+      xlm: "100.0000000",
+      usdc: "25.5000000",
+    });
+  });
+
+  it("returns a null USDC balance when there is no trustline", async () => {
+    mockLoadAccount.mockResolvedValueOnce({
+      balances: [{ asset_type: "native", balance: "50.0000000" }],
+    });
+
+    await expect(fetchWalletBalances(publicKey)).resolves.toEqual({
+      xlm: "50.0000000",
+      usdc: null,
+    });
+  });
+
+  it("treats an unfunded account as zero balances", async () => {
+    mockLoadAccount.mockRejectedValueOnce(Object.assign(new Error("Not Found"), { status: 404 }));
+
+    await expect(fetchWalletBalances(publicKey)).resolves.toEqual({ xlm: "0", usdc: null });
+  });
+
+  it("handles a nested 404 status", async () => {
+    mockLoadAccount.mockRejectedValueOnce(
+      Object.assign(new Error("Not Found"), { response: { status: 404 } })
+    );
+
+    await expect(fetchWalletBalances(publicKey)).resolves.toEqual({ xlm: "0", usdc: null });
+  });
+
+  it("maps network errors to a user-safe message", async () => {
+    mockLoadAccount.mockRejectedValueOnce(new TypeError("Network request failed"));
+
+    await expect(fetchWalletBalances(publicKey)).rejects.toThrow(
+      "Network error. Please check your connection."
+    );
+  });
+
+  it("propagates other Horizon errors", async () => {
+    mockLoadAccount.mockRejectedValueOnce(
+      Object.assign(new Error("Server error"), { status: 500 })
+    );
+
+    await expect(fetchWalletBalances(publicKey)).rejects.toThrow("Server error");
+  });
 });
 
 it("funds a testnet account through Friendbot", async () => {

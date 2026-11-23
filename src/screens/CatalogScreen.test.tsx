@@ -73,8 +73,8 @@ jest.mock("@react-navigation/native", () => {
   const React = require("react");
   return {
     useFocusEffect: (effect: () => void | (() => void)) => {
-      const [run] = React.useState(() => effect);
-      React.useEffect(() => run(), [run]);
+      (globalThis as any).__catalogFocusEffect = effect;
+      React.useEffect(() => effect(), []);
     },
   };
 });
@@ -702,5 +702,27 @@ describe("CatalogScreen owner filter", () => {
         expect.stringContaining(`"owner":"${OWNER}"`)
       )
     );
+  });
+});
+
+describe("CatalogScreen refresh on focus", () => {
+  it("shows the relative update time and refetches stale data on focus", async () => {
+    const now = new Date("2026-11-23T12:00:00Z");
+    jest.setSystemTime(now);
+    const screen = renderCatalog();
+
+    await waitFor(() => expect(mockedFetchCatalog).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Updated .*ago/)).toBeTruthy();
+
+    const focus = () => act(() => {
+      (globalThis as any).__catalogFocusEffect?.();
+    });
+
+    focus();
+    expect(mockedFetchCatalog).toHaveBeenCalledTimes(1);
+
+    jest.setSystemTime(new Date(now.getTime() + 61_000));
+    focus();
+    await waitFor(() => expect(mockedFetchCatalog).toHaveBeenCalledTimes(2));
   });
 });

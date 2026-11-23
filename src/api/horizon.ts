@@ -5,6 +5,12 @@ import { getNetworkConfig, type StellarNetworkConfig } from "../config/network";
 export const TESTNET_USDC_ASSET_CODE = "USDC";
 const USDC_DECIMALS = 7;
 
+export interface WalletBalances {
+  xlm: string;
+  /** null when the account has no USDC trustline. */
+  usdc: string | null;
+}
+
 export interface FriendbotResult {
   funded: boolean;
   hash?: string;
@@ -38,6 +44,53 @@ function parseUsdcAmount(value: string): bigint {
 
 function serverFor(config: StellarNetworkConfig): Horizon.Server {
   return new Horizon.Server(config.horizonUrl);
+}
+
+/** Horizon URL for the app's currently configured network. */
+export function getHorizonUrl(): string {
+  return getNetworkConfig().horizonUrl;
+}
+
+function isHorizonNotFound(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const row = error as Record<string, unknown>;
+  if (row.status === 404) return true;
+  const response = row.response as Record<string, unknown> | undefined;
+  return response?.status === 404;
+}
+
+/**
+ * Fetches XLM and USDC balances for an address. Unfunded accounts resolve to
+ * zero balances rather than an error so the wallet screen can show them.
+ */
+export async function fetchWalletBalances(address: string): Promise<WalletBalances> {
+  const trimmed = address.trim();
+  if (!trimmed) throw new Error("A wallet address is required.");
+
+  try {
+    const account = await serverFor(getNetworkConfig()).loadAccount(trimmed);
+    const balances = account.balances;
+    const xlmEntry = balances.find((balance) => balance.asset_type === "native");
+    const usdcEntry = balances.find(
+      (balance) =>
+        balance.asset_type !== "native" &&
+        "asset_code" in balance &&
+        balance.asset_code === TESTNET_USDC_ASSET_CODE
+    );
+    return {
+      xlm: xlmEntry?.balance ?? "0",
+      usdc: usdcEntry && "balance" in usdcEntry ? usdcEntry.balance : null,
+    };
+  } catch (error) {
+    if (isHorizonNotFound(error)) return { xlm: "0", usdc: null };
+    if (error instanceof Error) {
+      const message = error.message;
+      if (message && !/network request failed|failed to fetch/i.test(message)) {
+        throw new Error(message);
+      }
+    }
+    throw new Error("Network error. Please check your connection.");
+  }
 }
 
 function assertTestnetConfig(config: StellarNetworkConfig): void {

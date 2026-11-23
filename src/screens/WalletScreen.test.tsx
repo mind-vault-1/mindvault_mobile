@@ -15,12 +15,18 @@ jest.mock("../services/walletconnect", () => ({
   signXdrWithWallet: jest.fn(),
 }));
 jest.mock("../api/horizon", () => ({
+  fetchWalletBalances: jest.fn(),
   fundWithFriendbot: jest.fn(),
   hasUsdcTrustline: jest.fn(),
   buildAddUsdcTrustlineXdr: jest.fn(),
   submitSignedTransaction: jest.fn(),
 }));
-jest.mock("../services/wallet", () => ({ wipe: jest.fn() }));
+jest.mock("../services/wallet", () => ({
+  wipe: jest.fn(),
+  getPublicKey: jest.fn().mockResolvedValue(null),
+  generateWallet: jest.fn(),
+  importWallet: jest.fn(),
+}));
 jest.mock("../services/secureStorage", () => ({ clearApiKey: jest.fn() }));
 jest.mock("react-native-qrcode-svg", () => "QRCode");
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
@@ -30,7 +36,13 @@ jest.mock("react-native-safe-area-context", () => ({
 }));
 
 const mocked = wc as jest.Mocked<typeof wc>;
-const mockedWallet = jest.requireMock("../services/wallet") as { wipe: jest.Mock };
+const mockedWallet = jest.requireMock("../services/wallet") as {
+  wipe: jest.Mock;
+  getPublicKey: jest.Mock;
+  generateWallet: jest.Mock;
+  importWallet: jest.Mock;
+};
+const mockedClipboard = jest.requireMock("expo-clipboard") as { setStringAsync: jest.Mock };
 const mockedSecureStorage = jest.requireMock("../services/secureStorage") as { clearApiKey: jest.Mock };
 const mockedHorizon = horizon as jest.Mocked<typeof horizon>;
 const ADDRESS = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7";
@@ -53,6 +65,8 @@ beforeEach(() => {
   resetNetworkForTests();
   mockedHorizon.hasUsdcTrustline.mockResolvedValue(true);
   mockedHorizon.fundWithFriendbot.mockResolvedValue({ funded: true });
+  mockedHorizon.fetchWalletBalances.mockResolvedValue({ xlm: "10.0000000", usdc: "2.5000000" });
+  mockedWallet.getPublicKey.mockResolvedValue(null);
 });
 
 describe("WalletScreen", () => {
@@ -185,5 +199,96 @@ describe("WalletScreen", () => {
       expect.objectContaining({ id: "testnet" })
     );
     expect(await findByText("USDC trustline added")).toBeTruthy();
+  });
+});
+
+describe("WalletScreen receive and balances", () => {
+  it("shows the local address, QR code and balances", async () => {
+    mocked.getConnectedAccount.mockResolvedValue(null);
+    mockedWallet.getPublicKey.mockResolvedValue(ADDRESS);
+    const { findByLabelText, findByText } = await renderScreen();
+
+    expect(await findByLabelText(`Wallet address ${ADDRESS}`)).toBeTruthy();
+    expect(await findByLabelText("Wallet address QR code")).toBeTruthy();
+    expect(await findByText("XLM: 10.0000000")).toBeTruthy();
+    expect(await findByText("USDC: 2.5000000")).toBeTruthy();
+    expect(mockedHorizon.fetchWalletBalances).toHaveBeenCalledWith(ADDRESS);
+  });
+
+  it("copies the receiving address", async () => {
+    mocked.getConnectedAccount.mockResolvedValue(null);
+    mockedWallet.getPublicKey.mockResolvedValue(ADDRESS);
+    const { findByLabelText } = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(await findByLabelText("Copy wallet address"));
+    });
+
+    expect(mockedClipboard.setStringAsync).toHaveBeenCalledWith(ADDRESS);
+  });
+
+  it("refreshes balances on demand", async () => {
+    mocked.getConnectedAccount.mockResolvedValue(null);
+    mockedWallet.getPublicKey.mockResolvedValue(ADDRESS);
+    const { findByLabelText } = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(await findByLabelText("Refresh balances"));
+    });
+
+    expect(mockedHorizon.fetchWalletBalances).toHaveBeenCalledTimes(2);
+  });
+
+  it("handles an unfunded account gracefully", async () => {
+    mocked.getConnectedAccount.mockResolvedValue(null);
+    mockedWallet.getPublicKey.mockResolvedValue(ADDRESS);
+    mockedHorizon.fetchWalletBalances.mockResolvedValue({ xlm: "0", usdc: null });
+    const { findByText } = await renderScreen();
+
+    expect(await findByText("XLM: 0")).toBeTruthy();
+    expect(await findByText("USDC: 0")).toBeTruthy();
+    expect(await findByText("This account is not funded yet.")).toBeTruthy();
+    expect(await findByText("No USDC trustline on this account.")).toBeTruthy();
+  });
+
+  it("shows a balance fetch error", async () => {
+    mocked.getConnectedAccount.mockResolvedValue(null);
+    mockedWallet.getPublicKey.mockResolvedValue(ADDRESS);
+    mockedHorizon.fetchWalletBalances.mockRejectedValue(new Error("Horizon unavailable"));
+    const { findByText } = await renderScreen();
+
+    expect(await findByText("Horizon unavailable")).toBeTruthy();
+  });
+
+  it("creates a local wallet", async () => {
+    mocked.getConnectedAccount.mockResolvedValue(null);
+    mockedWallet.generateWallet.mockResolvedValue(ADDRESS);
+    const { findByLabelText } = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(await findByLabelText("Create wallet"));
+    });
+
+    expect(mockedWallet.generateWallet).toHaveBeenCalled();
+    expect(await findByLabelText(`Wallet address ${ADDRESS}`)).toBeTruthy();
+  });
+
+  it("imports a local wallet from a secret key", async () => {
+    mocked.getConnectedAccount.mockResolvedValue(null);
+    mockedWallet.importWallet.mockResolvedValue(ADDRESS);
+    const screen = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Import wallet"));
+    });
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText("Wallet secret key"), "SSECRET");
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Import wallet"));
+    });
+
+    expect(mockedWallet.importWallet).toHaveBeenCalledWith("SSECRET");
+    expect(await screen.findByLabelText(`Wallet address ${ADDRESS}`)).toBeTruthy();
   });
 });
