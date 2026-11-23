@@ -4,6 +4,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { fetchLeaderboard, type LeaderboardEntry } from "../api/publishers";
+import { fetchAgentStatus, type AgentStatus } from "../api/verification";
+import { AgentStatusCard } from "../components/AgentStatusCard";
 import { EmptyState } from "../components/EmptyState";
 import type { RootStackParamList } from "../navigation";
 import { spacing, type ThemeColors } from "../theme";
@@ -30,6 +32,27 @@ export function LeaderboardScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [agentError, setAgentError] = useState<string | null>(null);
+
+  const loadAgent = useCallback(async (signal?: AbortSignal) => {
+    setAgentLoading(true);
+    setAgentError(null);
+    try {
+      const data = await fetchAgentStatus(signal);
+      if (signal?.aborted) return;
+      setAgentStatus(data);
+    } catch (err) {
+      if (signal?.aborted) return;
+      setAgentError(err instanceof Error ? err.message : "Failed to load agent status");
+    } finally {
+      if (!signal?.aborted) {
+        setAgentLoading(false);
+      }
+    }
+  }, []);
+
   const load = useCallback(async (mode: "initial" | "refresh", signal?: AbortSignal) => {
     if (mode === "refresh") setRefreshing(true);
     else setLoading(true);
@@ -52,8 +75,9 @@ export function LeaderboardScreen({ navigation }: Props) {
   useEffect(() => {
     const controller = new AbortController();
     void load("initial", controller.signal);
+    void loadAgent(controller.signal);
     return () => controller.abort();
-  }, [load]);
+  }, [load, loadAgent]);
 
   if (loading) {
     return (
@@ -90,16 +114,27 @@ export function LeaderboardScreen({ navigation }: Props) {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => void load("refresh")}
+            onRefresh={() => {
+              void load("refresh");
+              void loadAgent();
+            }}
             tintColor={colors.primary}
           />
         }
         ListHeaderComponent={
-          error ? (
-            <Text style={styles.errorText} accessibilityRole="alert">
-              {error}
-            </Text>
-          ) : null
+          <View>
+            <AgentStatusCard
+              status={agentStatus}
+              loading={agentLoading}
+              error={agentError}
+              onRetry={() => void loadAgent()}
+            />
+            {error ? (
+              <Text style={styles.errorText} accessibilityRole="alert">
+                {error}
+              </Text>
+            ) : null}
+          </View>
         }
         ListEmptyComponent={
           <EmptyState title="No publishers yet" body="Publishers appear here once they register." />

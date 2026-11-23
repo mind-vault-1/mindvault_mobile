@@ -67,6 +67,70 @@ export async function fetchVerification(id: string): Promise<VerificationDetails
   return data;
 }
 
+/** Shape returned by the AI verification agent status endpoint. */
+export interface AgentStatus {
+  verificationsProcessed: number;
+  approvalRate: number;
+  earnings: string;
+  status?: string;
+}
+
+export const agentStatusSchema = (value: unknown): AgentStatus => {
+  const row = asRecord(value);
+
+  const verificationsProcessed =
+    typeof row.verificationsProcessed === "number"
+      ? row.verificationsProcessed
+      : typeof row.verifications_processed === "number"
+      ? row.verifications_processed
+      : null;
+
+  const approvalRate =
+    typeof row.approvalRate === "number"
+      ? row.approvalRate
+      : typeof row.approval_rate === "number"
+      ? row.approval_rate
+      : null;
+
+  const earnings =
+    typeof row.earnings === "string"
+      ? row.earnings
+      : typeof row.earnings === "number"
+      ? String(row.earnings)
+      : typeof row.totalEarned === "string"
+      ? row.totalEarned
+      : typeof row.total_earnings === "string" || typeof row.total_earnings === "number"
+      ? String(row.total_earnings)
+      : null;
+
+  if (verificationsProcessed === null || approvalRate === null || earnings === null) {
+    throw new Error(UNEXPECTED);
+  }
+
+  return {
+    verificationsProcessed,
+    approvalRate,
+    earnings,
+    ...(typeof row.status === "string" ? { status: row.status } : {}),
+  };
+};
+
+/** Fetches AI verification agent status and stats from the server. */
+export async function fetchAgentStatus(signal?: AbortSignal): Promise<AgentStatus> {
+  const { data } = await request<AgentStatus>(
+    `${getApiBaseUrl()}/verify/agent-status`,
+    {
+      fallbackMessage: "Failed to load agent status",
+      retry: false,
+      signal,
+      schema: agentStatusSchema,
+    }
+  );
+  return data;
+}
+
+export const fetchVerificationAgentStatus = fetchAgentStatus;
+
 /** Formats a confidence value from either a 0–1 fraction or a 0–100 percentage. */
 export function formatConfidence(confidence: number): string {
   const percent = confidence <= 1 ? confidence * 100 : confidence;

@@ -1,4 +1,4 @@
-import { fetchVerification, formatConfidence } from "./verification";
+import { fetchAgentStatus, fetchVerification, formatConfidence } from "./verification";
 import { getApiBaseUrl } from "./resources";
 
 describe("fetchVerification", () => {
@@ -64,5 +64,84 @@ describe("formatConfidence", () => {
     expect(formatConfidence(0.874)).toBe("87%");
     expect(formatConfidence(1)).toBe("100%");
     expect(formatConfidence(92)).toBe("92%");
+  });
+});
+
+describe("fetchAgentStatus", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("requests the agent-status endpoint and parses the response", async () => {
+    const mockStatus = {
+      verificationsProcessed: 1240,
+      approvalRate: 0.95,
+      earnings: "150.00",
+      status: "active",
+    };
+
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => mockStatus,
+    });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    const result = await fetchAgentStatus();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getApiBaseUrl()}/verify/agent-status`,
+      expect.objectContaining({ method: "GET" })
+    );
+    expect(result).toEqual({
+      verificationsProcessed: 1240,
+      approvalRate: 0.95,
+      earnings: "150.00",
+      status: "active",
+    });
+  });
+
+  it("accepts snake_case properties from server", async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        verifications_processed: 500,
+        approval_rate: 0.88,
+        total_earnings: "42.50",
+      }),
+    });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    const result = await fetchAgentStatus();
+    expect(result).toEqual({
+      verificationsProcessed: 500,
+      approvalRate: 0.88,
+      earnings: "42.50",
+    });
+  });
+
+  it("surfaces server error message on failure", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "Internal agent failure" }),
+      text: async () => JSON.stringify({ error: "Internal agent failure" }),
+      headers: { get: () => "application/json" },
+    }) as unknown as typeof global.fetch;
+
+    await expect(fetchAgentStatus()).rejects.toThrow("Internal agent failure");
+  });
+
+  it("rejects invalid agent status schema", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "active" }),
+    }) as unknown as typeof global.fetch;
+
+    await expect(fetchAgentStatus()).rejects.toThrow("The server returned an unexpected response.");
   });
 });

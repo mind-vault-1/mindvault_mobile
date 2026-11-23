@@ -3,15 +3,21 @@ import { act, fireEvent, render } from "@testing-library/react-native";
 
 import { describeEntry, LeaderboardScreen } from "./LeaderboardScreen";
 import { fetchLeaderboard, type LeaderboardEntry } from "../api/publishers";
+import { fetchAgentStatus } from "../api/verification";
 import { ThemeProvider } from "../theme/ThemeProvider";
 
 jest.mock("../api/publishers", () => ({ fetchLeaderboard: jest.fn() }));
+jest.mock("../api/verification", () => ({
+  fetchAgentStatus: jest.fn(),
+  formatConfidence: jest.requireActual("../api/verification").formatConfidence,
+}));
 jest.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
 const mockFetch = fetchLeaderboard as jest.MockedFunction<typeof fetchLeaderboard>;
+const mockFetchAgent = fetchAgentStatus as jest.MockedFunction<typeof fetchAgentStatus>;
 const navigation = { navigate: jest.fn() } as any;
 
 const entry = (over: Partial<LeaderboardEntry>): LeaderboardEntry => ({
@@ -40,7 +46,15 @@ async function renderScreen() {
   return screen;
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockFetchAgent.mockResolvedValue({
+    verificationsProcessed: 1240,
+    approvalRate: 0.95,
+    earnings: "150.00",
+    status: "active",
+  });
+});
 
 describe("LeaderboardScreen", () => {
   it("renders a ranked list with earnings and resource count", async () => {
@@ -94,5 +108,51 @@ describe("LeaderboardScreen", () => {
     expect(describeEntry(entry({ totalSales: 1, totalResources: 1 }), 1, 5)).toBe(
       "Rank 1 of 5, Ada Publishing, earned 12.5000 USDC from 1 sale, 1 resource"
     );
+  });
+
+  it("renders the AI verification agent status card with accessible numbers", async () => {
+    mockFetch.mockResolvedValue([entry({})]);
+    mockFetchAgent.mockResolvedValue({
+      verificationsProcessed: 1240,
+      approvalRate: 0.95,
+      earnings: "150.00",
+      status: "active",
+    });
+
+    const { getByText, getByLabelText } = await renderScreen();
+
+    expect(getByText("AI Verification Agent")).toBeTruthy();
+    expect(getByText("1,240")).toBeTruthy();
+    expect(getByText("95%")).toBeTruthy();
+    expect(getByText("150.00 USDC")).toBeTruthy();
+
+    expect(getByLabelText("1,240 verifications processed")).toBeTruthy();
+    expect(getByLabelText("Approval rate 95%")).toBeTruthy();
+    expect(getByLabelText("Total earnings 150.00 USDC")).toBeTruthy();
+  });
+
+  it("renders agent status error with a retry button", async () => {
+    mockFetch.mockResolvedValue([entry({})]);
+    mockFetchAgent
+      .mockRejectedValueOnce(new Error("Agent offline"))
+      .mockResolvedValueOnce({
+        verificationsProcessed: 50,
+        approvalRate: 1,
+        earnings: "10.00",
+      });
+
+    const { getByText, getByLabelText } = await renderScreen();
+
+    expect(getByText("Agent offline")).toBeTruthy();
+    const retryButton = getByLabelText("Retry loading agent status");
+    expect(retryButton).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(retryButton);
+    });
+
+    expect(mockFetchAgent).toHaveBeenCalledTimes(2);
+    expect(getByText("50")).toBeTruthy();
+    expect(getByText("100%")).toBeTruthy();
   });
 });
