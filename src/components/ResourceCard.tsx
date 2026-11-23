@@ -1,25 +1,24 @@
 import * as Clipboard from "expo-clipboard";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
 import { getApiBaseUrl } from "../api/resources";
 import type { Resource } from "../types";
 import { getResourceTypeLabel } from "../types";
-import { useEditPrice, validatePrice } from "../hooks/useEditPrice";
 import { isImageCached, rememberImage } from "../utils/imageCache";
 import { shareResource } from "../utils/shareResource";
 import { hapticImpact } from "../utils/haptics";
+import { useFavorite } from "../services/favorites";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
-import { SignTransactionSheet } from "./SignTransactionSheet";
+import { EditPriceSheet } from "./EditPriceSheet";
 
 interface ResourceCardProps {
   resource: Resource;
@@ -135,6 +134,43 @@ export function ResourceThumbnail({
   );
 }
 
+/**
+ * Heart toggle that saves a resource on this device. State comes from the shared
+ * favourites store, so every card and the detail screen stay in step.
+ */
+export function FavoriteButton({
+  resourceId,
+  title,
+}: {
+  resourceId: string;
+  title: string;
+}) {
+  const { colors } = useAppTheme();
+  const { isFavorite, toggle } = useFavorite(resourceId);
+
+  return (
+    <Pressable
+      onPress={() => {
+        void hapticImpact();
+        void toggle();
+      }}
+      hitSlop={8}
+      style={styles.favoriteButton}
+      accessibilityRole="togglebutton"
+      accessibilityLabel={`Favourite ${title}`}
+      accessibilityHint="Saves this resource on this device"
+      accessibilityState={{ checked: isFavorite }}
+    >
+      <Text
+        style={[styles.favoriteIcon, { color: isFavorite ? colors.danger : colors.textMuted }]}
+        accessible={false}
+      >
+        {isFavorite ? "♥" : "♡"}
+      </Text>
+    </Pressable>
+  );
+}
+
 export function ResourceCard({
   resource,
   onCopyUrl,
@@ -149,26 +185,8 @@ export function ResourceCard({
   const verification = verificationStyle(resource.verificationStatus, colors);
   const onchain = onchainStyle(resource.onchainStatus, colors);
   const thumbnailUri = getResourceThumbnailUri(resource);
-  const {
-    status,
-    error,
-    pendingTransaction,
-    preparePriceEdit,
-    submitSigned,
-    cancelSigning,
-    resetError,
-  } = useEditPrice();
-  const [editing, setEditing] = useState(false);
-  const [newPrice, setNewPrice] = useState(resource.price);
-  const [priceTouched, setPriceTouched] = useState(false);
+  const [priceSheetVisible, setPriceSheetVisible] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  // Sync newPrice from resource.price when it changes and not actively editing
-  useEffect(() => {
-    if (!editing) {
-      setNewPrice(resource.price);
-    }
-  }, [resource.price, editing]);
 
   const dynamicStyles = useMemo(
     () =>
@@ -176,36 +194,9 @@ export function ResourceCard({
         shareButton: {
           backgroundColor: colors.primary,
         },
-        input: {
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: 12,
-          backgroundColor: colors.surface,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-          color: colors.text,
-          fontSize: 14,
-        },
-        inputError: {
-          borderColor: colors.danger,
-        },
-        primaryButton: {
-          backgroundColor: colors.primary,
-        },
-        statusText: {
-          color: colors.primary,
-          fontSize: 13,
-        },
-        errorText: {
-          color: colors.danger,
-          fontSize: 13,
-        },
         successText: {
           color: colors.success,
           fontSize: 13,
-        },
-        secondaryButton: {
-          backgroundColor: colors.neutralBg,
         },
         transferButton: {
           backgroundColor: colors.neutralBg,
@@ -238,47 +229,6 @@ export function ResourceCard({
       onCopyUrl("Unable to share resource. Please try copying the URL instead.");
     }
   }
-
-  // Inline price validation error (shown after the field has been touched)
-  const priceValidationError = priceTouched ? validatePrice(newPrice) : null;
-
-  async function handleSavePrice() {
-    resetError();
-    setSuccessMessage(null);
-    setPriceTouched(true);
-
-    // Show price validation errors immediately without calling the API
-    if (validatePrice(newPrice) !== null) {
-      return;
-    }
-
-    await preparePriceEdit(resource.id, newPrice);
-  }
-
-  async function handleSignedPrice(signedXdr: string) {
-    const ok = await submitSigned(signedXdr);
-    if (ok) {
-      setSuccessMessage("Price updated successfully.");
-      setEditing(false);
-      setPriceTouched(false);
-      // Notify parent so it can update its local state (issue #65)
-      onPriceUpdated?.(resource.id, newPrice);
-    }
-  }
-
-  const isBusy = status !== "idle";
-  const isSaveDisabled =
-    isBusy ||
-    validatePrice(newPrice) !== null;
-
-  const statusLabel =
-    status === "preparing"
-      ? "Preparing transaction…"
-      : status === "signing"
-      ? "Signing transaction…"
-      : status === "submitting"
-      ? "Submitting transaction…"
-      : null;
 
   const canRegister =
     Boolean(onRegister) &&
@@ -343,6 +293,7 @@ export function ResourceCard({
       <View style={styles.footer}>
         <Text style={typography.price}>{resource.price} USDC</Text>
         <View style={styles.actions}>
+          <FavoriteButton resourceId={resource.id} title={resource.title} />
           <Pressable
             onPress={handleShare}
             style={[shared.button, dynamicStyles.shareButton]}
@@ -365,162 +316,61 @@ export function ResourceCard({
       </View>
 
       {editablePrice || canRegister || onTransferOwnership || onDelist ? (
-        editing ? (
-          <View style={styles.editor}>
-            <TextInput
-              value={newPrice}
-              onChangeText={(text) => {
-                setNewPrice(text);
-                if (!priceTouched) setPriceTouched(true);
+        <View style={styles.publisherActions}>
+          {editablePrice ? (
+            <Pressable
+              onPress={() => {
+                setSuccessMessage(null);
+                setPriceSheetVisible(true);
               }}
-              onBlur={() => setPriceTouched(true)}
-              placeholder="New price"
-              placeholderTextColor={colors.textSubtle}
-              keyboardType="numeric"
-              style={[
-                dynamicStyles.input,
-                priceValidationError ? dynamicStyles.inputError : null,
-              ]}
-              editable={!isBusy}
-              accessibilityLabel="New price in USDC"
-              accessibilityHint="Enter the updated price for this resource"
-            />
-            {priceValidationError ? (
-              <Text
-                style={dynamicStyles.errorText}
-                accessibilityLiveRegion="assertive"
-                accessibilityRole="alert"
-              >
-                {priceValidationError}
-              </Text>
-            ) : null}
-            <View style={styles.actionRow}>
-              <Pressable
-                onPress={() => {
-                  setEditing(false);
-                  setPriceTouched(false);
-                  setNewPrice(resource.price);
-                  resetError();
-                }}
-                style={[shared.button, dynamicStyles.secondaryButton]}
-                disabled={isBusy}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel price edit"
-                accessibilityHint="Discards changes and closes the price editor"
-                accessibilityState={{ disabled: isBusy }}
-              >
-                <Text style={shared.buttonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleSavePrice}
-                style={[
-                  shared.button,
-                  dynamicStyles.primaryButton,
-                  isSaveDisabled ? styles.disabledButton : null,
-                ]}
-                disabled={isSaveDisabled}
-                accessibilityRole="button"
-                accessibilityLabel="Save new price"
-                accessibilityHint={
-                  isBusy
-                    ? "Transaction in progress, please wait"
-                    : "Submits the price update transaction to the Stellar network"
-                }
-                accessibilityState={{ disabled: isSaveDisabled, busy: isBusy }}
-              >
-                {isBusy ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <Text style={[shared.buttonText, styles.primaryButtonText]}>Save Price</Text>
-                )}
-              </Pressable>
-            </View>
-            {statusLabel ? (
-              <Text
-                style={dynamicStyles.statusText}
-                accessibilityLiveRegion="polite"
-                accessibilityRole="none"
-              >
-                {statusLabel}
-              </Text>
-            ) : null}
-            {error ? (
-              <Text
-                style={dynamicStyles.errorText}
-                accessibilityLiveRegion="assertive"
-                accessibilityRole="alert"
-              >
-                {error}
-              </Text>
-            ) : null}
-            {successMessage ? (
-              <Text
-                style={dynamicStyles.successText}
-                accessibilityLiveRegion="polite"
-                accessibilityRole="none"
-              >
-                {successMessage}
-              </Text>
-            ) : null}
-          </View>
-        ) : (
-          <View style={styles.publisherActions}>
-            {editablePrice ? (
-              <Pressable
-                onPress={() => {
-                  setNewPrice(resource.price);
-                  setPriceTouched(false);
-                  setEditing(true);
-                }}
-                style={[shared.button, styles.editButton]}
-                accessibilityRole="button"
-                accessibilityLabel={`Edit price for ${resource.title}`}
-                accessibilityHint="Opens the price editor for this resource"
-              >
-                <Text style={shared.buttonText}>Edit price</Text>
-              </Pressable>
-            ) : null}
+              style={shared.button}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit price for ${resource.title}`}
+              accessibilityHint="Opens the price editor for this resource"
+            >
+              <Text style={shared.buttonText}>Edit price</Text>
+            </Pressable>
+          ) : null}
 
-            {canRegister ? (
-              <Pressable
-                onPress={() => onRegister?.(resource)}
-                style={[shared.button, dynamicStyles.registerButton]}
-                accessibilityRole="button"
-                accessibilityLabel={`Register ${resource.title} on-chain`}
-                accessibilityHint="Opens the on-chain registration flow for this resource"
-              >
-                <Text style={shared.buttonText}>Register on-chain</Text>
-              </Pressable>
-            ) : null}
+          {canRegister ? (
+            <Pressable
+              onPress={() => onRegister?.(resource)}
+              style={[shared.button, dynamicStyles.registerButton]}
+              accessibilityRole="button"
+              accessibilityLabel={`Register ${resource.title} on-chain`}
+              accessibilityHint="Opens the on-chain registration flow for this resource"
+            >
+              <Text style={shared.buttonText}>Register on-chain</Text>
+            </Pressable>
+          ) : null}
 
-            {onTransferOwnership ? (
-              <Pressable
-                onPress={() => onTransferOwnership(resource)}
-                style={[shared.button, dynamicStyles.transferButton]}
-                accessibilityRole="button"
-                accessibilityLabel={`Transfer ownership of ${resource.title}`}
-                accessibilityHint="Opens the ownership transfer flow for this resource"
-              >
-                <Text style={shared.buttonText}>Transfer Ownership</Text>
-              </Pressable>
-            ) : null}
+          {onTransferOwnership ? (
+            <Pressable
+              onPress={() => onTransferOwnership(resource)}
+              style={[shared.button, dynamicStyles.transferButton]}
+              accessibilityRole="button"
+              accessibilityLabel={`Transfer ownership of ${resource.title}`}
+              accessibilityHint="Opens the ownership transfer flow for this resource"
+            >
+              <Text style={shared.buttonText}>Transfer Ownership</Text>
+            </Pressable>
+          ) : null}
 
-            {onDelist ? (
-              <Pressable
-                onPress={() => onDelist(resource)}
-                style={[shared.button, dynamicStyles.delistButton]}
-                accessibilityRole="button"
-                accessibilityLabel={`Delist ${resource.title}`}
-                accessibilityHint="Opens a confirmation before removing this resource from the catalog"
-              >
-                <Text style={[shared.buttonText, dynamicStyles.delistButtonText]}>Delist</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        )
+          {onDelist ? (
+            <Pressable
+              onPress={() => onDelist(resource)}
+              style={[shared.button, dynamicStyles.delistButton]}
+              accessibilityRole="button"
+              accessibilityLabel={`Delist ${resource.title}`}
+              accessibilityHint="Opens a confirmation before removing this resource from the catalog"
+            >
+              <Text style={[shared.buttonText, dynamicStyles.delistButtonText]}>Delist</Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
 
-      {successMessage && !editing ? (
+      {successMessage ? (
         <Text
           style={dynamicStyles.successText}
           accessibilityLiveRegion="polite"
@@ -529,13 +379,16 @@ export function ResourceCard({
           {successMessage}
         </Text>
       ) : null}
-      <SignTransactionSheet
-        visible={pendingTransaction !== null}
-        unsignedXdr={pendingTransaction?.unsignedXdr ?? ""}
-        networkPassphrase={pendingTransaction?.networkPassphrase}
-        action="update this resource's price"
-        onCancel={cancelSigning}
-        onSigned={handleSignedPrice}
+      <EditPriceSheet
+        visible={priceSheetVisible}
+        resourceId={resource.id}
+        resourceTitle={resource.title}
+        oldPrice={resource.price}
+        onClose={() => setPriceSheetVisible(false)}
+        onUpdated={(newPrice) => {
+          setSuccessMessage("Price updated successfully.");
+          onPriceUpdated?.(resource.id, newPrice);
+        }}
       />
     </View>
   );
@@ -553,6 +406,15 @@ const styles = StyleSheet.create({
   fallbackIcon: {
     fontSize: 32,
   },
+  favoriteButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  favoriteIcon: {
+    fontSize: 24,
+  },
   badges: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -568,26 +430,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
-  editor: {
-    marginTop: 16,
-    gap: 10,
-  },
-  actionRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8,
-  },
   primaryButtonText: {
     color: "#ffffff",
-  },
-  disabledButton: {
-    opacity: 0.6,
   },
   publisherActions: {
     marginTop: 12,
     gap: 8,
-  },
-  editButton: {
-    // no extra margin needed — publisherActions gap handles it
   },
 });

@@ -4,6 +4,8 @@ import { fireEvent } from "@testing-library/react-native";
 import { getApiBaseUrl } from "../api/resources";
 import type { Resource } from "../types";
 import { renderWithProviders } from "../test-utils";
+import { act } from "@testing-library/react-native";
+import { resetFavoritesForTests } from "../services/favorites";
 import { getResourceThumbnailUri, ResourceCard } from "./ResourceCard";
 
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
@@ -85,5 +87,54 @@ describe("getResourceThumbnailUri", () => {
     expect(getResourceThumbnailUri({ ...base, mimeType: "IMAGE/JPEG" })).toBe(
       `${getApiBaseUrl()}/resources/res-1/thumbnail`
     );
+  });
+});
+
+describe("favourite toggle", () => {
+  beforeEach(() => {
+    resetFavoritesForTests();
+  });
+
+  it("exposes an accessible toggle that starts unchecked", () => {
+    const screen = renderCard(base);
+    const heart = screen.getByRole("togglebutton", { name: "Favourite Stellar handbook" });
+
+    expect(heart.props.accessibilityState).toEqual({ checked: false });
+  });
+
+  it("flips to checked on press and back on a second press", async () => {
+    const screen = renderCard(base);
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Favourite Stellar handbook"));
+    });
+    expect(screen.getByLabelText("Favourite Stellar handbook").props.accessibilityState).toEqual({
+      checked: true,
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Favourite Stellar handbook"));
+    });
+    expect(screen.getByLabelText("Favourite Stellar handbook").props.accessibilityState).toEqual({
+      checked: false,
+    });
+  });
+
+  it("keeps two cards for the same resource in step, but not other resources", async () => {
+    const screen = renderWithProviders(
+      <>
+        <ResourceCard resource={base} onCopyUrl={jest.fn()} />
+        <ResourceCard resource={base} onCopyUrl={jest.fn()} />
+        <ResourceCard resource={{ ...base, id: "res-2", title: "Other" }} onCopyUrl={jest.fn()} />
+      </>
+    );
+
+    await act(async () => {
+      fireEvent.press(screen.getAllByLabelText("Favourite Stellar handbook")[0]);
+    });
+
+    const same = screen.getAllByLabelText("Favourite Stellar handbook");
+    expect(same.map((node) => node.props.accessibilityState.checked)).toEqual([true, true]);
+    expect(screen.getByLabelText("Favourite Other").props.accessibilityState.checked).toBe(false);
   });
 });

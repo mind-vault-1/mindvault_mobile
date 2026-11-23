@@ -1,3 +1,4 @@
+import * as WebBrowser from "expo-web-browser";
 import { Linking } from "react-native";
 
 import { getNetwork, getNetworkConfig, NETWORKS, type StellarNetworkId } from "../config/network";
@@ -53,7 +54,22 @@ export function stellarExpertAccountUrl(opts: {
   return `https://stellar.expert/explorer/${segment}/account/${encodeURIComponent(opts.accountId)}`;
 }
 
+/**
+ * Opens a URL in the in-app browser (Safari View Controller / Chrome Custom Tab)
+ * so explorer and external content do not take the user out of the app.
+ * Only http(s) URLs use the in-app browser; anything else, and any failure to
+ * launch it, falls back to the system handler via `Linking`.
+ */
 export async function openExternalUrl(url: string): Promise<void> {
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      await WebBrowser.openBrowserAsync(url);
+      return;
+    } catch {
+      // Fall through to the system handler below.
+    }
+  }
+
   const canOpen = await Linking.canOpenURL(url);
   if (!canOpen) throw new Error("Cannot open URL");
   await Linking.openURL(url);
