@@ -21,7 +21,7 @@ import {
 } from "../api/verification";
 import { useAppForeground } from "../hooks/useAppForeground";
 import { getPublicKey } from "../services/wallet";
-import { ResourceThumbnail } from "../components/ResourceCard";
+import { FavoriteButton, ResourceThumbnail } from "../components/ResourceCard";
 import { StatusBadge } from "../components/StatusBadge";
 import { PaywallModal } from "../components/PaywallModal";
 import { useToast } from "../components/ToastProvider";
@@ -116,6 +116,15 @@ function createStyles(colors: ThemeColors) {
       color: colors.textSubtle,
       fontSize: 14,
       lineHeight: 20,
+    },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: spacing.sm,
+    },
+    titleText: {
+      flex: 1,
     },
     actionButton: {
       alignSelf: "stretch",
@@ -417,7 +426,10 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
           />
         ) : null}
         <Text style={typography.subtitle}>Resource</Text>
-        <Text style={typography.title}>{resource.title}</Text>
+        <View style={styles.titleRow}>
+          <Text style={[typography.title, styles.titleText]}>{resource.title}</Text>
+          <FavoriteButton resourceId={resource.id} title={resource.title} />
+        </View>
 
         {resource.publisherName ? (
           <Text style={typography.body}>Published by {resource.publisherName}</Text>

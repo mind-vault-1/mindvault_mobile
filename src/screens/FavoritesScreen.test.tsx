@@ -17,6 +17,7 @@ jest.mock("../services/favorites", () => ({
   loadFavorites: jest.fn(),
   getFavoriteIds: jest.fn(),
   toggleFavorite: jest.fn(),
+  useFavorite: () => ({ isFavorite: false, toggle: jest.fn() }),
 }));
 jest.mock("../components/ToastProvider", () => ({ useToast: () => ({ info: jest.fn() }) }));
 // The skeleton's looping animation keeps scheduling frames, which slows the
