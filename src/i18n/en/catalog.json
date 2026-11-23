@@ -25,6 +25,8 @@
   "catalog.updated": "Updated {time}",
   "catalog.settings": "Settings",
   "catalog.settingsHint": "Opens app settings",
+  "catalog.gridView": "Switch to grid view",
+  "catalog.listView": "Switch to list view",
   "catalog.searchPlaceholder": "Search resources…",
   "catalog.searchLabel": "Search resources",
   "catalog.searchHintWithHistory": "Recent searches are listed below while this field is focused",
