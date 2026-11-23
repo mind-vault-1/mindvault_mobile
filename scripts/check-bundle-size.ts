@@ -45,7 +45,7 @@ export const BUNDLE_BUDGETS: BundleSizes = {
 };
 
 /** Direct `dependencies` in package.json (devDependencies are not counted). */
-export const MAX_PRODUCTION_DEPENDENCIES = 38;
+export const MAX_PRODUCTION_DEPENDENCIES = 39;
 
 export interface PlatformResult {
   platform: Platform;

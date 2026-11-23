@@ -12,6 +12,7 @@ import {
 import { getApiBaseUrl } from "../api/resources";
 import type { Resource } from "../types";
 import { getResourceTypeLabel } from "../types";
+import type { CatalogLayout } from "../hooks/useLayout";
 import { isImageCached, rememberImage } from "../utils/imageCache";
 import { shareResource } from "../utils/shareResource";
 import { hapticImpact } from "../utils/haptics";
@@ -32,6 +33,8 @@ interface ResourceCardProps {
   onTransferOwnership?: (resource: Resource) => void;
   /** Called when the user taps "Delist" */
   onDelist?: (resource: Resource) => void;
+  /** `grid` squeezes the card into a narrow multi-column cell. */
+  layout?: CatalogLayout;
 }
 
 function shortenAddress(address: string): string {
@@ -180,8 +183,10 @@ export function ResourceCard({
   onPriceUpdated,
   onTransferOwnership,
   onDelist,
+  layout = "list",
 }: ResourceCardProps) {
   const { colors, shared, typography } = useAppTheme();
+  const isGrid = layout === "grid";
   const verification = verificationStyle(resource.verificationStatus, colors);
   const onchain = onchainStyle(resource.onchainStatus, colors);
   const thumbnailUri = getResourceThumbnailUri(resource);
@@ -246,7 +251,9 @@ export function ResourceCard({
           resourceType={resource.resourceType}
         />
       ) : null}
-      <Text style={typography.cardTitle}>{resource.title}</Text>
+      <Text style={typography.cardTitle} numberOfLines={isGrid ? 2 : undefined}>
+        {resource.title}
+      </Text>
 
       {resource.publisherName ? (
         <Text style={typography.body}>by {resource.publisherName}</Text>
@@ -290,13 +297,13 @@ export function ResourceCard({
         </View>
       </View>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, isGrid && styles.footerGrid]}>
         <Text style={typography.price}>{resource.price} USDC</Text>
         <View style={styles.actions}>
           <FavoriteButton resourceId={resource.id} title={resource.title} />
           <Pressable
             onPress={handleShare}
-            style={[shared.button, dynamicStyles.shareButton]}
+            style={[shared.button, dynamicStyles.shareButton, isGrid && styles.gridButton]}
             accessibilityRole="button"
             accessibilityLabel={`Share ${resource.title}`}
             accessibilityHint="Opens the share sheet with the resource title and URL"
@@ -305,7 +312,7 @@ export function ResourceCard({
           </Pressable>
           <Pressable
             onPress={handleCopy}
-            style={shared.button}
+            style={[shared.button, isGrid && styles.gridButton]}
             accessibilityRole="button"
             accessibilityLabel={`Copy URL for ${resource.title}`}
             accessibilityHint="Copies the resource access URL to your clipboard"
@@ -426,6 +433,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: 4,
   },
+  footerGrid: {
+    flexDirection: "column",
+    alignItems: "stretch",
+  },
   actions: {
     flexDirection: "row",
     gap: 8,
@@ -436,5 +447,8 @@ const styles = StyleSheet.create({
   publisherActions: {
     marginTop: 12,
     gap: 8,
+  },
+  gridButton: {
+    flex: 1,
   },
 });
