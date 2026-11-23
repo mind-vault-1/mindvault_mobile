@@ -1,6 +1,7 @@
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { Alert, Linking, Share } from "react-native";
+import * as WebBrowser from "expo-web-browser";
+import { Alert, Share } from "react-native";
 import {
   NavigationContainer,
   createNavigationContainerRef,
@@ -15,6 +16,7 @@ import { AppLockProvider } from "../hooks/useAppLock";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { renderWithProviders, setupFetchMock } from "../test-utils";
 
+jest.mock("expo-web-browser", () => ({ openBrowserAsync: jest.fn() }));
 jest.mock("expo-local-authentication", () => ({
   hasHardwareAsync: jest.fn().mockResolvedValue(true),
   isEnrolledAsync: jest.fn().mockResolvedValue(true),
@@ -266,19 +268,17 @@ describe("local data", () => {
   });
 
   it("links to the privacy policy next to the clear buttons", async () => {
-    const canOpenURL = jest.spyOn(Linking, "canOpenURL").mockResolvedValue(true);
-    const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+    const openBrowser = WebBrowser.openBrowserAsync as jest.Mock;
+    openBrowser.mockClear().mockResolvedValue({ type: "opened" });
     const screen = await renderSettings();
 
     fireEvent.press(screen.getByLabelText("Privacy policy"));
 
     await waitFor(() =>
-      expect(openURL).toHaveBeenCalledWith(
+      expect(openBrowser).toHaveBeenCalledWith(
         "https://github.com/mind-vault-1/mindvault_mobile/blob/main/docs/PRIVACY.md"
       )
     );
-    canOpenURL.mockRestore();
-    openURL.mockRestore();
   });
 });
 

@@ -21,6 +21,7 @@ import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { parseResourceId } from "../utils/resourceLinks";
 import { hapticImpact } from "../utils/haptics";
+import { isWeb } from "../utils/platform";
 
 interface ScannerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, "Scanner">;
@@ -389,6 +390,27 @@ export function ScannerScreen({ navigation }: ScannerScreenProps) {
       </View>
     </Modal>
   );
+
+  if (isWeb()) {
+    return (
+      <SafeAreaView style={styles.centered} edges={["top", "left", "right"]}>
+        <Text style={styles.heading} accessibilityRole="header">Enter a resource link</Text>
+        <Text style={[typography.body, styles.permissionBody]} accessibilityRole="alert">
+          Camera scanning is not available in the browser. Paste a MindVault resource link instead.
+        </Text>
+        <Pressable
+          style={[shared.button, shared.primaryButton]}
+          onPress={openPasteModal}
+          accessibilityRole="button"
+          accessibilityLabel="Paste Link Instead"
+          accessibilityHint="Opens input to manually paste a resource link"
+        >
+          <Text style={[shared.buttonText, shared.primaryButtonText]}>Paste Link Instead</Text>
+        </Pressable>
+        {pasteModal}
+      </SafeAreaView>
+    );
+  }
 
   if (!permission) {
     return (
