@@ -5,6 +5,7 @@ import { getApiKey } from "../services/secureStorage";
 import { PAYMENT_SIGNATURE_HEADER } from "./payment";
 import {
   atomicToDisplay,
+  buildPublishIdempotencyKey,
   fetchPublishStatus,
   pollPublishStatus,
   publishLink,
@@ -151,6 +152,9 @@ describe("publishLink", () => {
     expect(url).toMatch(/\/resources$/);
     expect(init.method).toBe("POST");
     expect(init.headers["x-api-key"]).toBe("publisher-key");
+    expect(init.headers["Idempotency-Key"]).toBe(
+      "publish|Stellar handbook|https://example.com/handbook|1.5|A guide"
+    );
     expect(JSON.parse(init.body)).toEqual({
       resourceType: "link",
       title: "Stellar handbook",
@@ -158,6 +162,23 @@ describe("publishLink", () => {
       price: "1.5",
       description: "A guide",
     });
+  });
+
+  it("reuses provided idempotency key when provided", async () => {
+    fetchMock.mockResolvedValue(mockResponse(201, createdResource));
+
+    await publishLink(validInput, undefined, "custom-idem-key");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers["Idempotency-Key"]).toBe("custom-idem-key");
+  });
+
+  it("surfaces clear still processing message on 409 conflict", async () => {
+    fetchMock.mockResolvedValue(mockResponse(409, { error: "Conflict" }));
+
+    await expect(publishLink(validInput)).rejects.toThrow(
+      "Your publish request is still processing. Please wait a moment before retrying."
+    );
   });
 
   it("returns the verification fee challenge on 402", async () => {

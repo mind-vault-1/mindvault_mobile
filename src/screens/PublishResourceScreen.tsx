@@ -161,6 +161,12 @@ function createStyles(colors: ThemeColors) {
     secondary: { backgroundColor: colors.neutralBg },
     secondaryText: { color: colors.text, fontWeight: "600" },
     disabled: { opacity: 0.5 },
+    submittingContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: spacing.sm,
+    },
   });
 }
 
@@ -181,6 +187,7 @@ export function PublishResourceScreen() {
   const [timelineStatus, setTimelineStatus] = useState<PublishStatus>({ status: "submitted" });
   const [queued, setQueued] = useState<QueuedMutation | null>(null);
   const [queuedDone, setQueuedDone] = useState(false);
+  const [currentIdempotencyKey, setCurrentIdempotencyKey] = useState<string | null>(null);
   const queuedRef = useRef<QueuedMutation | null>(null);
 
   // Keep the Queued card in sync with the offline queue (retry status, replay).
@@ -221,6 +228,7 @@ export function PublishResourceScreen() {
 
   function update(key: Field, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setCurrentIdempotencyKey(null);
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
@@ -235,13 +243,17 @@ export function PublishResourceScreen() {
   }
 
   async function submit(payment?: { challenge: PaymentChallenge; transaction: string }) {
+    if (submitting) return;
     setSubmitError(null);
+    const key = currentIdempotencyKey ?? publishIdempotencyKey();
+    setCurrentIdempotencyKey(key);
+
     if (isOffline) {
       // Offline: persist the action — the UI shows "Queued", never a spinner.
       const entry = await enqueueMutation({
         kind: "publish",
         payload: { input: form, payment, title: form.title.trim() },
-        idempotencyKey: publishIdempotencyKey(),
+        idempotencyKey: key,
       });
       queuedRef.current = entry;
       setQueued(entry);
@@ -250,13 +262,14 @@ export function PublishResourceScreen() {
     }
     setSubmitting(true);
     try {
-      const result = await publishLink(form, payment);
+      const result = await publishLink(form, payment, key);
       if (result.type === "payment") {
         setFee({ challenge: result.challenge, amount: result.fee });
         return;
       }
       setFee(null);
       setPublished(result.resource);
+      setCurrentIdempotencyKey(null);
       toast.success("Resource published");
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to publish resource");
@@ -266,6 +279,7 @@ export function PublishResourceScreen() {
   }
 
   function handleSubmit() {
+    if (submitting) return;
     const found = validatePublishLink(form);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
@@ -288,6 +302,7 @@ export function PublishResourceScreen() {
     queuedRef.current = null;
     setQueued(null);
     setQueuedDone(false);
+    setCurrentIdempotencyKey(null);
   }
 
   async function handleRetry() {
@@ -547,7 +562,10 @@ export function PublishResourceScreen() {
               accessibilityState={{ disabled: submitting, busy: submitting }}
             >
               {submitting ? (
-                <ActivityIndicator color={colors.onPrimary} />
+                <View style={styles.submittingContent}>
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
+                  <Text style={styles.buttonText}>Still processing…</Text>
+                </View>
               ) : (
                 <Text style={styles.buttonText}>Pay and publish</Text>
               )}
@@ -564,7 +582,10 @@ export function PublishResourceScreen() {
           accessibilityState={{ disabled: submitting, busy: submitting }}
         >
           {submitting ? (
-            <ActivityIndicator color={colors.onPrimary} />
+            <View style={styles.submittingContent}>
+              <ActivityIndicator color={colors.onPrimary} size="small" />
+              <Text style={styles.buttonText}>Still processing…</Text>
+            </View>
           ) : (
             <Text style={styles.buttonText}>Publish</Text>
           )}
