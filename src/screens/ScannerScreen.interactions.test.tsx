@@ -125,12 +125,13 @@ describe("ScannerScreen scanning", () => {
 
   it("clears the retry timer on unmount", async () => {
     const screen = await renderScreen();
+    const baselineTimers = jest.getTimerCount();
 
     scan("just some text");
-    expect(jest.getTimerCount()).toBe(1);
+    expect(jest.getTimerCount()).toBe(baselineTimers + 1);
 
     screen.unmount();
-    expect(jest.getTimerCount()).toBe(0);
+    expect(jest.getTimerCount()).toBe(baselineTimers);
   });
 
   it("asks before opening an external URL and opens it on confirm", async () => {

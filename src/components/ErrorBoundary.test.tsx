@@ -20,10 +20,7 @@ afterEach(() => jest.restoreAllMocks());
 it("shows the fallback when a child throws and retry remounts it", () => {
   let shouldThrow = true;
   function Child() {
-    if (shouldThrow) {
-      shouldThrow = false;
-      throw new Error("render failed");
-    }
+    if (shouldThrow) throw new Error("render failed");
     return <Text>Recovered content</Text>;
   }
 
@@ -34,6 +31,7 @@ it("shows the fallback when a child throws and retry remounts it", () => {
   );
   expect(screen.getByText("Something went wrong")).toBeTruthy();
 
+  shouldThrow = false;
   fireEvent.press(screen.getByText("Try again"));
   expect(screen.getByText("Recovered content")).toBeTruthy();
 });
