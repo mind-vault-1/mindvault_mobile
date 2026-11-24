@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  findNodeHandle,
   Modal,
   Pressable,
   ScrollView,
@@ -22,9 +24,19 @@ interface RegisterModalProps {
   onClose: () => void;
   onSuccess: (message: string, txHash: string) => void;
   onError: (message: string) => void;
+  /** The control that opened the modal. Focus returns here on close when provided. */
+  returnFocusRef?: { current: unknown };
 }
 
 type RegistrationStep = "idle" | "preparing" | "signing" | "submitting" | "success" | "error";
+
+/** Spoken when the flow moves to a new step. Idle is silent. */
+const STEP_ANNOUNCEMENTS: Partial<Record<RegistrationStep, string>> = {
+  preparing: "Preparing transaction.",
+  signing: "Waiting for your signature.",
+  submitting: "Submitting to the blockchain.",
+  success: "Registration successful.",
+};
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
@@ -111,6 +123,7 @@ export function RegisterModal({
   onClose,
   onSuccess,
   onError,
+  returnFocusRef,
 }: RegisterModalProps) {
   const { colors, shared, typography } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -120,6 +133,32 @@ export function RegisterModal({
   const [networkPassphrase, setNetworkPassphrase] = useState<string | undefined>();
   const [txHash, setTxHash] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
+
+  const headingRef = useRef<Text>(null);
+  const wasVisible = useRef(false);
+
+  // Move focus into the modal when it opens, and back to the opener when it closes.
+  useEffect(() => {
+    if (visible && !wasVisible.current) {
+      const tag = headingRef.current ? findNodeHandle(headingRef.current) : null;
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    if (!visible && wasVisible.current && returnFocusRef?.current) {
+      const tag = findNodeHandle(returnFocusRef.current as Parameters<typeof findNodeHandle>[0]);
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    wasVisible.current = visible;
+  }, [visible, returnFocusRef]);
+
+  // Announce each step change so screen reader users hear progress, not just a spinner.
+  useEffect(() => {
+    if (step === "error") {
+      AccessibilityInfo.announceForAccessibility(`Registration failed. ${errorMessage}`);
+      return;
+    }
+    const message = STEP_ANNOUNCEMENTS[step];
+    if (message) AccessibilityInfo.announceForAccessibility(message);
+  }, [step, errorMessage]);
 
   async function handleRegister() {
     if (!resource) return;
@@ -275,9 +314,11 @@ export function RegisterModal({
         onRequestClose={handleClose}
       >
         <View style={styles.overlay}>
-          <View style={styles.modal}>
+          <View style={styles.modal} accessibilityViewIsModal>
             <ScrollView style={styles.content}>
-              <Text style={typography.heading}>Register Resource On-Chain</Text>
+              <Text ref={headingRef} accessibilityRole="header" style={typography.heading}>
+                Register Resource On-Chain
+              </Text>
               {renderContent()}
             </ScrollView>
           </View>

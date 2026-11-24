@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TransactionBuilder } from "@stellar/stellar-sdk";
 import * as ScreenCapture from "expo-screen-capture";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  findNodeHandle,
   Linking,
   Modal,
   Pressable,
@@ -36,6 +38,8 @@ interface SignTransactionSheetProps {
   sign?: (secret: string) => Promise<string>;
   /** Names the action in the biometric prompt, e.g. "lease this resource". */
   action?: string;
+  /** The control that opened the sheet. Focus returns here on close when provided. */
+  returnFocusRef?: { current: unknown };
 }
 
 function createStyles(colors: ThemeColors) {
@@ -80,6 +84,7 @@ export function SignTransactionSheet({
   onCancel,
   sign: customSign,
   action = "sign this transaction",
+  returnFocusRef,
 }: SignTransactionSheetProps) {
   const { colors, shared, typography } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -90,7 +95,27 @@ export function SignTransactionSheet({
   const [biometricsUnavailable, setBiometricsUnavailable] = useState(false);
   const [walletStatus, setWalletStatus] = useState<string | null>(null);
   const [localPublicKey, setLocalPublicKey] = useState<string | null>(null);
+  const headingRef = useRef<Text>(null);
+  const wasVisible = useRef(false);
   const validation = useMemo(() => validateStellarSecret(secret), [secret]);
+
+  // Move focus into the sheet when it opens, and back to the opener when it closes.
+  useEffect(() => {
+    if (visible && !wasVisible.current) {
+      const tag = headingRef.current ? findNodeHandle(headingRef.current) : null;
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    if (!visible && wasVisible.current && returnFocusRef?.current) {
+      const tag = findNodeHandle(returnFocusRef.current as Parameters<typeof findNodeHandle>[0]);
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    wasVisible.current = visible;
+  }, [visible, returnFocusRef]);
+
+  // Say when signing starts, since the spinner on the Sign button is easy to miss.
+  useEffect(() => {
+    if (busy) AccessibilityInfo.announceForAccessibility("Signing transaction.");
+  }, [busy]);
   const isNonProduction = /test|future network/i.test(networkPassphrase);
   const canUseSep7 = !customSign && Boolean(unsignedXdr.trim());
   const transactionInfo = useMemo(() => {
@@ -260,8 +285,10 @@ export function SignTransactionSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={cancel}>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
-          <Text style={typography.heading}>Sign transaction</Text>
+        <View style={styles.sheet} accessibilityViewIsModal>
+          <Text ref={headingRef} accessibilityRole="header" style={typography.heading}>
+            Sign transaction
+          </Text>
           <Text style={styles.network}>Network passphrase: {networkPassphrase}</Text>
           {isNonProduction ? (
             <Text style={styles.warning}>Development/test network — do not use a production account.</Text>
