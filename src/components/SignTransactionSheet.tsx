@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TransactionBuilder } from "@stellar/stellar-sdk";
 import * as ScreenCapture from "expo-screen-capture";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  findNodeHandle,
   Linking,
   Modal,
   Pressable,
@@ -19,6 +21,7 @@ import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { buildSep7TransactionUri, parseSep7Callback } from "../utils/sep7";
 import { validateStellarSecret } from "../utils/validateStellarSecret";
+import { t } from "../i18n";
 
 const SCREEN_CAPTURE_KEY = "mindvault-sign-transaction-sheet";
 
@@ -36,6 +39,8 @@ interface SignTransactionSheetProps {
   sign?: (secret: string) => Promise<string>;
   /** Names the action in the biometric prompt, e.g. "lease this resource". */
   action?: string;
+  /** The control that opened the sheet. Focus returns here on close when provided. */
+  returnFocusRef?: { current: unknown };
 }
 
 function createStyles(colors: ThemeColors) {
@@ -79,8 +84,10 @@ export function SignTransactionSheet({
   onSigned,
   onCancel,
   sign: customSign,
-  action = "sign this transaction",
+  action: actionProp,
+  returnFocusRef,
 }: SignTransactionSheetProps) {
+  const action = actionProp ?? t("modals.sign.defaultAction");
   const { colors, shared, typography } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [secret, setSecret] = useState("");
@@ -90,7 +97,27 @@ export function SignTransactionSheet({
   const [biometricsUnavailable, setBiometricsUnavailable] = useState(false);
   const [walletStatus, setWalletStatus] = useState<string | null>(null);
   const [localPublicKey, setLocalPublicKey] = useState<string | null>(null);
+  const headingRef = useRef<Text>(null);
+  const wasVisible = useRef(false);
   const validation = useMemo(() => validateStellarSecret(secret), [secret]);
+
+  // Move focus into the sheet when it opens, and back to the opener when it closes.
+  useEffect(() => {
+    if (visible && !wasVisible.current) {
+      const tag = headingRef.current ? findNodeHandle(headingRef.current) : null;
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    if (!visible && wasVisible.current && returnFocusRef?.current) {
+      const tag = findNodeHandle(returnFocusRef.current as Parameters<typeof findNodeHandle>[0]);
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    wasVisible.current = visible;
+  }, [visible, returnFocusRef]);
+
+  // Say when signing starts, since the spinner on the Sign button is easy to miss.
+  useEffect(() => {
+    if (busy) AccessibilityInfo.announceForAccessibility(t("modals.sign.announce.signing"));
+  }, [busy]);
   const isNonProduction = /test|future network/i.test(networkPassphrase);
   const canUseSep7 = !customSign && Boolean(unsignedXdr.trim());
   const transactionInfo = useMemo(() => {
@@ -160,12 +187,12 @@ export function SignTransactionSheet({
       const result = parseSep7Callback(url);
       if (!result || cancelled) return;
       if (result.status === "signed" && result.signedXdr) {
-        setWalletStatus("Signed in your wallet — returning to MindVault…");
+        setWalletStatus(t("modals.sign.walletSigned"));
         void onSigned(result.signedXdr);
       } else if (result.status === "rejected") {
-        setWalletStatus("Signing was declined in your wallet. You can try again or use a secret key.");
+        setWalletStatus(t("modals.sign.walletDeclined"));
       } else {
-        setWalletStatus("The wallet returned an incomplete result. Try again or use a secret key.");
+        setWalletStatus(t("modals.sign.walletIncomplete"));
       }
     };
 
@@ -189,11 +216,11 @@ export function SignTransactionSheet({
 
   async function openSep7Wallet() {
     if (!canUseSep7) return;
-    setWalletStatus("Opening your wallet… Return here after signing.");
+    setWalletStatus(t("modals.sign.walletOpening"));
     try {
       await Linking.openURL(buildSep7TransactionUri(unsignedXdr, { message: `MindVault ${action}` }));
     } catch {
-      setWalletStatus("No wallet app could be opened. Use a secret key below, or install a Stellar wallet.");
+      setWalletStatus(t("modals.sign.walletUnavailable"));
     }
   }
 
@@ -205,12 +232,12 @@ export function SignTransactionSheet({
     setSignError(null);
     // Re-authenticate the device owner before signing. Devices without
     // biometrics fall back to the secret-entry flow below.
-    const outcome = await authenticate(`Authenticate to ${action}`);
+    const outcome = await authenticate(t("modals.sign.authPrompt", { action }));
     if (outcome === "cancelled" || outcome === "failed") {
       setSignError(
         outcome === "cancelled"
-          ? "Biometric authentication was not completed."
-          : "Biometric authentication failed. Try again."
+          ? t("modals.sign.biometricsCancelled")
+          : t("modals.sign.biometricsFailed")
       );
       setBusy(false);
       return;
@@ -226,7 +253,7 @@ export function SignTransactionSheet({
       setSignError(
         customSign && err instanceof Error && err.message
           ? err.message
-          : "Couldn't sign this transaction. Check the key and network, then try again."
+          : t("modals.sign.failed")
       );
       setSecret("");
       setBusy(false);
@@ -250,7 +277,7 @@ export function SignTransactionSheet({
       await onSigned(signedXdr);
     } catch (err) {
       setSignError(
-        err instanceof Error ? err.message : "Unable to sign with the local wallet."
+        err instanceof Error ? err.message : t("modals.sign.localWalletFailed")
       );
     } finally {
       setBusy(false);
@@ -260,45 +287,51 @@ export function SignTransactionSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={cancel}>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
-          <Text style={typography.heading}>Sign transaction</Text>
-          <Text style={styles.network}>Network passphrase: {networkPassphrase}</Text>
+        <View style={styles.sheet} accessibilityViewIsModal>
+          <Text ref={headingRef} accessibilityRole="header" style={typography.heading}>
+            {t("modals.sign.title")}
+          </Text>
+          <Text style={styles.network}>{t("modals.sign.networkPassphrase", { passphrase: networkPassphrase })}</Text>
           {isNonProduction ? (
-            <Text style={styles.warning}>Development/test network — do not use a production account.</Text>
+            <Text style={styles.warning}>{t("modals.sign.testNetworkWarning")}</Text>
           ) : null}
           {canUseLocalWallet ? (
-            <View style={styles.walletPanel} accessibilityLabel="Local wallet signing">
-              <Text style={styles.label}>Sign with this device's wallet</Text>
+            <View style={styles.walletPanel} accessibilityLabel={t("modals.sign.localWalletLabel")}>
+              <Text style={styles.label}>{t("modals.sign.withDeviceWallet")}</Text>
               <Text style={styles.notice}>
-                Source account: {transactionInfo.source ?? localPublicKey}
+                {t("modals.sign.sourceAccount", { account: transactionInfo.source ?? localPublicKey ?? "" })}
               </Text>
               <Text style={styles.notice}>
-                Fee: {transactionInfo.fee ? `${transactionInfo.fee} XLM` : "Unavailable"}
+                {t("modals.sign.fee", {
+                  fee: transactionInfo.fee
+                    ? t("modals.sign.feeXlm", { fee: transactionInfo.fee })
+                    : t("modals.sign.feeUnavailable"),
+                })}
               </Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Sign with this device's wallet"
+                accessibilityLabel={t("modals.sign.withDeviceWallet")}
                 onPress={() => void signWithLocalWallet()}
                 disabled={busy}
                 style={[shared.button, styles.button, styles.secondary]}
               >
-                <Text style={styles.secondaryText}>Sign with this device's wallet</Text>
+                <Text style={styles.secondaryText}>{t("modals.sign.withDeviceWallet")}</Text>
               </Pressable>
             </View>
           ) : null}
           {canUseSep7 ? (
             <View style={styles.walletPanel}>
               <Text style={styles.notice}>
-                Prefer a wallet app? Open a SEP-7 signing request, then return here once it is signed.
+                {t("modals.sign.sep7Intro")}
               </Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Open wallet app (SEP-7)"
+                accessibilityLabel={t("modals.sign.openWalletAppLabel")}
                 onPress={() => void openSep7Wallet()}
                 disabled={busy}
                 style={[shared.button, styles.button, styles.secondary]}
               >
-                <Text style={styles.secondaryText}>Sign with wallet app</Text>
+                <Text style={styles.secondaryText}>{t("modals.sign.withWalletApp")}</Text>
               </Pressable>
               {walletStatus ? (
                 <Text accessibilityLiveRegion="polite" style={styles.notice}>{walletStatus}</Text>
@@ -307,11 +340,10 @@ export function SignTransactionSheet({
           ) : null}
           {biometricsUnavailable ? (
             <Text style={styles.notice}>
-              Biometric authentication is unavailable on this device — enter your secret key to
-              continue.
+              {t("modals.sign.biometricsUnavailable")}
             </Text>
           ) : null}
-          <Text style={styles.label}>Stellar secret key</Text>
+          <Text style={styles.label}>{t("modals.sign.secretKey")}</Text>
           <TextInput
             value={secret}
             onChangeText={setSecret}
@@ -322,7 +354,7 @@ export function SignTransactionSheet({
             editable={!busy}
             placeholder="S…"
             placeholderTextColor={colors.textSubtle}
-            accessibilityLabel="Stellar secret key"
+            accessibilityLabel={t("modals.sign.secretKey")}
             style={[styles.input, touched && !validation.isValid ? styles.invalid : null]}
           />
           {touched && !validation.isValid ? (
@@ -338,7 +370,7 @@ export function SignTransactionSheet({
               disabled={busy}
               style={[shared.button, styles.button, styles.secondary]}
             >
-              <Text style={styles.secondaryText}>Cancel</Text>
+              <Text style={styles.secondaryText}>{t("modals.cancel")}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -346,7 +378,7 @@ export function SignTransactionSheet({
               disabled={busy || !validation.isValid}
               style={[shared.button, styles.button, (busy || !validation.isValid) && styles.disabled]}
             >
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={shared.buttonText}>Sign</Text>}
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={shared.buttonText}>{t("modals.sign.submit")}</Text>}
             </Pressable>
           </View>
         </View>

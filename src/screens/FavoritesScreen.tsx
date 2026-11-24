@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   type ListRenderItemInfo,
@@ -11,13 +11,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useFocusEffect } from "@react-navigation/native";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
-import { fetchResource, ResourceFetchError } from "../api/resources";
+import { ResourceFetchError } from "../api/resources";
 import { EmptyState } from "../components/EmptyState";
 import { ResourceCard } from "../components/ResourceCard";
 import { SkeletonCard } from "../components/SkeletonCard";
 import { useToast } from "../components/ToastProvider";
+import { queryKeys, resourceDetailQueryOptions } from "../hooks/queries";
 import type { RootStackParamList } from "../navigation";
 import { getFavoriteIds, loadFavorites, toggleFavorite } from "../services/favorites";
 import type { Resource } from "../types";
@@ -60,45 +62,75 @@ export function FavoritesScreen({ navigation }: FavoritesScreenProps) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const toast = useToast();
 
-  const [entries, setEntries] = useState<FavoriteEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  // Saved ids, read from storage on every focus; null until the first read.
+  const [ids, setIds] = useState<string[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Ids already being forgotten, so a 404 removes each favourite only once.
+  const forgotten = useRef(new Set<string>());
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
-
+  const loadIds = useCallback(async () => {
     await loadFavorites();
-
-    const results = await Promise.all(
-      getFavoriteIds().map(async (id): Promise<FavoriteEntry & { notFound: boolean }> => {
-        try {
-          return { id, resource: await fetchResource(id), notFound: false };
-        } catch (error) {
-          // Only a definitive answer (404) means the resource is gone. A
-          // timeout, network drop or 5xx is worth retrying, so keep the entry.
-          const notFound = error instanceof ResourceFetchError && !error.isTransient;
-          return { id, resource: null, notFound };
-        }
-      })
-    );
-
-    // Forget deleted resources so they stop showing up on the next visit.
-    const deleted = results.filter((entry) => entry.notFound);
-    await Promise.all(deleted.map((entry) => toggleFavorite(entry.id)));
-
-    setEntries(
-      results.filter((entry) => !entry.notFound).map(({ id, resource }) => ({ id, resource }))
-    );
-    setLoading(false);
-    setRefreshing(false);
+    setIds(getFavoriteIds());
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      void load();
-    }, [load])
+      void loadIds();
+      // Coming back to the screen refreshes only what is out of date; cached
+      // metadata is shown straight away.
+      void queryClient.refetchQueries({ queryKey: queryKeys.details(), stale: true, type: "active" });
+    }, [loadIds, queryClient])
   );
+
+  const results = useQueries({
+    queries: (ids ?? []).map((id) => resourceDetailQueryOptions(id)),
+  });
+
+  // Only a definitive answer (404) means the resource is gone. A timeout,
+  // network drop or 5xx is worth retrying, so keep the entry.
+  const deletedIds = useMemo(
+    () =>
+      (ids ?? []).filter((_, index) => {
+        const error = results[index]?.error;
+        return error instanceof ResourceFetchError && !error.isTransient;
+      }),
+    [ids, results]
+  );
+
+  // Forget deleted resources so they stop showing up on the next visit.
+  useEffect(() => {
+    const fresh = deletedIds.filter((id) => !forgotten.current.has(id));
+    if (fresh.length === 0) return;
+    fresh.forEach((id) => forgotten.current.add(id));
+    void Promise.all(fresh.map((id) => toggleFavorite(id))).finally(() => {
+      setIds((current) => current?.filter((id) => !fresh.includes(id)) ?? null);
+      fresh.forEach((id) => queryClient.removeQueries({ queryKey: queryKeys.detail(id) }));
+    });
+  }, [deletedIds, queryClient]);
+
+  const entries = useMemo<FavoriteEntry[]>(
+    () =>
+      (ids ?? [])
+        .map((id, index) => ({ id, resource: results[index]?.data ?? null }))
+        .filter((entry) => !deletedIds.includes(entry.id)),
+    [ids, results, deletedIds]
+  );
+
+  // Skeletons for the first load only. A query paused while offline has no
+  // data yet; it shows the "couldn't refresh" card instead of spinning forever.
+  const loading =
+    ids === null || results.some((result) => result.isPending && result.fetchStatus === "fetching");
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadIds();
+      await queryClient.refetchQueries({ queryKey: queryKeys.details(), type: "active" });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadIds, queryClient]);
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<FavoriteEntry>) => {
@@ -146,7 +178,7 @@ export function FavoritesScreen({ navigation }: FavoritesScreenProps) {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />
         }
         renderItem={renderItem}
         ListHeaderComponent={

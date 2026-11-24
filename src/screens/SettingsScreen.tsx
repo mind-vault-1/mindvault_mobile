@@ -62,7 +62,18 @@ import {
   loadPreferences,
   savePerPaymentLimit,
 } from "../services/preferences";
-import { t } from "../i18n";
+import {
+  formatNumber,
+  LANGUAGE_NAMES,
+  setLanguagePreference,
+  SUPPORTED_LANGUAGES,
+  t,
+  useLanguagePreference,
+  useLocale,
+  type LanguagePreference,
+} from "../i18n";
+
+const LANGUAGE_OPTIONS: readonly LanguagePreference[] = ["system", ...SUPPORTED_LANGUAGES];
 
 /** docs/PRIVACY.md on the default branch: what is stored, what leaves the device, how to delete it. */
 const PRIVACY_POLICY_URL =
@@ -70,6 +81,9 @@ const PRIVACY_POLICY_URL =
 
 export function SettingsScreen() {
   const { colors, shared } = useAppTheme();
+  // Re-render in the new language as soon as it is picked.
+  useLocale();
+  const languagePreference = useLanguagePreference();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -103,6 +117,15 @@ export function SettingsScreen() {
   }, []);
 
   useEffect(() => subscribeNetwork(setNetworkState), []);
+
+  const handleLanguageChange = useCallback(async (next: LanguagePreference) => {
+    try {
+      await setLanguagePreference(next);
+    } catch {
+      // The language still changed for this session; only saving it failed.
+      Alert.alert(t("settings.error"), t("settings.languageSaveFailed"));
+    }
+  }, []);
 
   const handleNetworkChange = useCallback(
     (next: StellarNetworkId) => {
@@ -285,7 +308,7 @@ export function SettingsScreen() {
     : !health
       ? t("settings.unknownStatus")
       : health.status === "up"
-        ? t("settings.serverUp", { latencyMs: health.latencyMs })
+        ? t("settings.serverUp", { latencyMs: formatNumber(health.latencyMs) })
         : t("settings.serverDown", { error: health.error });
   const serverStatusColor =
     health?.status === "up" ? colors.success : health?.status === "down" ? colors.danger : colors.textMuted;
@@ -374,6 +397,49 @@ export function SettingsScreen() {
         </View>
 
         <ThemeToggle />
+
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+          ]}
+          accessibilityRole="radiogroup"
+          accessibilityLabel={t("settings.language")}
+        >
+          <Text style={[styles.sectionTitle, { color: colors.text }]} accessibilityRole="header">
+            {t("settings.language")}
+          </Text>
+          <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
+            {t("settings.languageBody")}
+          </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {LANGUAGE_OPTIONS.map((option) => {
+              const selected = option === languagePreference;
+              const name = option === "system" ? t("settings.languageSystem") : LANGUAGE_NAMES[option];
+              return (
+                <TouchableOpacity
+                  key={option}
+                  onPress={() => void handleLanguageChange(option)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: selected }}
+                  accessibilityLabel={t("settings.selectLanguage", { language: name })}
+                  style={{
+                    borderRadius: 999,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    backgroundColor: selected ? colors.primaryMuted : colors.neutralBg,
+                  }}
+                >
+                  <Text style={{ color: selected ? colors.primary : colors.text }}>{name}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
 
         <View
           style={[
@@ -504,7 +570,7 @@ export function SettingsScreen() {
                       onPress={() => void setAppLockTimeout(minutes)}
                       accessibilityRole="radio"
                       accessibilityState={{ checked: selected }}
-                      accessibilityLabel={t("settings.minutesLabel", { minutes, suffix: minutes === 1 ? "" : "s" })}
+                      accessibilityLabel={t("settings.minutesLabel", { minutes: formatNumber(minutes), suffix: minutes === 1 ? "" : "s" })}
                       style={{
                         borderRadius: 999,
                         paddingHorizontal: 12,
@@ -513,7 +579,7 @@ export function SettingsScreen() {
                       }}
                     >
                       <Text style={{ color: selected ? colors.primary : colors.text }}>
-                        {t("settings.minutesShort", { minutes })}
+                        {t("settings.minutesShort", { minutes: formatNumber(minutes) })}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -570,6 +636,7 @@ export function SettingsScreen() {
               },
             ]}
             value={apiUrl}
+            accessibilityLabel={t("settings.apiUrl")}
             onChangeText={setApiUrl}
             autoCapitalize="none"
             autoCorrect={false}
@@ -594,7 +661,7 @@ export function SettingsScreen() {
                 {t("settings.resetToDefault")}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               style={[
                 shared.button,
                 shared.primaryButton,

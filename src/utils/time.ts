@@ -1,5 +1,7 @@
+import { getFormatLocale } from "../i18n";
+
 export function getRelativeTimeString(date: Date): string {
-  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const rtf = new Intl.RelativeTimeFormat(getFormatLocale(), { numeric: "auto" });
 
   const now = new Date();
   const diffMs = date.getTime() - now.getTime();

@@ -35,7 +35,7 @@ import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 import { ResourceQrSheet } from "../components/ResourceQrSheet";
 import { shareResource } from "../utils/shareResource";
 import { hapticImpact } from "../utils/haptics";
-import { t } from "../i18n";
+import { getFormatLocale, t } from "../i18n";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ResourceDetail">;
 
@@ -50,7 +50,7 @@ function formatTimestamp(value: string | undefined): string | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
 
-  return date.toLocaleString([], {
+  return date.toLocaleString(getFormatLocale(), {
     dateStyle: "medium",
     timeStyle: "short",
   });
@@ -452,18 +452,18 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
               style={[styles.leaseBadge, { backgroundColor: colors.primaryMuted }]}
               accessibilityRole="text"
               accessibilityLabel={t("detail.activeLeaseLabel", {
-                time: new Date(leaseStatus.expiresAt).toLocaleTimeString(),
+                time: new Date(leaseStatus.expiresAt).toLocaleTimeString(getFormatLocale()),
                 remaining: countdown ? `, ${countdown} remaining` : "",
               })}
             >
               <Text style={[styles.leaseBadgeText, { color: colors.primary }]}>
                 {countdown
                   ? t("detail.accessUntil", {
-                      time: new Date(leaseStatus.expiresAt).toLocaleTimeString(),
+                      time: new Date(leaseStatus.expiresAt).toLocaleTimeString(getFormatLocale()),
                       remaining: countdown,
                     })
                   : t("detail.accessUntilNoRemaining", {
-                      time: new Date(leaseStatus.expiresAt).toLocaleTimeString(),
+                      time: new Date(leaseStatus.expiresAt).toLocaleTimeString(getFormatLocale()),
                     })}
               </Text>
             </View>

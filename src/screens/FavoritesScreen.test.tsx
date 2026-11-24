@@ -1,7 +1,9 @@
 import React from "react";
-import { fireEvent, render } from "@testing-library/react-native";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render } from "@testing-library/react-native";
 
 import { fetchResource, ResourceFetchError } from "../api/resources";
+import { createTestQueryClient } from "../hooks/queries";
 import { getFavoriteIds, loadFavorites, toggleFavorite } from "../services/favorites";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import type { Resource } from "../types";
@@ -51,11 +53,13 @@ function makeResource(id: string, title: string): Resource {
   };
 }
 
-function renderScreen() {
+function renderScreen(client = createTestQueryClient()) {
   return render(
-    <ThemeProvider>
-      <FavoritesScreen navigation={navigation} />
-    </ThemeProvider>
+    <QueryClientProvider client={client}>
+      <ThemeProvider>
+        <FavoritesScreen navigation={navigation} />
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -111,4 +115,35 @@ it("offers a way into the catalog when nothing has been saved", async () => {
   expect(await screen.findByText("No saved favourites")).toBeTruthy();
   fireEvent.press(screen.getByText("Browse catalog"));
   expect(navigate).toHaveBeenCalledWith("Catalog");
+});
+
+it("serves cached metadata on a later visit without refetching fresh data", async () => {
+  mockedGetFavoriteIds.mockReturnValue(["r1"]);
+  mockedFetchResource.mockImplementation(async (id) => makeResource(id, `Title ${id}`));
+  const client = createTestQueryClient();
+  client.setDefaultOptions({ queries: { retry: false, staleTime: 60_000 } });
+
+  const first = renderScreen(client);
+  expect(await first.findByText("Title r1")).toBeTruthy();
+  first.unmount();
+
+  const second = renderScreen(client);
+  expect(await second.findByText("Title r1")).toBeTruthy();
+  expect(mockedFetchResource).toHaveBeenCalledTimes(1);
+});
+
+it("refetches every favourite on pull-to-refresh", async () => {
+  mockedGetFavoriteIds.mockReturnValue(["r1"]);
+  mockedFetchResource.mockResolvedValueOnce(makeResource("r1", "Old title"));
+  mockedFetchResource.mockResolvedValue(makeResource("r1", "New title"));
+
+  const screen = renderScreen();
+  expect(await screen.findByText("Old title")).toBeTruthy();
+
+  const list = screen.UNSAFE_getByType(require("react-native").FlatList);
+  await act(async () => {
+    await list.props.refreshControl.props.onRefresh();
+  });
+
+  expect(await screen.findByText("New title")).toBeTruthy();
 });

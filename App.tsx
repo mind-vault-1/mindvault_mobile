@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useCallback, useEffect, useState } from "react";
-import { NavigationContainer } from "@react-navigation/native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
+import { NavigationContainer, type NavigationState } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
@@ -22,7 +23,9 @@ import { ToastProvider, useToast } from "./src/components/ToastProvider";
 import { useNetworkStatus } from "./src/hooks/useNetworkStatus";
 import { useReceiptSync } from "./src/hooks/useReceiptSync";
 import { AppLockProvider } from "./src/hooks/useAppLock";
+import { AppQueryProvider } from "./src/hooks/queries";
 import { STORAGE_KEYS } from "./src/services/storage";
+import { loadLanguagePreference, refreshSystemLanguage, useLocale } from "./src/i18n";
 
 const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
 export const BOOT_TIMEOUT_MS = 5000;
@@ -74,7 +77,11 @@ function AppContent() {
   const [apiUrlReady, setApiUrlReady] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(true);
   const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [languageReady, setLanguageReady] = useState(false);
   const toast = useToast();
+  const locale = useLocale();
+  // Kept across the remount below so a language change doesn't reset navigation.
+  const navigationState = useRef<NavigationState | undefined>(undefined);
 
   // Reconciles local receipts with the server in the background.
   useReceiptSync(apiUrlReady);
@@ -89,7 +96,7 @@ function AppContent() {
     return () => clearTimeout(timeout);
   }, []);
 
-  const bootReady = !isLoading && apiUrlReady && onboardingChecked;
+  const bootReady = !isLoading && apiUrlReady && onboardingChecked && languageReady;
   useEffect(() => {
     if (bootReady) void hideAppSplash();
   }, [bootReady]);
@@ -109,6 +116,21 @@ function AppContent() {
     initializeApiBaseUrl()
       .catch((err) => logError("Failed to load saved API base URL", err))
       .finally(() => setApiUrlReady(true));
+  }, []);
+
+  // Restore the language chosen in Settings before the first screen renders.
+  useEffect(() => {
+    loadLanguagePreference()
+      .catch((err) => logError("Failed to load saved language", err))
+      .finally(() => setLanguageReady(true));
+  }, []);
+
+  // "System" follows the device: pick up a language change made while backgrounded.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (status) => {
+      if (status === "active") refreshSystemLanguage();
+    });
+    return () => subscription.remove();
   }, []);
 
   // Check if onboarding has been seen
@@ -142,6 +164,13 @@ function AppContent() {
       <OfflineBanner isOffline={isOffline} />
       <AppLockProvider>
         <NavigationContainer
+          // Strings are read at render time, so remount the screens in the new
+          // language, restoring the current stack.
+          key={locale}
+          initialState={navigationState.current}
+          onStateChange={(state) => {
+            navigationState.current = state;
+          }}
           theme={getNavigationTheme(colors, colorScheme)}
           linking={createLinkingOptions()}
         >
@@ -157,9 +186,11 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <ErrorBoundary>
-          <ToastProvider>
-            <AppContent />
-          </ToastProvider>
+          <AppQueryProvider>
+            <ToastProvider>
+              <AppContent />
+            </ToastProvider>
+          </AppQueryProvider>
         </ErrorBoundary>
       </ThemeProvider>
     </SafeAreaProvider>

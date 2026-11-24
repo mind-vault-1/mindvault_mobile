@@ -5,6 +5,7 @@ import {
   submitOwnershipTransfer,
 } from "../api/resources";
 import { getNetworkConfig } from "../config/network";
+import { t } from "../i18n";
 
 export type TransferStep =
   | "idle"
@@ -93,7 +94,7 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
   function scanDestination(payload: string): boolean {
     const candidate = normalizeStellarAddress(extractDestination(payload));
     if (!validateStellarAddress(candidate)) {
-      setError("Scanned code is not a valid Stellar public key.");
+      setError(t("modals.transfer.error.scanInvalidKey"));
       return false;
     }
     setDestinationAddress(candidate);
@@ -105,7 +106,7 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
 
   function beginConfirm() {
     if (!validateStellarAddress(destinationAddress)) {
-      setError("Enter a valid destination address first.");
+      setError(t("modals.transfer.error.enterValidAddress"));
       return;
     }
     setError(null);
@@ -120,12 +121,12 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
 
   async function start(resourceId: string): Promise<void> {
     if (step !== "confirm" || !isConfirmed) {
-      setError("Review the transfer details and type TRANSFER to confirm.");
+      setError(t("modals.transfer.error.confirmFirst", { phrase: TRANSFER_CONFIRM_PHRASE }));
       return;
     }
     const destination = normalizeStellarAddress(destinationAddress);
     if (!validateStellarAddress(destination)) {
-      setError("Invalid destination address.");
+      setError(t("modals.transfer.error.invalidDestination"));
       return;
     }
 
@@ -138,7 +139,7 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
       setStep("signing");
       setPendingTransaction({ resourceId, destination, unsignedXdr, networkPassphrase });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Transfer failed.");
+      setError(err instanceof Error ? err.message : t("modals.transfer.error.failed"));
       setStep("error");
     }
   }
@@ -147,7 +148,7 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
     if (!pendingTransaction) return;
     if (signedXdr === pendingTransaction.unsignedXdr) {
       setPendingTransaction(null);
-      setError("The transaction must be signed before submission.");
+      setError(t("modals.transfer.error.mustBeSigned"));
       setStep("error");
       return;
     }
@@ -164,7 +165,7 @@ export function useTransferOwnership(): UseTransferOwnershipResult {
     } catch (err) {
       // Close the signing sheet so the modal underneath can show the error.
       setPendingTransaction(null);
-      setError(err instanceof Error ? err.message : "Transfer failed.");
+      setError(err instanceof Error ? err.message : t("modals.transfer.error.failed"));
       setStep("error");
     }
   }

@@ -436,3 +436,19 @@ it("hands unlocked text to ContentViewer with its copy action", async () => {
   expect(screen.getByText("Plain unlocked text")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Copy content" })).toBeTruthy();
 });
+
+describe("in French", () => {
+  const { setLocale } = jest.requireActual("../i18n");
+  beforeEach(() => setLocale("fr"));
+  afterEach(() => setLocale("en"));
+
+  it("renders the confirmation step through the translation catalogue", async () => {
+    mockNetwork.mockReturnValue("stellar:testnet");
+    const screen = renderWithProviders(<PaywallModal {...props} />);
+    expect(
+      await screen.findByText(/Cette ressource nécessite un paiement de 1.25 USDC sur Stellar testnet pour y accéder\./)
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Payer et accéder" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fermer le paiement" })).toBeTruthy();
+  });
+});

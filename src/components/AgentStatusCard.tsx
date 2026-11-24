@@ -8,6 +8,7 @@ import {
 } from "../api/verification";
 import { spacing, type ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { getFormatLocale } from "../i18n";
 
 export interface AgentStatusCardProps {
   status?: AgentStatus | null;
@@ -96,7 +97,7 @@ export function AgentStatusCard(props: AgentStatusCardProps) {
 
   if (!status) return null;
 
-  const formattedProcessed = status.verificationsProcessed.toLocaleString();
+  const formattedProcessed = status.verificationsProcessed.toLocaleString(getFormatLocale());
   const formattedApproval = formatConfidence(status.approvalRate);
   const formattedEarnings = `${status.earnings} USDC`;
 

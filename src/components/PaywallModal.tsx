@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  findNodeHandle,
   Modal,
   Pressable,
   StyleSheet,
@@ -36,6 +38,10 @@ import { openExternalUrl } from "../utils/stellarExpert";
 import { getPublicKey } from "../services/wallet";
 import { DEFAULT_PER_PAYMENT_LIMIT, loadPreferences } from "../services/preferences";
 import { cacheContent, getCachedContent } from "../services/contentCache";
+import { t, type TranslationKey } from "../i18n";
+
+/** Typed confirmation for payments above the spending limit (not translated). */
+const HIGH_PAYMENT_PHRASE = "CONFIRM";
 
 type WalletNavigation = { navigate: (route: "Wallet") => void };
 
@@ -55,9 +61,21 @@ interface PaywallModalProps {
   price: string;
   resourceId: string;
   onClose: () => void;
+  /** The control that opened the paywall. Focus returns here on close when provided. */
+  returnFocusRef?: { current: unknown };
 }
 
 type Phase = "confirm" | "preparing" | "signing" | "authorizing" | "settling" | "result" | "error";
+
+/** Spoken when the payment flow moves to a new phase. Confirm is silent: the title says it. */
+const PHASE_ANNOUNCEMENTS: Partial<Record<Phase, TranslationKey>> = {
+  preparing: "modals.paywall.announce.preparing",
+  signing: "modals.paywall.announce.signing",
+  authorizing: "modals.paywall.announce.authorizing",
+  settling: "modals.paywall.announce.settling",
+  result: "modals.paywall.announce.result",
+  error: "modals.paywall.announce.error",
+};
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
@@ -143,9 +161,11 @@ function createStyles(colors: ThemeColors) {
 
 function paymentNetworkLabel(): string {
   try {
-    return appNetworkId() === "stellar:pubnet" ? "Stellar mainnet" : "Stellar testnet";
+    return appNetworkId() === "stellar:pubnet"
+      ? t("modals.paywall.networkMainnet")
+      : t("modals.paywall.networkTestnet");
   } catch {
-    return `Stellar ${DEFAULT_STELLAR_NETWORK}`;
+    return t("modals.paywall.networkOther", { network: DEFAULT_STELLAR_NETWORK });
   }
 }
 
@@ -174,6 +194,7 @@ export function PaywallModal({
   price,
   resourceId,
   onClose,
+  returnFocusRef,
 }: PaywallModalProps) {
   const { colors, shared, typography } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -190,6 +211,28 @@ export function PaywallModal({
   const [showLimitConfirm, setShowLimitConfirm] = useState(false);
   const [limitConfirmText, setLimitConfirmText] = useState("");
   const [cachedContent, setCachedContent] = useState<string | null>(null);
+
+  const headingRef = useRef<Text>(null);
+  const wasVisible = useRef(false);
+
+  // Move focus into the paywall when it opens, and back to the opener when it closes.
+  useEffect(() => {
+    if (visible && !wasVisible.current) {
+      const tag = headingRef.current ? findNodeHandle(headingRef.current) : null;
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    if (!visible && wasVisible.current && returnFocusRef?.current) {
+      const tag = findNodeHandle(returnFocusRef.current as Parameters<typeof findNodeHandle>[0]);
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    wasVisible.current = visible;
+  }, [visible, returnFocusRef]);
+
+  // Announce each phase change so screen reader users hear progress, not only a spinner.
+  useEffect(() => {
+    const key = PHASE_ANNOUNCEMENTS[phase];
+    if (key) AccessibilityInfo.announceForAccessibility(t(key));
+  }, [phase]);
 
   const flow = useRef(0);
   const busy = useRef(false);
@@ -282,7 +325,7 @@ export function PaywallModal({
     busy.current = false;
     setChallenge(null);
     setShowWalletLink(false);
-    setErrorMsg(err instanceof Error ? err.message : "Unable to access this resource. Please try again.");
+    setErrorMsg(err instanceof Error ? err.message : t("modals.paywall.accessFailed"));
     setPhase("error");
   }
 
@@ -309,7 +352,7 @@ export function PaywallModal({
   }
 
   function handleConfirmHighPayment() {
-    if (limitConfirmText.trim().toUpperCase() !== "CONFIRM") return;
+    if (limitConfirmText.trim().toUpperCase() !== HIGH_PAYMENT_PHRASE) return;
     highPaymentConfirmed.current = true;
     setShowLimitConfirm(false);
     void handlePay();
@@ -406,10 +449,15 @@ export function PaywallModal({
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.header}>
-              <Text style={[typography.cardTitle, styles.title]} numberOfLines={2}>
+              <Text
+                ref={headingRef}
+                accessibilityRole="header"
+                style={[typography.cardTitle, styles.title]}
+                numberOfLines={2}
+              >
                 {resourceTitle}
               </Text>
-              <Pressable onPress={close} accessibilityRole="button" accessibilityLabel="Close payment" style={styles.closeBtn}>
+              <Pressable onPress={close} accessibilityRole="button" accessibilityLabel={t("modals.paywall.closeLabel")} style={styles.closeBtn}>
                 <Text style={styles.closeBtnText}>✕</Text>
               </Pressable>
             </View>
@@ -418,28 +466,28 @@ export function PaywallModal({
               <View style={styles.body}>
                 {cachedContent !== null ? (
                   <Text style={typography.body}>
-                    This resource is unlocked on this device and can be opened without another payment.
+                    {t("modals.paywall.unlockedOnDevice")}
                   </Text>
                 ) : (
                   <>
                     <Text style={typography.body}>
-                      This resource requires a payment of{" "}
+                      {t("modals.paywall.paymentRequiredBefore")}
                       <Text style={{ fontWeight: "700", color: colors.primary }}>
-                        {price} USDC
-                      </Text>{" "}
-                      on {networkLabel} to access.
+                        {t("modals.paywall.paymentAmount", { price })}
+                      </Text>
+                      {t("modals.paywall.paymentRequiredAfter", { network: networkLabel })}
                     </Text>
                     <Text style={styles.hint}>
-                      You'll sign the payment with your Stellar key; the server pays the network fee.
+                      {t("modals.paywall.signHint")}
                     </Text>
-                    <Text style={styles.hint} accessibilityLabel={`Spending limit ${spendingLimit} USDC per payment`}>
-                      Spending limit: {spendingLimit} USDC per payment.
+                    <Text style={styles.hint} accessibilityLabel={t("modals.paywall.spendingLimitLabel", { limit: spendingLimit })}>
+                      {t("modals.paywall.spendingLimit", { limit: spendingLimit })}
                     </Text>
                   </>
                 )}
                 {cachedContent === null && isOverLimit ? (
                   <Text accessibilityRole="alert" style={styles.warning}>
-                    This payment is above your spending limit and needs extra confirmation.
+                    {t("modals.paywall.overLimit")}
                   </Text>
                 ) : null}
                 {warningMsg ? (
@@ -448,26 +496,26 @@ export function PaywallModal({
                 {cachedContent === null && showLimitConfirm ? (
                   <View style={styles.warningPanel}>
                     <Text accessibilityRole="alert" style={styles.warning}>
-                      Type CONFIRM to allow this payment above your {spendingLimit} USDC limit.
+                      {t("modals.paywall.typeToConfirm", { phrase: HIGH_PAYMENT_PHRASE, limit: spendingLimit })}
                     </Text>
                     <TextInput
                       value={limitConfirmText}
                       onChangeText={setLimitConfirmText}
-                      placeholder="CONFIRM"
+                      placeholder={HIGH_PAYMENT_PHRASE}
                       autoCapitalize="characters"
                       autoCorrect={false}
-                      accessibilityLabel="Confirm high payment"
+                      accessibilityLabel={t("modals.paywall.confirmHighLabel")}
                       style={styles.limitInput}
                     />
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel="Confirm high payment button"
-                      disabled={limitConfirmText.trim().toUpperCase() !== "CONFIRM"}
+                      accessibilityLabel={t("modals.paywall.confirmHighButtonLabel")}
+                      disabled={limitConfirmText.trim().toUpperCase() !== HIGH_PAYMENT_PHRASE}
                       onPress={handleConfirmHighPayment}
                       style={[shared.button, shared.primaryButton, styles.actionBtn]}
                     >
                       <Text style={[shared.buttonText, shared.primaryButtonText]}>
-                        Confirm payment
+                        {t("modals.paywall.confirmPayment")}
                       </Text>
                     </Pressable>
                   </View>
@@ -478,7 +526,7 @@ export function PaywallModal({
                   style={[shared.button, shared.primaryButton, styles.actionBtn]}
                 >
                   <Text style={[shared.buttonText, shared.primaryButtonText]}>
-                    {cachedContent !== null ? "Open" : "Pay & Access"}
+                    {cachedContent !== null ? t("modals.paywall.open") : t("modals.paywall.payAndAccess")}
                   </Text>
                 </Pressable>
 
@@ -488,7 +536,7 @@ export function PaywallModal({
                     onPress={handleOpenLeaseSheet}
                     style={styles.secondaryAction}
                   >
-                    <Text style={styles.secondaryActionText}>Rent instead</Text>
+                    <Text style={styles.secondaryActionText}>{t("modals.paywall.rentInstead")}</Text>
                   </Pressable>
                 )}
               </View>
@@ -498,7 +546,11 @@ export function PaywallModal({
               <View style={[styles.body, styles.centered]}>
                 <ActivityIndicator size="large" color={colors.primary} />
                 <Text style={typography.body} accessibilityRole="progressbar" accessibilityLiveRegion="polite">
-                  {phase === "preparing" ? "Getting payment challenge…" : phase === "authorizing" ? "Signing payment…" : "Settling payment…"}
+                  {phase === "preparing"
+                    ? t("modals.paywall.preparing")
+                    : phase === "authorizing"
+                      ? t("modals.paywall.authorizing")
+                      : t("modals.paywall.settling")}
                 </Text>
                 {warningMsg ? (
                   <Text accessibilityRole="alert" style={styles.warning}>{warningMsg}</Text>
@@ -516,11 +568,11 @@ export function PaywallModal({
                 {showWalletLink ? (
                   <Pressable
                     accessibilityRole="link"
-                    accessibilityLabel="Open Wallet"
+                    accessibilityLabel={t("modals.paywall.openWallet")}
                     onPress={() => navigation?.navigate("Wallet")}
                     style={styles.secondaryAction}
                   >
-                    <Text style={styles.secondaryActionText}>Open Wallet</Text>
+                    <Text style={styles.secondaryActionText}>{t("modals.paywall.openWallet")}</Text>
                   </Pressable>
                 ) : null}
                 <Pressable
@@ -536,7 +588,7 @@ export function PaywallModal({
                   }}
                   style={[shared.button, shared.primaryButton, styles.actionBtn]}
                 >
-                  <Text style={[shared.buttonText, shared.primaryButtonText]}>Retry</Text>
+                  <Text style={[shared.buttonText, shared.primaryButtonText]}>{t("modals.retry")}</Text>
                 </Pressable>
               </View>
             )}
@@ -548,15 +600,15 @@ export function PaywallModal({
         <SignTransactionSheet
           visible
           unsignedXdr=""
-          action="pay for this resource"
+          action={t("modals.paywall.signAction")}
           sign={async (secret) => {
-            if (!isActive(signingRun)) throw new Error("Payment cancelled.");
+            if (!isActive(signingRun)) throw new Error(t("modals.paywall.cancelled"));
             setPhase("authorizing");
             try {
               const transaction = await signPaymentTransaction(
                 challenge, secret, sorobanRpcUrl(Constants.expoConfig?.extra?.sorobanRpcUrl)
               );
-              if (!isActive(signingRun)) throw new Error("Payment cancelled.");
+              if (!isActive(signingRun)) throw new Error(t("modals.paywall.cancelled"));
               return transaction;
             } catch (err) {
               showError(err, signingRun);

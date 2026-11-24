@@ -22,6 +22,7 @@ import { spacing, type ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 import type { RootStackParamList } from "../navigation";
+import { getFormatLocale } from "../i18n";
 
 /** Receipts store amounts in USDC base units (7 decimals): "12500000" is 1.25 USDC. */
 export function formatUsdc(atomic: string): string {
@@ -249,7 +250,7 @@ function ReceiptRow({ receipt }: { receipt: PaymentReceipt & { source: "local" |
   const { colors, typography } = useAppTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const title = receipt.title.trim() || "Untitled resource";
-  const paidOn = new Date(receipt.paidAt).toLocaleString([], {
+  const paidOn = new Date(receipt.paidAt).toLocaleString(getFormatLocale(), {
     dateStyle: "medium",
     timeStyle: "short",
   });
