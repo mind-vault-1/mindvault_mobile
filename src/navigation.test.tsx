@@ -1,7 +1,7 @@
 import React from "react";
 import { Linking } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
-import { render, waitFor } from "@testing-library/react-native";
+import { act, render, waitFor } from "@testing-library/react-native";
 
 import { createLinkingOptions } from "./linking";
 import { RootNavigator } from "./navigation";
@@ -34,31 +34,35 @@ for (const name of [
 
 const API_HOST = "https://api.mindvault.app";
 
-function renderAppAt(initialUrl: string | null) {
+async function renderAppAt(initialUrl: string | null) {
   jest.spyOn(Linking, "getInitialURL").mockResolvedValue(initialUrl);
-  return render(
+  const screen = render(
     <NavigationContainer linking={createLinkingOptions(API_HOST)}>
       <RootNavigator showOnboarding={false} />
     </NavigationContainer>
   );
+  await act(async () => {
+    await Promise.resolve();
+  });
+  return screen;
 }
 
 afterEach(() => jest.restoreAllMocks());
 
 describe("navigation with deep links", () => {
   it("opens the catalog when there is no link", async () => {
-    const screen = renderAppAt(null);
+    const screen = await renderAppAt(null);
     await waitFor(() => expect(screen.getByText("catalog-screen")).toBeTruthy());
     expect(screen.queryByText(/detail-screen/)).toBeNull();
   });
 
   it("opens the detail screen for a custom-scheme link", async () => {
-    const screen = renderAppAt("mindvault://resources/abc123");
+    const screen = await renderAppAt("mindvault://resources/abc123");
     await waitFor(() => expect(screen.getByText("detail-screen:abc123")).toBeTruthy());
   });
 
   it("opens the detail screen for an HTTPS link on the API host", async () => {
-    const screen = renderAppAt(`${API_HOST}/resources/xyz789`);
+    const screen = await renderAppAt(`${API_HOST}/resources/xyz789`);
     await waitFor(() => expect(screen.getByText("detail-screen:xyz789")).toBeTruthy());
   });
 
@@ -67,7 +71,7 @@ describe("navigation with deep links", () => {
     ["a resources link with no id", "mindvault://resources/"],
     ["an unknown path on the API host", `${API_HOST}/pricing`],
   ])("falls back to the catalog for %s", async (_label, url) => {
-    const screen = renderAppAt(url);
+    const screen = await renderAppAt(url);
     await waitFor(() => expect(screen.getByText("catalog-screen")).toBeTruthy());
     expect(screen.queryByText(/detail-screen/)).toBeNull();
   });

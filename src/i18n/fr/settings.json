@@ -113,6 +113,8 @@
   "settings.devOptions": "Options développeur",
   "settings.devOptionsBody": "Ces outils servent uniquement aux tests.",
   "settings.openDevSigner": "Ouvrir le Dev Signer PoC",
+  "settings.activeFeatureFlags": "Indicateurs de fonctionnalités actifs",
+  "settings.remoteConfigSummary": "Délai de requête {timeout} ms · taille de page {pageSize}",
   "settings.language": "Langue",
   "settings.languageBody": "Choisissez la langue de l'application. Système suit les réglages de votre appareil. Les dates et les nombres suivent la langue choisie.",
   "settings.languageSystem": "Système",

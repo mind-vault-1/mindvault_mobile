@@ -1,51 +1,74 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
+import { Keypair } from "@stellar/stellar-sdk";
 
-/**
- * Runtime config fetched from `extra.remoteConfigUrl`, so an incident response can
- * change the API host, a request limit or a feature flag without a new release.
- *
- * Every value has a compiled-in fallback: the app works before the first fetch,
- * offline, and when the endpoint is down. The last good response is cached.
- */
+import { FEATURE_FLAGS, getBuildFeatureFlagOverrides, type FeatureFlag } from "./flags";
 
 const CACHE_KEY = "@mindvault_remote_config";
 const BUCKET_KEY = "@mindvault_rollout_bucket";
 const FETCH_TIMEOUT_MS = 3_000;
 
-/** Compiled-in request timeout. Also the fallback for an invalid remote value. */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+export const DEFAULT_PAGE_SIZE = 20;
 
-/** `true`/`false` switches a feature for everyone. A number 0–100 is a percentage rollout. */
 export type FlagValue = boolean | number;
 
 export interface RemoteConfig {
-  /** API host for installs that have not saved their own in Settings. Checked before use. */
   apiBaseUrl?: string;
-  limits: { requestTimeoutMs: number };
-  flags: Record<string, FlagValue>;
+  limits: {
+    requestTimeoutMs: number;
+    pageSize: number;
+  };
+  flags: Partial<Record<FeatureFlag, FlagValue>>;
 }
 
 const DEFAULTS: RemoteConfig = {
-  limits: { requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS },
+  limits: { requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS, pageSize: DEFAULT_PAGE_SIZE },
   flags: {},
 };
 
+type ConfigListener = () => void;
+const listeners = new Set<ConfigListener>();
+
 let current: RemoteConfig = DEFAULTS;
-/** Stable per install (0–99), so a percentage rollout keeps the same installs in it. */
 let rolloutBucket: number | null = null;
 
-/** Keeps only well-formed values. Anything else falls back to the default. */
-export function parseRemoteConfig(raw: unknown): RemoteConfig {
-  const record = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const limits = (record.limits && typeof record.limits === "object" ? record.limits : {}) as Record<string, unknown>;
-  const timeout = limits.requestTimeoutMs;
+export function canonicalizeRemoteConfigValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalizeRemoteConfigValue).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
+    return `{${entries
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalizeRemoteConfigValue(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
 
-  const flags: Record<string, FlagValue> = {};
+function getRemoteConfigPublicKey(): string | undefined {
+  const fromExpo = Constants.expoConfig?.extra?.remoteConfigPublicKey as string | undefined;
+  return (fromExpo ?? process.env.EXPO_PUBLIC_REMOTE_CONFIG_PUBLIC_KEY)?.trim() || undefined;
+}
+
+export function parseRemoteConfig(raw: unknown): RemoteConfig {
+  const record = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const limits = record.limits && typeof record.limits === "object"
+    ? (record.limits as Record<string, unknown>)
+    : {};
+  const timeout = limits.requestTimeoutMs;
+  const pageSize = limits.pageSize;
+
+  const flags: Partial<Record<FeatureFlag, FlagValue>> = {};
   if (record.flags && typeof record.flags === "object") {
     for (const [name, value] of Object.entries(record.flags as Record<string, unknown>)) {
-      if (typeof value === "boolean") flags[name] = value;
-      else if (typeof value === "number" && value >= 0 && value <= 100) flags[name] = value;
+      if (!(FEATURE_FLAGS as readonly string[]).includes(name)) continue;
+      if (typeof value === "boolean") flags[name as FeatureFlag] = value;
+      else if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100) {
+        flags[name as FeatureFlag] = value;
+      }
     }
   }
 
@@ -56,17 +79,62 @@ export function parseRemoteConfig(raw: unknown): RemoteConfig {
         typeof timeout === "number" && Number.isInteger(timeout) && timeout >= 1_000 && timeout <= 60_000
           ? timeout
           : DEFAULT_REQUEST_TIMEOUT_MS,
+      pageSize:
+        typeof pageSize === "number" && Number.isInteger(pageSize) && pageSize >= 1 && pageSize <= 100
+          ? pageSize
+          : DEFAULT_PAGE_SIZE,
     },
     flags,
   };
+}
+
+export function parseSignedRemoteConfig(
+  raw: unknown,
+  publicKey: string | undefined = getRemoteConfigPublicKey()
+): RemoteConfig {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("Remote config document is missing.");
+  }
+  const envelope = raw as Record<string, unknown>;
+  if (typeof envelope.signature !== "string") {
+    throw new Error("Remote config document is not signed.");
+  }
+  if (!publicKey) {
+    throw new Error("Remote config signing key is not configured.");
+  }
+
+  let verified = false;
+  try {
+    verified = Keypair.fromPublicKey(publicKey).verify(
+      Buffer.from(canonicalizeRemoteConfigValue(envelope.config), "utf8"),
+      Buffer.from(envelope.signature, "base64")
+    );
+  } catch {
+    throw new Error("Invalid remote config signature.");
+  }
+  if (!verified) throw new Error("Invalid remote config signature.");
+
+  return parseRemoteConfig(envelope.config);
 }
 
 export function getRemoteConfig(): RemoteConfig {
   return current;
 }
 
-/** Whether a feature is on for this install. Unknown flags are off. */
-export function isFeatureEnabled(name: string): boolean {
+export function subscribeRemoteConfig(listener: ConfigListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function notifyListeners(): void {
+  for (const listener of listeners) listener();
+}
+
+export function isFeatureEnabled(
+  name: FeatureFlag,
+  overrides: Partial<Record<FeatureFlag, boolean>> = getBuildFeatureFlagOverrides()
+): boolean {
+  if (typeof overrides[name] === "boolean") return overrides[name] === true;
   const value = current.flags[name];
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return rolloutBucket !== null && rolloutBucket < value;
@@ -82,22 +150,19 @@ async function readOrCreateRolloutBucket(): Promise<number> {
   return bucket;
 }
 
-/** Applies the cached config and this install's rollout bucket. Makes no network request. */
 export async function loadRemoteConfig(): Promise<void> {
   rolloutBucket = await readOrCreateRolloutBucket();
   const cached = await AsyncStorage.getItem(CACHE_KEY);
-  if (!cached) return;
-  try {
-    current = parseRemoteConfig(JSON.parse(cached));
-  } catch {
-    current = DEFAULTS;
+  if (cached) {
+    try {
+      current = parseRemoteConfig(JSON.parse(cached));
+    } catch {
+      current = DEFAULTS;
+    }
   }
+  notifyListeners();
 }
 
-/**
- * Fetches the latest config, caches it and applies it. Throws on failure, and the
- * config applied before the call stays in effect. Does nothing without a URL.
- */
 export async function refreshRemoteConfig(): Promise<void> {
   const url = (Constants.expoConfig?.extra?.remoteConfigUrl as string | undefined)?.trim();
   if (!url) return;
@@ -110,9 +175,10 @@ export async function refreshRemoteConfig(): Promise<void> {
       signal: controller.signal,
     });
     if (!res.ok) throw new Error(`Remote config request failed with ${res.status}`);
-    const next = parseRemoteConfig(await res.json());
+    const next = parseSignedRemoteConfig(JSON.parse(await res.text()));
     await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(next));
     current = next;
+    notifyListeners();
   } finally {
     clearTimeout(timer);
   }
@@ -121,4 +187,5 @@ export async function refreshRemoteConfig(): Promise<void> {
 export function resetRemoteConfigForTests(): void {
   current = DEFAULTS;
   rolloutBucket = null;
+  notifyListeners();
 }

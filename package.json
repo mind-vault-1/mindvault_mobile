@@ -12,7 +12,7 @@
     "lint": "eslint . --max-warnings=4",
     "validate-deps": "npx --yes expo-doctor@latest",
     "test": "jest",
-    "test:mutation": "stryker run",
+    "test:mutation": "stryker run stryker.conf.json",
     "contract:check": "node --experimental-strip-types scripts/check-contract.ts",
     "contract:update": "node --experimental-strip-types scripts/check-contract.ts --update"
   },
