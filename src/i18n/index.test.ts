@@ -83,7 +83,8 @@ describe("i18n", () => {
     expect(isRtlLocale("ar-SA")).toBe(true);
     expect(isRtlLocale("he")).toBe(true);
     expect(isRtlLocale("en-US")).toBe(false);
-    setLocale("ar-SA");
+    deviceLocales("ar-SA");
+    applyLanguagePreference("system");
     expect(isCurrentLocaleRtl()).toBe(true);
   });
 });
