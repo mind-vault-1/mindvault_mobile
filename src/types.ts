@@ -13,6 +13,8 @@ export interface Resource {
   onchainTxHash?: string;
   listed: boolean;
   accessUrl: string;
+  /** SHA-256 anchor from the registry, when the publisher provided one. */
+  contentHash?: string | null;
   mimeType?: string;
   thumbnailUrl?: string;
   publishedAt?: string;

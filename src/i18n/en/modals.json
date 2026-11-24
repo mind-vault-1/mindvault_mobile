@@ -118,6 +118,10 @@
   "modals.paywall.payAndAccess": "Pay & Access",
   "modals.paywall.rentInstead": "Rent instead",
   "modals.paywall.preparing": "Getting payment challenge…",
+  "modals.paywall.downloading": "Downloading content…",
+  "modals.paywall.integrityFailed": "The downloaded content failed its integrity check and was removed. Download it again.",
+  "modals.paywall.integrityNeedsPayment": "This download needs a new payment. Try again from the paywall.",
+  "modals.paywall.downloadAgain": "Download again",
   "modals.paywall.authorizing": "Signing payment…",
   "modals.paywall.settling": "Settling payment…",
   "modals.paywall.openWallet": "Open Wallet",
@@ -128,9 +132,11 @@
   "modals.paywall.networkOther": "Stellar {network}",
   "modals.paywall.signAction": "pay for this resource",
   "modals.paywall.announce.preparing": "Preparing payment.",
+  "modals.paywall.announce.downloading": "Downloading content.",
   "modals.paywall.announce.signing": "Waiting for your signature.",
   "modals.paywall.announce.authorizing": "Authorizing payment.",
   "modals.paywall.announce.settling": "Confirming payment on the network.",
   "modals.paywall.announce.result": "Access granted.",
+  "modals.paywall.announce.integrity": "Content failed its integrity check.",
   "modals.paywall.announce.error": "Payment could not be completed."
 }

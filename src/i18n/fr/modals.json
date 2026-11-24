@@ -118,6 +118,10 @@
   "modals.paywall.payAndAccess": "Payer et accéder",
   "modals.paywall.rentInstead": "Louer plutôt",
   "modals.paywall.preparing": "Récupération de la demande de paiement…",
+  "modals.paywall.downloading": "Téléchargement du contenu…",
+  "modals.paywall.integrityFailed": "Le contenu téléchargé a échoué à la vérification d'intégrité et a été supprimé. Téléchargez-le à nouveau.",
+  "modals.paywall.integrityNeedsPayment": "Ce téléchargement nécessite un nouveau paiement. Réessayez depuis le paiement.",
+  "modals.paywall.downloadAgain": "Télécharger à nouveau",
   "modals.paywall.authorizing": "Signature du paiement…",
   "modals.paywall.settling": "Règlement du paiement…",
   "modals.paywall.openWallet": "Ouvrir le portefeuille",
@@ -128,9 +132,11 @@
   "modals.paywall.networkOther": "Stellar {network}",
   "modals.paywall.signAction": "payer cette ressource",
   "modals.paywall.announce.preparing": "Préparation du paiement.",
+  "modals.paywall.announce.downloading": "Téléchargement du contenu.",
   "modals.paywall.announce.signing": "En attente de votre signature.",
   "modals.paywall.announce.authorizing": "Autorisation du paiement.",
   "modals.paywall.announce.settling": "Confirmation du paiement sur le réseau.",
   "modals.paywall.announce.result": "Accès autorisé.",
+  "modals.paywall.announce.integrity": "Le contenu a échoué à la vérification d'intégrité.",
   "modals.paywall.announce.error": "Le paiement n'a pas pu être effectué."
 }

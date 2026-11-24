@@ -715,6 +715,7 @@ export function ResourceDetailScreen({ route, navigation }: Props) {
         resourceTitle={resource.title}
         price={resource.price}
         resourceId={resource.id}
+        expectedSha256={resource.contentHash}
         onClose={() => setPaywallVisible(false)}
       />
 

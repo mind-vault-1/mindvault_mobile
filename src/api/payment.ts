@@ -308,6 +308,22 @@ export async function submitSignedPayment(
   return resolveResponse(resHeaders.get("content-type"), data, url);
 }
 
+/**
+ * Repeats an already-authorized download with the signed payment proof.
+ * Used when downloaded content fails its integrity check: retrying must not
+ * ask the user to sign and settle another payment.
+ */
+export async function redownloadResource(url: string, paymentSignature: string): Promise<AccessResult> {
+  const { data, headers } = await request<string | undefined>(url, {
+    headers: { [PAYMENT_SIGNATURE_HEADER]: paymentSignature },
+    responseType: "text",
+    skipBodyForBinary: true,
+    retry: false,
+    fallbackMessage: (status) => `Failed to download resource (${status}).`,
+  });
+  return resolveResponse(headers.get("content-type"), data, url);
+}
+
 async function resolveResponse(
   contentType: string | null,
   text: string | undefined,
