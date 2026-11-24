@@ -30,6 +30,7 @@ import {
   stellarExpertAccountUrl,
   stellarExpertTxUrl,
 } from "../utils/stellarExpert";
+import { getFormatLocale } from "../i18n";
 
 type DetailRoute = RouteProp<RootStackParamList, "PublisherResourceDetail">;
 type DetailNavigation = NativeStackNavigationProp<RootStackParamList, "PublisherResourceDetail">;
@@ -46,7 +47,7 @@ function shorten(value: string): string {
 function formatDate(value?: string): string {
   if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString(getFormatLocale());
 }
 
 export function PublisherResourceDetailScreen() {

@@ -10,12 +10,13 @@ import type { RootStackParamList } from "../navigation";
 import { spacing, type ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { openExternalUrl, stellarExpertAccountUrl } from "../utils/stellarExpert";
+import { getFormatLocale } from "../i18n";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PublisherPublic">;
 
 function formatDate(value: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(getFormatLocale());
 }
 
 /** Public profile of the publisher that owns a wallet, with their listed resources. */

@@ -14,6 +14,7 @@ import type { Resource } from "../types";
 import type { ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
+import { t } from "../i18n";
 import { SignTransactionSheet } from "./SignTransactionSheet";
 
 interface RegisterModalProps {
@@ -133,7 +134,7 @@ export function RegisterModal({
       setNetworkPassphrase(networkPassphrase);
       setStep("signing");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Registration failed";
+      const message = err instanceof Error ? err.message : t("modals.register.failedFallback");
       setErrorMessage(message);
       setStep("error");
       onError(message);
@@ -142,7 +143,7 @@ export function RegisterModal({
 
   async function handleSigned(signedXdr: string) {
     if (!resource || signedXdr === xdr) {
-      setErrorMessage("The transaction must be signed before submission.");
+      setErrorMessage(t("modals.register.mustBeSigned"));
       setStep("error");
       return;
     }
@@ -152,9 +153,9 @@ export function RegisterModal({
       setTxHash(hash);
 
       setStep("success");
-      onSuccess("Resource registered on-chain successfully!", hash);
+      onSuccess(t("modals.register.successMessage"), hash);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Registration failed";
+      const message = err instanceof Error ? err.message : t("modals.register.failedFallback");
       setErrorMessage(message);
       setStep("error");
       onError(message);
@@ -164,7 +165,7 @@ export function RegisterModal({
   function handleOpenExplorer() {
     if (!txHash) return;
     const explorerUrl = stellarExpertTxUrl({ txHash });
-    openExternalUrl(explorerUrl).catch(() => onError("Failed to open explorer"));
+    openExternalUrl(explorerUrl).catch(() => onError(t("modals.register.explorerFailed")));
   }
 
   function handleClose() {
@@ -182,15 +183,14 @@ export function RegisterModal({
         return (
           <>
             <Text style={typography.body}>
-              Register "{resource?.title}" on the Stellar blockchain to enable on-chain
-              verification and tracking.
+              {t("modals.register.intro", { title: resource?.title ?? "" })}
             </Text>
             <View style={styles.actions}>
-              <Pressable onPress={handleClose} style={[shared.button, styles.buttonSecondary]}>
-                <Text style={[shared.buttonText, styles.buttonTextSecondary]}>Cancel</Text>
+              <Pressable onPress={handleClose} accessibilityRole="button" style={[shared.button, styles.buttonSecondary]}>
+                <Text style={[shared.buttonText, styles.buttonTextSecondary]}>{t("modals.cancel")}</Text>
               </Pressable>
-              <Pressable onPress={handleRegister} style={shared.button}>
-                <Text style={shared.buttonText}>Register</Text>
+              <Pressable onPress={handleRegister} accessibilityRole="button" style={shared.button}>
+                <Text style={shared.buttonText}>{t("modals.register.submit")}</Text>
               </Pressable>
             </View>
           </>
@@ -201,8 +201,8 @@ export function RegisterModal({
         return (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={typography.body}>
-              {step === "preparing" ? "Preparing transaction..." : "Submitting to blockchain..."}
+            <Text style={typography.body} accessibilityRole="progressbar" accessibilityLiveRegion="polite">
+              {step === "preparing" ? t("modals.register.preparing") : t("modals.register.submitting")}
             </Text>
           </View>
         );
@@ -211,8 +211,8 @@ export function RegisterModal({
         return (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={typography.body}>Waiting for signature...</Text>
-            <Text style={[typography.caption, styles.xdrPreview]}>XDR: {xdr.slice(0, 40)}...</Text>
+            <Text style={typography.body}>{t("modals.register.waitingForSignature")}</Text>
+            <Text style={[typography.caption, styles.xdrPreview]}>{t("modals.register.xdrPreview", { preview: xdr.slice(0, 40) })}</Text>
           </View>
         );
 
@@ -220,10 +220,14 @@ export function RegisterModal({
         return (
           <>
             <View style={styles.successContainer}>
-              <Text style={[typography.body, styles.successText]}>✓ Registration successful!</Text>
+              <Text style={[typography.body, styles.successText]}>{t("modals.register.success")}</Text>
               <View style={styles.txHashContainer}>
-                <Text style={typography.caption}>Transaction Hash:</Text>
-                <Pressable onPress={handleOpenExplorer}>
+                <Text style={typography.caption}>{t("modals.register.txHash")}</Text>
+                <Pressable
+                  onPress={handleOpenExplorer}
+                  accessibilityRole="link"
+                  accessibilityLabel={t("modals.register.viewTxLabel", { txHash })}
+                >
                   <Text style={[typography.caption, styles.txHash]} numberOfLines={1}>
                     {txHash}
                   </Text>
@@ -231,11 +235,11 @@ export function RegisterModal({
               </View>
             </View>
             <View style={styles.actions}>
-              <Pressable onPress={handleClose} style={[shared.button, styles.buttonSecondary]}>
-                <Text style={[shared.buttonText, styles.buttonTextSecondary]}>Close</Text>
+              <Pressable onPress={handleClose} accessibilityRole="button" style={[shared.button, styles.buttonSecondary]}>
+                <Text style={[shared.buttonText, styles.buttonTextSecondary]}>{t("modals.close")}</Text>
               </Pressable>
-              <Pressable onPress={handleOpenExplorer} style={shared.button}>
-                <Text style={shared.buttonText}>View in Explorer</Text>
+              <Pressable onPress={handleOpenExplorer} accessibilityRole="button" style={shared.button}>
+                <Text style={shared.buttonText}>{t("modals.viewInExplorer")}</Text>
               </Pressable>
             </View>
           </>
@@ -245,15 +249,17 @@ export function RegisterModal({
         return (
           <>
             <View style={styles.errorContainer}>
-              <Text style={[typography.body, styles.errorText]}>✗ Registration failed</Text>
-              <Text style={typography.caption}>{errorMessage}</Text>
+              <Text style={[typography.body, styles.errorText]}>{t("modals.register.failed")}</Text>
+              <Text style={typography.caption} accessibilityRole="alert">
+                {errorMessage}
+              </Text>
             </View>
             <View style={styles.actions}>
-              <Pressable onPress={handleClose} style={[shared.button, styles.buttonSecondary]}>
-                <Text style={[shared.buttonText, styles.buttonTextSecondary]}>Close</Text>
+              <Pressable onPress={handleClose} accessibilityRole="button" style={[shared.button, styles.buttonSecondary]}>
+                <Text style={[shared.buttonText, styles.buttonTextSecondary]}>{t("modals.close")}</Text>
               </Pressable>
-              <Pressable onPress={handleRegister} style={shared.button}>
-                <Text style={shared.buttonText}>Retry</Text>
+              <Pressable onPress={handleRegister} accessibilityRole="button" style={shared.button}>
+                <Text style={shared.buttonText}>{t("modals.retry")}</Text>
               </Pressable>
             </View>
           </>
@@ -277,7 +283,9 @@ export function RegisterModal({
         <View style={styles.overlay}>
           <View style={styles.modal}>
             <ScrollView style={styles.content}>
-              <Text style={typography.heading}>Register Resource On-Chain</Text>
+              <Text style={typography.heading} accessibilityRole="header">
+                {t("modals.register.title")}
+              </Text>
               {renderContent()}
             </ScrollView>
           </View>
@@ -287,7 +295,7 @@ export function RegisterModal({
         visible={visible && step === "signing"}
         unsignedXdr={xdr}
         networkPassphrase={networkPassphrase}
-        action="register this publisher"
+        action={t("modals.register.signAction")}
         onCancel={() => {
           setXdr("");
           setNetworkPassphrase(undefined);

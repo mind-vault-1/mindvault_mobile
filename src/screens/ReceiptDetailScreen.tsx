@@ -19,6 +19,7 @@ import { fetchReceipt, type ServerReceipt } from "../api/payment";
 import { stellarExpertTxUrl, openExternalUrl } from "../utils/stellarExpert";
 import type { RootStackParamList } from "../navigation";
 import type { PaymentReceipt } from "../services/receipts";
+import { getFormatLocale } from "../i18n";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ReceiptDetail">;
 
@@ -200,7 +201,7 @@ function formatUsdc(atomic: string): string {
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
-  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  return date.toLocaleString(getFormatLocale(), { dateStyle: "medium", timeStyle: "short" });
 }
 
 function shortenHash(hash: string): string {

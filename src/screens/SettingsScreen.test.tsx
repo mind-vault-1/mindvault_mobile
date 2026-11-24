@@ -329,3 +329,48 @@ describe("spending guard", () => {
     alert.mockRestore();
   });
 });
+
+describe("language", () => {
+  afterEach(async () => {
+    const { applyLanguagePreference } = require("../i18n");
+    act(() => applyLanguagePreference("system"));
+  });
+
+  it("offers System, English and Français and persists the choice", async () => {
+    const { LANGUAGE_STORAGE_KEY } = require("../i18n");
+    const screen = await renderSettings();
+
+    expect(screen.getByRole("radio", { name: "Use System" }).props.accessibilityState.checked).toBe(true);
+    expect(screen.getByRole("radio", { name: "Use English" })).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole("radio", { name: "Use Français" }));
+    });
+
+    // The screen re-renders in French straight away.
+    expect(await screen.findByText("Paramètres")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Utiliser Français" }).props.accessibilityState.checked).toBe(true);
+    expect(await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("fr");
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole("radio", { name: "Utiliser Système" }));
+    });
+    expect(await screen.findByText("Settings")).toBeTruthy();
+    expect(await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("system");
+  });
+
+  it("keeps the new language for the session when saving it fails", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const setItem = jest.spyOn(AsyncStorage, "setItem").mockRejectedValueOnce(new Error("disk full"));
+    const screen = await renderSettings();
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole("radio", { name: "Use Français" }));
+    });
+
+    expect(await screen.findByText("Paramètres")).toBeTruthy();
+    expect(alert).toHaveBeenCalledWith("Erreur", "Impossible d'enregistrer le choix de langue.");
+    setItem.mockRestore();
+    alert.mockRestore();
+  });
+});

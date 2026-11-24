@@ -17,10 +17,11 @@ import { clearApiKey, storeApiKey } from "../services/secureStorage";
 import { spacing, type ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
 import type { RootStackParamList } from "../navigation";
+import { getFormatLocale } from "../i18n";
 
 function formatDate(value: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(getFormatLocale());
 }
 
 export function PublisherProfileScreen() {

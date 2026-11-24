@@ -112,5 +112,10 @@
   "settings.checkAgain": "Check again",
   "settings.devOptions": "Developer Options",
   "settings.devOptionsBody": "These tools are for testing purposes only.",
-  "settings.openDevSigner": "Open Dev Signer PoC"
+  "settings.openDevSigner": "Open Dev Signer PoC",
+  "settings.language": "Language",
+  "settings.languageBody": "Choose the app language. System follows your device settings. Dates and numbers follow the chosen language.",
+  "settings.languageSystem": "System",
+  "settings.selectLanguage": "Use {language}",
+  "settings.languageSaveFailed": "Failed to save the language choice."
 }

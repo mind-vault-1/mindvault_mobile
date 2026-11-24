@@ -5,9 +5,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchAnalytics, type PublisherAnalytics } from "../api/publishers";
 import { spacing, type ThemeColors } from "../theme";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { formatNumber, getFormatLocale } from "../i18n";
 
-const amountFormat = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-const countFormat = new Intl.NumberFormat();
+// Built per call so numbers follow the language chosen in Settings.
+const amountFormat = {
+  format: (value: number) => formatNumber(value, { minimumFractionDigits: 2, maximumFractionDigits: 4 }),
+};
+const countFormat = { format: (value: number) => formatNumber(value) };
 
 export function PublisherAnalyticsScreen() {
   const { colors, shared, typography } = useAppTheme();
@@ -95,7 +99,7 @@ export function PublisherAnalyticsScreen() {
                     {payment.payerAddress.length > 16 ? `${payment.payerAddress.slice(0, 6)}…${payment.payerAddress.slice(-4)}` : payment.payerAddress}
                   </Text>
                   <Text style={typography.body}>{amountFormat.format(Number(payment.amount))} {analytics.summary.currency}</Text>
-                  <Text style={typography.body}>{Number.isNaN(Date.parse(payment.paidAt)) ? payment.paidAt : new Date(payment.paidAt).toLocaleDateString()}</Text>
+                  <Text style={typography.body}>{Number.isNaN(Date.parse(payment.paidAt)) ? payment.paidAt : new Date(payment.paidAt).toLocaleDateString(getFormatLocale())}</Text>
                 </View>
               ))}
             </View>

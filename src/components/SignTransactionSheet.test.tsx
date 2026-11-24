@@ -334,3 +334,28 @@ it("does not submit when local-wallet biometric confirmation fails", async () =>
   expect(await screen.findByText(/Biometric authentication was not completed/)).toBeTruthy();
   expect(screen.onSigned).not.toHaveBeenCalled();
 });
+
+describe("in French", () => {
+  const { setLocale } = jest.requireActual("../i18n");
+  beforeEach(() => setLocale("fr"));
+  afterEach(() => setLocale("en"));
+
+  it("renders every label through the translation catalogue", async () => {
+    const screen = renderSheet();
+    expect(screen.getByText("Signer la transaction")).toBeTruthy();
+    expect(
+      screen.getByText("Phrase secrète du réseau : Test SDF Network ; September 2015")
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Réseau de développement/test — n'utilisez pas un compte de production.")
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Clé secrète Stellar")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Annuler" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Signer" })).toBeTruthy();
+
+    fireEvent.changeText(screen.getByLabelText("Clé secrète Stellar"), VALID_SECRET);
+    fireEvent.press(screen.getByText("Signer"));
+    await waitFor(() => expect(screen.onSigned).toHaveBeenCalled());
+    expect(mockedAuthenticate).toHaveBeenCalledWith("Authentifiez-vous pour signer cette transaction");
+  });
+});

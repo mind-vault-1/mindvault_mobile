@@ -18,6 +18,8 @@ import { SignTransactionSheet } from "./SignTransactionSheet";
 import type { Resource } from "../types";
 import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 import { hapticImpact } from "../utils/haptics";
+import { t, type TranslationKey } from "../i18n";
+import { TRANSFER_CONFIRM_PHRASE } from "../hooks/useTransferOwnership";
 
 interface TransferOwnershipModalProps {
   resource: Resource;
@@ -26,15 +28,19 @@ interface TransferOwnershipModalProps {
   onSuccess: (txHash: string | null) => void;
 }
 
-const STEP_LABELS: Record<string, string> = {
-  idle: "",
-  confirm: "Review transfer details",
-  preparing: "Preparing transaction…",
-  signing: "Waiting for signature…",
-  submitting: "Submitting to network…",
-  done: "Ownership transferred!",
-  error: "",
+// Looked up at render time so the labels follow the current language.
+const STEP_LABEL_KEYS: Partial<Record<string, TranslationKey>> = {
+  confirm: "modals.transfer.step.confirm",
+  preparing: "modals.transfer.step.preparing",
+  signing: "modals.transfer.step.signing",
+  submitting: "modals.transfer.step.submitting",
+  done: "modals.transfer.step.done",
 };
+
+function stepLabel(step: string): string {
+  const key = STEP_LABEL_KEYS[step];
+  return key ? t(key) : "";
+}
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
@@ -261,12 +267,12 @@ export function TransferOwnershipModal({
     setScanned(true);
     if (scanDestination(data)) {
       void hapticImpact();
-      AccessibilityInfo.announceForAccessibility("Destination address scanned and validated.");
+      AccessibilityInfo.announceForAccessibility(t("modals.transfer.scanned"));
       closeScanner();
       return;
     }
-    AccessibilityInfo.announceForAccessibility("Scanned code is not a valid Stellar public address. Try again.");
-    setScanError("Scanned code is not a valid Stellar public address.");
+    AccessibilityInfo.announceForAccessibility(t("modals.transfer.scanInvalidAnnouncement"));
+    setScanError(t("modals.transfer.scanInvalid"));
     setScanned(false);
   }
 
@@ -280,43 +286,43 @@ export function TransferOwnershipModal({
       >
         <View style={styles.overlay}>
           <View style={styles.sheet} accessibilityViewIsModal>
-            <Text style={typography.title} accessibilityRole="header">Transfer Ownership</Text>
+            <Text style={typography.title} accessibilityRole="header">{t("modals.transfer.title")}</Text>
             <Text style={[typography.body, styles.subtitle]}>
-              Resource: {resource.title}
+              {t("modals.transfer.resource", { title: resource.title })}
             </Text>
 
             {!isDone ? (
               <>
                 {isConfirm ? (
                   <View style={styles.detailCard}>
-                    <Text style={styles.label} accessibilityRole="header">Confirm ownership transfer</Text>
+                    <Text style={styles.label} accessibilityRole="header">{t("modals.transfer.confirmHeading")}</Text>
                     <Text accessibilityRole="alert" style={styles.warningText}>
-                      This transfer is irreversible on-chain. Check every detail before continuing.
+                      {t("modals.transfer.irreversible")}
                     </Text>
-                    <Text style={styles.label} selectable accessibilityLabel={`Destination address ${destinationAddress}`}>
-                      Destination: {destinationAddress}
+                    <Text style={styles.label} selectable accessibilityLabel={t("modals.transfer.destinationLabel", { address: destinationAddress })}>
+                      {t("modals.transfer.destination", { address: destinationAddress })}
                     </Text>
-                    <Text style={styles.label} accessibilityLabel={`Resource ${resource.title}, id ${resource.id}`}>
-                      Resource: {resource.title} ({resource.id})
+                    <Text style={styles.label} accessibilityLabel={t("modals.transfer.resourceDetailLabel", { title: resource.title, id: resource.id })}>
+                      {t("modals.transfer.resourceDetail", { title: resource.title, id: resource.id })}
                     </Text>
-                    <Text style={styles.label} accessibilityLabel={`Network ${networkLabel}, passphrase ${networkPassphrase}`}>
-                      Network: {networkLabel} — {networkPassphrase}
+                    <Text style={styles.label} accessibilityLabel={t("modals.transfer.networkLabel", { label: networkLabel, passphrase: networkPassphrase })}>
+                      {t("modals.transfer.network", { label: networkLabel, passphrase: networkPassphrase })}
                     </Text>
                     <TextInput
                       value={confirmationText}
                       onChangeText={setConfirmationText}
-                      placeholder="TRANSFER"
+                      placeholder={TRANSFER_CONFIRM_PHRASE}
                       placeholderTextColor={colors.textSubtle}
                       autoCapitalize="characters"
                       autoCorrect={false}
                       editable={!isProcessing}
-                      accessibilityLabel="Type TRANSFER to confirm ownership transfer"
+                      accessibilityLabel={t("modals.transfer.typeToConfirmLabel", { phrase: TRANSFER_CONFIRM_PHRASE })}
                       style={styles.input}
                     />
                   </View>
                 ) : (
                   <>
-                    <Text style={styles.label}>Destination Stellar Address</Text>
+                    <Text style={styles.label}>{t("modals.transfer.destinationHeading")}</Text>
                     <TextInput
                       value={destinationAddress}
                       onChangeText={setDestinationAddress}
@@ -331,22 +337,22 @@ export function TransferOwnershipModal({
                       autoCapitalize="characters"
                       autoCorrect={false}
                       editable={!isProcessing}
-                      accessibilityLabel="Destination Stellar address"
-                      accessibilityHint="56-character Stellar public key beginning with G"
+                      accessibilityLabel={t("modals.transfer.destinationInputLabel")}
+                      accessibilityHint={t("modals.transfer.destinationInputHint")}
                     />
                     <Pressable
                       onPress={openScanner}
                       accessibilityRole="button"
-                      accessibilityLabel="Scan destination QR"
-                      accessibilityHint="Opens the camera to scan a Stellar public address QR code"
+                      accessibilityLabel={t("modals.transfer.scanLabel")}
+                      accessibilityHint={t("modals.transfer.scanHint")}
                       disabled={isProcessing}
                       style={[styles.scanButton, isProcessing && styles.disabledButton]}
                     >
-                      <Text style={styles.scanButtonText}>Scan</Text>
+                      <Text style={styles.scanButtonText}>{t("modals.transfer.scan")}</Text>
                     </Pressable>
                     {destinationAddress.length > 0 && !isValidAddress ? (
                       <Text style={styles.validationHint} accessibilityRole="alert">
-                        Enter a valid Stellar public key (starts with G).
+                        {t("modals.transfer.invalidAddress")}
                       </Text>
                     ) : null}
                   </>
@@ -362,7 +368,7 @@ export function TransferOwnershipModal({
                   <View style={styles.processingRow}>
                     <ActivityIndicator color={colors.primary} />
                     <Text style={typography.body} accessibilityRole="progressbar" accessibilityLiveRegion="polite">
-                      {STEP_LABELS[step]}
+                      {stepLabel(step)}
                     </Text>
                   </View>
                 ) : null}
@@ -373,10 +379,10 @@ export function TransferOwnershipModal({
                     style={[shared.button, styles.cancelButton]}
                     disabled={isProcessing}
                     accessibilityRole="button"
-                    accessibilityLabel={isConfirm ? "Back to destination entry" : "Cancel transfer"}
+                    accessibilityLabel={isConfirm ? t("modals.transfer.backLabel") : t("modals.transfer.cancelLabel")}
                     accessibilityState={{ disabled: isProcessing }}
                   >
-                    <Text style={styles.cancelText}>{isConfirm ? "Back" : "Cancel"}</Text>
+                    <Text style={styles.cancelText}>{isConfirm ? t("modals.transfer.back") : t("modals.cancel")}</Text>
                   </Pressable>
                   <Pressable
                     onPress={isConfirm ? () => void start(resource.id) : beginConfirm}
@@ -387,23 +393,23 @@ export function TransferOwnershipModal({
                     ]}
                     disabled={!isValidAddress || isProcessing || (isConfirm && !isConfirmed)}
                     accessibilityRole="button"
-                    accessibilityLabel={isConfirm ? "Confirm ownership transfer" : "Continue to transfer confirmation"}
+                    accessibilityLabel={isConfirm ? t("modals.transfer.submitLabel") : t("modals.transfer.continueLabel")}
                     accessibilityState={{
                       disabled: !isValidAddress || isProcessing || (isConfirm && !isConfirmed),
                       busy: isProcessing,
                     }}
                   >
-                    <Text style={shared.buttonText}>{isConfirm ? "Transfer ownership" : "Continue"}</Text>
+                    <Text style={shared.buttonText}>{isConfirm ? t("modals.transfer.submit") : t("modals.transfer.continue")}</Text>
                   </Pressable>
                 </View>
               </>
             ) : (
               <View style={styles.successContainer}>
-                <Text style={styles.successText}>✓ {STEP_LABELS.done}</Text>
+                <Text style={styles.successText}>✓ {stepLabel("done")}</Text>
                 {txHash ? (
-                  <Pressable onPress={handleOpenExplorer} accessibilityRole="link" accessibilityLabel="View transaction in explorer">
+                  <Pressable onPress={handleOpenExplorer} accessibilityRole="link" accessibilityLabel={t("modals.transfer.viewTxLabel")}>
                     <Text style={styles.txHash} numberOfLines={1} ellipsizeMode="middle">
-                      Tx: {txHash}
+                      {t("modals.transfer.txHash", { txHash })}
                     </Text>
                   </Pressable>
                 ) : null}
@@ -411,9 +417,9 @@ export function TransferOwnershipModal({
                   onPress={handleSuccess}
                   style={[shared.button, styles.confirmButton]}
                   accessibilityRole="button"
-                  accessibilityLabel="Done"
+                  accessibilityLabel={t("modals.transfer.done")}
                 >
-                  <Text style={shared.buttonText}>Done</Text>
+                  <Text style={shared.buttonText}>{t("modals.transfer.done")}</Text>
                 </Pressable>
               </View>
             )}
@@ -431,27 +437,27 @@ export function TransferOwnershipModal({
           <View style={styles.scannerSheet} accessibilityViewIsModal>
             {!permission ? (
               <View style={styles.centered}>
-                <Text style={typography.body} accessibilityLiveRegion="polite">Requesting camera permission…</Text>
+                <Text style={typography.body} accessibilityLiveRegion="polite">{t("modals.transfer.requestingPermission")}</Text>
               </View>
             ) : !permission.granted ? (
               <View style={styles.centered}>
-                <Text style={typography.title} accessibilityRole="header">Camera access is required</Text>
-                <Text style={typography.body}>MindVault needs camera permission to scan QR codes.</Text>
+                <Text style={typography.title} accessibilityRole="header">{t("modals.transfer.permissionRequired")}</Text>
+                <Text style={typography.body}>{t("modals.transfer.permissionBody")}</Text>
                 <Pressable
                   style={[shared.button, shared.primaryButton]}
                   onPress={requestPermission}
                   accessibilityRole="button"
-                  accessibilityLabel="Grant Permission"
-                  accessibilityHint="Requests camera access to allow scanning address QR codes"
+                  accessibilityLabel={t("modals.transfer.grantPermission")}
+                  accessibilityHint={t("modals.transfer.grantPermissionHint")}
                 >
-                  <Text style={[shared.buttonText, shared.primaryButtonText]}>Grant Permission</Text>
+                  <Text style={[shared.buttonText, shared.primaryButtonText]}>{t("modals.transfer.grantPermission")}</Text>
                 </Pressable>
                 <Pressable
                   onPress={closeScanner}
                   accessibilityRole="button"
-                  accessibilityLabel="Cancel scan"
+                  accessibilityLabel={t("modals.transfer.cancelScanLabel")}
                 >
-                  <Text style={styles.cancelText}>Cancel</Text>
+                  <Text style={styles.cancelText}>{t("modals.cancel")}</Text>
                 </Pressable>
               </View>
             ) : (
@@ -465,7 +471,7 @@ export function TransferOwnershipModal({
                   />
                 </View>
                 <Text style={styles.scannerHint} accessibilityLiveRegion="polite">
-                  Point at a QR code containing a Stellar public address
+                  {t("modals.transfer.scannerHint")}
                 </Text>
                 {scanError ? (
                   <Text style={styles.errorText} accessibilityRole="alert" accessibilityLiveRegion="polite">
@@ -476,9 +482,9 @@ export function TransferOwnershipModal({
                   onPress={closeScanner}
                   style={[shared.button, styles.cancelButton]}
                   accessibilityRole="button"
-                  accessibilityLabel="Cancel scan"
+                  accessibilityLabel={t("modals.transfer.cancelScanLabel")}
                 >
-                  <Text style={styles.cancelText}>Cancel</Text>
+                  <Text style={styles.cancelText}>{t("modals.cancel")}</Text>
                 </Pressable>
               </>
             )}
@@ -490,7 +496,7 @@ export function TransferOwnershipModal({
         visible={visible && pendingTransaction !== null}
         unsignedXdr={pendingTransaction?.unsignedXdr ?? ""}
         networkPassphrase={pendingTransaction?.networkPassphrase}
-        action="transfer ownership of this resource"
+        action={t("modals.transfer.signAction")}
         onCancel={cancelSigning}
         onSigned={submitSigned}
       />
