@@ -17,6 +17,8 @@ import { useNavigation } from "@react-navigation/native";
 import { checkUsdcForPayment } from "../api/horizon";
 import {
   appNetworkId,
+  encodePaymentSignature,
+  redownloadResource,
   sorobanRpcUrl,
   prepareResourceAccess,
   priceToAtomicUnits,
@@ -37,7 +39,8 @@ import { hapticError, hapticSuccess } from "../utils/haptics";
 import { openExternalUrl } from "../utils/stellarExpert";
 import { getPublicKey } from "../services/wallet";
 import { DEFAULT_PER_PAYMENT_LIMIT, loadPreferences } from "../services/preferences";
-import { cacheContent, getCachedContent } from "../services/contentCache";
+import { cacheContent, readCachedContent, removeCachedContent } from "../services/contentCache";
+import { digestMatches } from "../utils/hash";
 import { t, type TranslationKey } from "../i18n";
 
 /** Typed confirmation for payments above the spending limit (not translated). */
@@ -60,20 +63,33 @@ interface PaywallModalProps {
   resourceTitle: string;
   price: string;
   resourceId: string;
+  /** Publisher SHA-256 anchor from resource metadata, when one is available. */
+  expectedSha256?: string | null;
   onClose: () => void;
   /** The control that opened the paywall. Focus returns here on close when provided. */
   returnFocusRef?: { current: unknown };
 }
 
-type Phase = "confirm" | "preparing" | "signing" | "authorizing" | "settling" | "result" | "error";
+type Phase =
+  | "confirm"
+  | "preparing"
+  | "downloading"
+  | "signing"
+  | "authorizing"
+  | "settling"
+  | "result"
+  | "integrity"
+  | "error";
 
 /** Spoken when the payment flow moves to a new phase. Confirm is silent: the title says it. */
 const PHASE_ANNOUNCEMENTS: Partial<Record<Phase, TranslationKey>> = {
   preparing: "modals.paywall.announce.preparing",
+  downloading: "modals.paywall.announce.downloading",
   signing: "modals.paywall.announce.signing",
   authorizing: "modals.paywall.announce.authorizing",
   settling: "modals.paywall.announce.settling",
   result: "modals.paywall.announce.result",
+  integrity: "modals.paywall.announce.integrity",
   error: "modals.paywall.announce.error",
 };
 
@@ -193,6 +209,7 @@ export function PaywallModal({
   resourceTitle,
   price,
   resourceId,
+  expectedSha256,
   onClose,
   returnFocusRef,
 }: PaywallModalProps) {
@@ -214,6 +231,7 @@ export function PaywallModal({
 
   const headingRef = useRef<Text>(null);
   const wasVisible = useRef(false);
+  const paymentProof = useRef<string | null>(null);
 
   // Move focus into the paywall when it opens, and back to the opener when it closes.
   useEffect(() => {
@@ -261,6 +279,7 @@ export function PaywallModal({
     setShowLimitConfirm(false);
     setLimitConfirmText("");
     highPaymentConfirmed.current = false;
+    paymentProof.current = null;
     checkController.current?.abort();
     checkController.current = null;
     return () => {
@@ -268,15 +287,21 @@ export function PaywallModal({
       checkController.current?.abort();
       checkController.current = null;
     };
-  }, [visible, accessUrl, price, resourceId, resourceTitle]);
+  }, [visible, accessUrl, price, resourceId, resourceTitle, expectedSha256]);
 
   useEffect(() => {
     let cancelled = false;
     setCachedContent(null);
     if (visible) {
-      void getCachedContent(resourceId)
-        .then((content) => {
-          if (!cancelled) setCachedContent(content);
+      void readCachedContent(resourceId)
+        .then((entry) => {
+          if (cancelled) return;
+          if (entry.status === "hit") {
+            setCachedContent(entry.content);
+          } else if (entry.status === "integrity-failed") {
+            setCachedContent(null);
+            setPhase("integrity");
+          }
         })
         .catch(() => undefined);
     }
@@ -313,6 +338,7 @@ export function PaywallModal({
     busy.current = false;
     checkController.current?.abort();
     checkController.current = null;
+    paymentProof.current = null;
     setChallenge(null);
     setShowLeaseSheet(false);
     setPhase("confirm");
@@ -329,8 +355,24 @@ export function PaywallModal({
     setPhase("error");
   }
 
+  function showIntegrityFailure(run: number) {
+    if (!isActive(run)) return;
+    void hapticError();
+    busy.current = false;
+    setChallenge(null);
+    setResult(null);
+    setCachedContent(null);
+    setErrorMsg(null);
+    setPhase("integrity");
+  }
+
   async function showResult(access: AccessResult, run: number, shouldCache = true) {
     if (!isActive(run)) return;
+    if (access.type === "text" && expectedSha256 && !digestMatches(access.content, expectedSha256)) {
+      await removeCachedContent(resourceId).catch(() => undefined);
+      showIntegrityFailure(run);
+      return;
+    }
     void hapticSuccess();
     setResult(access);
     if (access.type === "external") {
@@ -339,7 +381,7 @@ export function PaywallModal({
     } else {
       if (shouldCache) {
         setCachedContent(access.content);
-        void cacheContent(resourceId, access.content).catch(() => undefined);
+        void cacheContent(resourceId, access.content, undefined, expectedSha256 ?? undefined).catch(() => undefined);
       }
       setPhase("result");
     }
@@ -348,6 +390,10 @@ export function PaywallModal({
   function handleOpenCachedContent() {
     if (cachedContent === null) return;
     const run = ++flow.current;
+    if (expectedSha256 && !digestMatches(cachedContent, expectedSha256)) {
+      void removeCachedContent(resourceId).then(() => showIntegrityFailure(run));
+      return;
+    }
     void showResult({ type: "text", content: cachedContent }, run, false);
   }
 
@@ -414,8 +460,38 @@ export function PaywallModal({
     busy.current = true;
     setChallenge(null);
     setPhase("settling");
+    paymentProof.current = encodePaymentSignature(payment, transaction);
     try {
       const access = await submitSignedPayment(accessUrl, payment, transaction);
+      await showResult(access, run);
+    } catch (err) {
+      showError(err, run);
+    } finally {
+      if (isActive(run)) busy.current = false;
+    }
+  }
+
+  async function handleDownloadAgain() {
+    if (!visible || busy.current) return;
+    const run = ++flow.current;
+    busy.current = true;
+    setErrorMsg(null);
+    setResult(null);
+    setCachedContent(null);
+    setPhase("downloading");
+    try {
+      const proof = paymentProof.current;
+      let access: AccessResult;
+      if (proof) {
+        access = await redownloadResource(accessUrl, proof);
+      } else {
+        const prepared = await prepareResourceAccess(accessUrl, price);
+        if (prepared.type === "payment") {
+          throw new Error(t("modals.paywall.integrityNeedsPayment"));
+        }
+        access = prepared.result;
+      }
+      if (!isActive(run)) return;
       await showResult(access, run);
     } catch (err) {
       showError(err, run);
@@ -542,15 +618,17 @@ export function PaywallModal({
               </View>
             )}
 
-            {(["preparing", "authorizing", "settling"] as Phase[]).includes(phase) && (
+            {(["preparing", "downloading", "authorizing", "settling"] as Phase[]).includes(phase) && (
               <View style={[styles.body, styles.centered]}>
                 <ActivityIndicator size="large" color={colors.primary} />
                 <Text style={typography.body} accessibilityRole="progressbar" accessibilityLiveRegion="polite">
                   {phase === "preparing"
                     ? t("modals.paywall.preparing")
-                    : phase === "authorizing"
-                      ? t("modals.paywall.authorizing")
-                      : t("modals.paywall.settling")}
+                    : phase === "downloading"
+                      ? t("modals.paywall.downloading")
+                      : phase === "authorizing"
+                        ? t("modals.paywall.authorizing")
+                        : t("modals.paywall.settling")}
                 </Text>
                 {warningMsg ? (
                   <Text accessibilityRole="alert" style={styles.warning}>{warningMsg}</Text>
@@ -560,6 +638,24 @@ export function PaywallModal({
 
             {phase === "result" && result?.type === "text" && (
               <ContentViewer content={result.content} />
+            )}
+
+            {phase === "integrity" && (
+              <View style={styles.body}>
+                <Text accessibilityRole="alert" style={[typography.body, { color: colors.danger }]}>
+                  {t("modals.paywall.integrityFailed")}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t("modals.paywall.downloadAgain")}
+                  onPress={() => void handleDownloadAgain()}
+                  style={[shared.button, shared.primaryButton, styles.actionBtn]}
+                >
+                  <Text style={[shared.buttonText, shared.primaryButtonText]}>
+                    {t("modals.paywall.downloadAgain")}
+                  </Text>
+                </Pressable>
+              </View>
             )}
 
             {phase === "error" && (

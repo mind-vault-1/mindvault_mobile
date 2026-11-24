@@ -68,6 +68,7 @@ const RESOURCE_FIELDS: Record<string, JsonType> = {
   onchainTxHash: "string",
   listed: "boolean",
   accessUrl: "string",
+  contentHash: "string",
 };
 
 export const CONTRACT: readonly Operation[] = [

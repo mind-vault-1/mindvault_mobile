@@ -6,8 +6,10 @@ import {
   CONTENT_CACHE_PREFIX,
   getCachedContent,
   MAX_CONTENT_CACHE_BYTES,
+  readCachedContent,
   removeCachedContent,
 } from "./contentCache";
+import { sha256Hex } from "../utils/hash";
 
 beforeEach(async () => {
   jest.clearAllMocks();
@@ -58,4 +60,73 @@ it("removes one entry or all entries", async () => {
 
   await clearContentCache();
   expect(await getCachedContent("res-2")).toBeNull();
+});
+
+describe("content integrity", () => {
+  const keyOf = (id: string) => `${CONTENT_CACHE_PREFIX}${id}`;
+  const readEntry = async (id: string) => JSON.parse((await AsyncStorage.getItem(keyOf(id))) as string);
+
+  it("records the SHA-256 digest of the content when it is cached", async () => {
+    await cacheContent("res-1", "Unlocked content");
+    expect((await readEntry("res-1")).sha256).toBe(sha256Hex("Unlocked content"));
+  });
+
+  it("serves content whose digest matches", async () => {
+    await cacheContent("res-1", "Unlocked content");
+    expect(await readCachedContent("res-1")).toEqual({ status: "hit", content: "Unlocked content" });
+  });
+
+  it("caches a download that matches the publisher's digest", async () => {
+    const digest = sha256Hex("Original text");
+    expect(await cacheContent("res-1", "Original text", null, digest)).toBe(true);
+    expect(await getCachedContent("res-1")).toBe("Original text");
+  });
+
+  it("refuses to cache a download that does not match the publisher's digest", async () => {
+    expect(await cacheContent("res-1", "Altered text", null, sha256Hex("Original text"))).toBe(false);
+    expect(await AsyncStorage.getItem(keyOf("res-1"))).toBeNull();
+  });
+
+  it("refuses to cache a truncated download", async () => {
+    const full = "A long document that did not finish downloading.";
+    expect(await cacheContent("res-1", full.slice(0, 20), null, sha256Hex(full))).toBe(false);
+    expect(await readCachedContent("res-1")).toEqual({ status: "miss" });
+  });
+
+  it("refuses a malformed publisher digest", async () => {
+    expect(await cacheContent("res-1", "Text", null, "not-a-digest")).toBe(false);
+  });
+
+  it("discards a tampered entry, reports the failure and leaves nothing to re-read", async () => {
+    await cacheContent("res-1", "Original text");
+    const entry = await readEntry("res-1");
+    await AsyncStorage.setItem(keyOf("res-1"), JSON.stringify({ ...entry, content: "Edited on the device" }));
+
+    expect(await readCachedContent("res-1")).toEqual({ status: "integrity-failed" });
+    expect(await AsyncStorage.getItem(keyOf("res-1"))).toBeNull();
+    expect(await readCachedContent("res-1")).toEqual({ status: "miss" });
+  });
+
+  it("discards an entry whose stored content was cut short", async () => {
+    await cacheContent("res-1", "A complete document");
+    const entry = await readEntry("res-1");
+    await AsyncStorage.setItem(keyOf("res-1"), JSON.stringify({ ...entry, content: "A complete" }));
+    expect(await readCachedContent("res-1")).toEqual({ status: "integrity-failed" });
+  });
+
+  it("discards an entry with no digest, since it cannot be verified", async () => {
+    await AsyncStorage.setItem(
+      keyOf("legacy"),
+      JSON.stringify({ content: "Old", expiresAt: Date.now() + 60000, cachedAt: Date.now() })
+    );
+    expect(await readCachedContent("legacy")).toEqual({ status: "integrity-failed" });
+    expect(await AsyncStorage.getItem(keyOf("legacy"))).toBeNull();
+  });
+
+  it("getCachedContent returns null for a failed check", async () => {
+    await cacheContent("res-1", "Original text");
+    const entry = await readEntry("res-1");
+    await AsyncStorage.setItem(keyOf("res-1"), JSON.stringify({ ...entry, content: "Tampered" }));
+    expect(await getCachedContent("res-1")).toBeNull();
+  });
 });
