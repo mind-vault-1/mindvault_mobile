@@ -36,6 +36,7 @@ import {
   type StellarNetworkId,
 } from "../config/network";
 import { checkHealth, type ServerHealth } from "../api/health";
+import { areDeveloperFlagsVisible } from "../config/flags";
 import { collectDiagnostics, formatDiagnostics } from "../services/diagnostics";
 import {
   clearStorageGroup,
@@ -56,6 +57,8 @@ import {
   APP_LOCK_TIMEOUT_OPTIONS,
   useAppLock,
 } from "../hooks/useAppLock";
+import { useFeatureFlags } from "../hooks/useFeatureFlag";
+import { useRemoteConfig } from "../hooks/useRemoteConfig";
 import { openExternalUrl } from "../utils/stellarExpert";
 import {
   DEFAULT_PER_PAYMENT_LIMIT,
@@ -104,6 +107,8 @@ export function SettingsScreen() {
   } = useAppLock();
 
   const [auditLogPreview, setAuditLogPreview] = useState<string | null>(null);
+  const featureFlags = useFeatureFlags();
+  const remoteConfig = useRemoteConfig();
 
   useEffect(() => {
     void areHapticsEnabled().then(setHapticsEnabledState);
@@ -1048,6 +1053,28 @@ export function SettingsScreen() {
             <Text style={[styles.infoText, { color: colors.warning, marginBottom: 16 }]}>
               {t("settings.devOptionsBody")}
             </Text>
+            {areDeveloperFlagsVisible() ? (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={[styles.sectionTitle, { color: colors.warning }]}>
+                  {t("settings.activeFeatureFlags")}
+                </Text>
+                {Object.entries(featureFlags).map(([name, enabled]) => (
+                  <Text
+                    key={name}
+                    style={[styles.infoText, { color: colors.warning }]}
+                    accessibilityRole="text"
+                  >
+                    {`${name}: ${enabled ? "on" : "off"}`}
+                  </Text>
+                ))}
+                <Text style={[styles.infoText, { color: colors.warning, marginTop: 8 }]}>
+                  {t("settings.remoteConfigSummary", {
+                    timeout: remoteConfig.limits.requestTimeoutMs,
+                    pageSize: remoteConfig.limits.pageSize,
+                  })}
+                </Text>
+              </View>
+            ) : null}
             <TouchableOpacity
               style={[shared.button, { backgroundColor: colors.warning }]}
               onPress={() => navigation.navigate("DevSigner")}
