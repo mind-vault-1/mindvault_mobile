@@ -1025,6 +1025,10 @@ export function PublisherResourcesScreen() {
       <FlatList
         data={loading ? null : filteredResources}
         keyExtractor={(item) => item.id}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
