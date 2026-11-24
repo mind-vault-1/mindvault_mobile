@@ -1,18 +1,29 @@
 import { extractApiErrorMessage } from "../utils/errorLogger";
+import {
+  backoffDelayMs,
+  breakerFor,
+  MAX_RETRY_AFTER_MS,
+  originOf,
+  parseRetryAfterMs,
+} from "../utils/retry";
 
 /** Requests that take longer than this are aborted and reported as timeouts. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
 /** Extra attempts for GET requests after a network error or 5xx response. */
 const GET_RETRY_LIMIT = 2;
-const RETRY_BASE_DELAY_MS = 300;
 
 const NETWORK_MESSAGE = "Network error. Please check your connection.";
 const TIMEOUT_MESSAGE = "The request timed out. Please try again.";
 const CANCELLED_MESSAGE = "The request was cancelled.";
+const UNAVAILABLE_MESSAGE = "The server is unavailable right now. Please try again shortly.";
 
 export type HttpMethod = "GET" | "POST" | "DELETE";
 
-export type ApiErrorKind = "network" | "timeout" | "aborted" | "http";
+/**
+ * `aborted` means the caller cancelled. Callers should ignore it rather than show an error.
+ * `unavailable` means the origin's circuit breaker is open and no request was sent.
+ */
+export type ApiErrorKind = "network" | "timeout" | "aborted" | "unavailable" | "http";
 
 /** Every failed request throws this. `status` is only set for `http` errors. */
 export class ApiError extends Error {
@@ -26,6 +37,11 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/** True for the typed error a cancelled request rejects with. Ignore it; it is not a failure. */
+export function isAbortError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.kind === "aborted";
 }
 
 /** A fixed message, or one picked by the HTTP status when the server sends no message. */
@@ -163,17 +179,160 @@ async function send<T>(url: string, method: HttpMethod, options: RequestOptions)
  * a side effect such as a payment.
  */
 export async function request<T>(url: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
+  if (options.signal?.aborted) {
+    throw new ApiError("aborted", CANCELLED_MESSAGE);
+  }
   const method = options.method ?? "GET";
+  // Identical concurrent GETs share one network call. Opt-out requests (retry: false) never share.
+  const shareKey = method === "GET" && options.retry !== false ? sharedKeyFor(url, options) : null;
+  if (shareKey === null) {
+    return retryLoop<T>(url, method, options);
+  }
+
+  const existing = inFlight.get(shareKey);
+  if (existing) return join<T>(shareKey, existing, options.signal);
+
+  const shared: SharedRequest = {
+    controller: new AbortController(),
+    subscribers: 0,
+    promise: Promise.resolve(undefined as never),
+  };
+  shared.promise = retryLoop<unknown>(url, method, {
+    ...options,
+    signal: shared.controller.signal,
+  }).finally(() => {
+    if (inFlight.get(shareKey) === shared) inFlight.delete(shareKey);
+  });
+  inFlight.set(shareKey, shared);
+  return join<T>(shareKey, shared, options.signal);
+}
+
+/**
+ * Attempts one request, retrying idempotent GETs on network errors and 5xx responses.
+ * Every attempt goes through the origin's circuit breaker.
+ */
+async function retryLoop<T>(
+  url: string,
+  method: HttpMethod,
+  options: RequestOptions
+): Promise<ApiResponse<T>> {
   const retries = method === "GET" && options.retry !== false ? GET_RETRY_LIMIT : 0;
+  const breaker = breakerFor(originOf(url));
 
   for (let attempt = 0; ; attempt += 1) {
+    if (!breaker.tryAcquire()) {
+      throw new ApiError("unavailable", UNAVAILABLE_MESSAGE);
+    }
     try {
-      return await send<T>(url, method, options);
+      const response = await send<T>(url, method, options);
+      breaker.recordSuccess();
+      return response;
     } catch (error) {
+      if (isAbortError(error)) {
+        breaker.release();
+      } else if (isOutage(error)) {
+        breaker.recordFailure();
+      } else {
+        // A 4xx or a parse/schema failure still means the server answered.
+        breaker.recordSuccess();
+      }
+
       if (attempt >= retries || !isRetryable(error) || options.signal?.aborted) {
         throw error;
       }
-      await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
+      const retryAfter =
+        error instanceof ApiError && error.kind === "http"
+          ? parseRetryAfterMs(error.headers?.get("retry-after"))
+          : null;
+      if (retryAfter !== null && retryAfter > MAX_RETRY_AFTER_MS) {
+        // The server asked for a longer wait than a user-facing request should block on.
+        throw error;
+      }
+      await sleep(retryAfter ?? backoffDelayMs(attempt));
     }
   }
+}
+
+/** Failures that count against the breaker: the server or network did not answer normally. */
+function isOutage(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.kind === "http") return (error.status ?? 0) >= 500;
+  return error.kind === "network" || error.kind === "timeout";
+}
+
+interface SharedRequest {
+  controller: AbortController;
+  subscribers: number;
+  promise: Promise<ApiResponse<unknown>>;
+}
+
+/** In-flight shareable GETs keyed by URL and every option that changes the result. */
+const inFlight = new Map<string, SharedRequest>();
+
+const identityIds = new WeakMap<object, number>();
+let nextIdentityId = 1;
+
+/** Stable small id for a function, so two different schemas never share a result. */
+function identityOf(value: unknown): string {
+  if (value === undefined) return "-";
+  if (typeof value === "string") return `s:${value}`;
+  if (typeof value === "function") {
+    let id = identityIds.get(value);
+    if (id === undefined) {
+      id = nextIdentityId;
+      nextIdentityId += 1;
+      identityIds.set(value, id);
+    }
+    return `f:${id}`;
+  }
+  return "-";
+}
+
+function sharedKeyFor(url: string, options: RequestOptions): string {
+  const headers = Object.keys(options.headers ?? {})
+    .sort()
+    .map((name) => `${name}=${options.headers?.[name]}`)
+    .join("&");
+  return [
+    url,
+    headers,
+    options.responseType ?? "json",
+    identityOf(options.schema),
+    identityOf(options.fallbackMessage),
+    options.ignoreErrorBody ? "1" : "0",
+    options.skipBodyForBinary ? "1" : "0",
+  ].join("|");
+}
+
+/**
+ * Subscribes a caller to a shared request. The caller's own cancellation only detaches that
+ * caller. The network call is aborted once no subscriber is left.
+ */
+function join<T>(key: string, shared: SharedRequest, callerSignal?: AbortSignal): Promise<ApiResponse<T>> {
+  return new Promise<ApiResponse<T>>((resolve, reject) => {
+    if (callerSignal?.aborted) {
+      reject(new ApiError("aborted", CANCELLED_MESSAGE));
+      return;
+    }
+    shared.subscribers += 1;
+    const onAbort = () => {
+      shared.subscribers -= 1;
+      if (shared.subscribers === 0) {
+        shared.controller.abort();
+        if (inFlight.get(key) === shared) inFlight.delete(key);
+      }
+      reject(new ApiError("aborted", CANCELLED_MESSAGE));
+    };
+    callerSignal?.addEventListener("abort", onAbort, { once: true });
+    shared.promise.then(
+      (value) => {
+        callerSignal?.removeEventListener("abort", onAbort);
+        resolve(value as ApiResponse<T>);
+      },
+      (error: unknown) => {
+        callerSignal?.removeEventListener("abort", onAbort);
+        reject(error);
+      }
+    );
+  });
 }
