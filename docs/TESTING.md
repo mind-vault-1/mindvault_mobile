@@ -79,7 +79,8 @@ and `E2E_TESTNET_SECRET` as secrets; the seeded API URL comes from the EAS
 `npm run test:mutation` runs Stryker against the money and signing helpers:
 `src/utils/requestSignature.ts`, `src/utils/validateStellarSecret.ts`,
 `src/utils/priceRange.ts` and `src/api/payment.ts`. Config lives in
-`stryker.conf.json`. Reports go to `reports/mutation/` and are git-ignored.
+`stryker.conf.json`. Stryker requires Node 22 or newer. Reports go to
+`reports/mutation/` and are git-ignored.
 
 For a targeted local run, pass Stryker's `--mutate` option through npm:
 
