@@ -164,6 +164,7 @@ export function PublisherSettings({
               <TextInput
                 value={apiKey}
                 onChangeText={setApiKey}
+                accessibilityLabel="API key"
                 placeholder="Enter your API key"
                 placeholderTextColor={colors.textSubtle}
                 style={styles.input}
@@ -176,7 +177,7 @@ export function PublisherSettings({
 
           {error ? (
             <View style={[styles.errorBanner, { borderColor: colors.danger, backgroundColor: colors.dangerBg }]}>
-              <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+              <Text accessibilityRole="alert" style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
             </View>
           ) : null}
 
@@ -250,7 +251,7 @@ export function PublisherSettings({
                 <Text style={styles.logoutButtonText}>Revoke API Key</Text>
               </Pressable>
               {onViewProfile ? (
-                <Pressable
+                <Pressable accessibilityRole="button"
                   onPress={onViewProfile}
                   disabled={loading}
                   style={({ pressed }) => [
@@ -264,7 +265,7 @@ export function PublisherSettings({
               ) : null}
             </>
           ) : (
-            <Pressable
+            <Pressable accessibilityRole="button"
               onPress={handleSave}
               disabled={loading}
               style={({ pressed }) => [
@@ -279,7 +280,7 @@ export function PublisherSettings({
             </Pressable>
           )}
 
-          <Pressable
+          <Pressable accessibilityRole="button"
             onPress={onClose}
             style={({ pressed }) => [
               styles.button,
