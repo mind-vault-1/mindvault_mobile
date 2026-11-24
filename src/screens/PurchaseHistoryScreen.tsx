@@ -157,6 +157,10 @@ export function PurchaseHistoryScreen() {
       <FlatList
         data={visible}
         keyExtractor={(receipt) => receipt.txHash}
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        removeClippedSubviews
         contentContainerStyle={styles.content}
         ListHeaderComponent={
           <View style={styles.header}>
