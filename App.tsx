@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 
 import { initializeApiBaseUrl } from "./src/api/resources";
+import { loadRemoteConfig, refreshRemoteConfig } from "./src/config/remoteConfig";
 import { createLinkingOptions } from "./src/linking";
 import { RootNavigator } from "./src/navigation";
 import {
@@ -111,11 +112,18 @@ function AppContent() {
 
   const { isOffline } = useNetworkStatus({ onReconnect: drainMutationQueue });
 
-  // Apply the API base URL saved in Settings before the first request goes out.
+  // Cached remote config (API host, limits, flags) is applied before the first request.
+  // The latest copy is fetched after boot and takes effect on the next request.
   useEffect(() => {
-    initializeApiBaseUrl()
+    const boot = loadRemoteConfig()
+      .catch((err) => logError("Failed to load cached remote config", err))
+      .then(() => initializeApiBaseUrl())
       .catch((err) => logError("Failed to load saved API base URL", err))
       .finally(() => setApiUrlReady(true));
+    void boot
+      .then(() => refreshRemoteConfig())
+      .then(() => initializeApiBaseUrl())
+      .catch((err) => logError("Failed to refresh remote config", err));
   }, []);
 
   // Restore the language chosen in Settings before the first screen renders.
