@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AppState } from "react-native";
+import { AppState, I18nManager } from "react-native";
 import { NavigationContainer, type NavigationState } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -26,7 +26,7 @@ import { useReceiptSync } from "./src/hooks/useReceiptSync";
 import { AppLockProvider } from "./src/hooks/useAppLock";
 import { AppQueryProvider } from "./src/hooks/queries";
 import { STORAGE_KEYS } from "./src/services/storage";
-import { loadLanguagePreference, refreshSystemLanguage, useLocale } from "./src/i18n";
+import { isCurrentLocaleRtl, loadLanguagePreference, refreshSystemLanguage, useLocale } from "./src/i18n";
 
 const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
 export const BOOT_TIMEOUT_MS = 5000;
@@ -81,6 +81,7 @@ function AppContent() {
   const [languageReady, setLanguageReady] = useState(false);
   const toast = useToast();
   const locale = useLocale();
+  const isRtl = isCurrentLocaleRtl();
   // Kept across the remount below so a language change doesn't reset navigation.
   const navigationState = useRef<NavigationState | undefined>(undefined);
 
@@ -132,6 +133,16 @@ function AppContent() {
       .catch((err) => logError("Failed to load saved language", err))
       .finally(() => setLanguageReady(true));
   }, []);
+
+  // Native text/layout direction follows the resolved BCP-47 locale. Expo
+  // applies this on the next reload, so changing direction never mutates a
+  // mounted navigation tree underneath the user.
+  useEffect(() => {
+    if (I18nManager.isRTL !== isRtl) {
+      I18nManager.allowRTL(isRtl);
+      I18nManager.forceRTL(isRtl);
+    }
+  }, [isRtl]);
 
   // "System" follows the device: pick up a language change made while backgrounded.
   useEffect(() => {
