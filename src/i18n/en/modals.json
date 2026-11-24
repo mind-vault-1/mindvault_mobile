@@ -19,6 +19,11 @@
   "modals.register.mustBeSigned": "The transaction must be signed before submission.",
   "modals.register.explorerFailed": "Failed to open explorer",
   "modals.register.signAction": "register this publisher",
+  "modals.register.announce.preparing": "Preparing transaction.",
+  "modals.register.announce.signing": "Waiting for your signature.",
+  "modals.register.announce.submitting": "Submitting to the blockchain.",
+  "modals.register.announce.success": "Registration successful.",
+  "modals.register.announce.failed": "Registration failed. {message}",
   "modals.transfer.title": "Transfer Ownership",
   "modals.transfer.resource": "Resource: {title}",
   "modals.transfer.step.confirm": "Review transfer details",
@@ -90,6 +95,7 @@
   "modals.sign.secretKey": "Stellar secret key",
   "modals.sign.submit": "Sign",
   "modals.sign.defaultAction": "sign this transaction",
+  "modals.sign.announce.signing": "Signing transaction.",
   "modals.sign.authPrompt": "Authenticate to {action}",
   "modals.sign.biometricsCancelled": "Biometric authentication was not completed.",
   "modals.sign.biometricsFailed": "Biometric authentication failed. Try again.",
@@ -120,5 +126,11 @@
   "modals.paywall.networkMainnet": "Stellar mainnet",
   "modals.paywall.networkTestnet": "Stellar testnet",
   "modals.paywall.networkOther": "Stellar {network}",
-  "modals.paywall.signAction": "pay for this resource"
+  "modals.paywall.signAction": "pay for this resource",
+  "modals.paywall.announce.preparing": "Preparing payment.",
+  "modals.paywall.announce.signing": "Waiting for your signature.",
+  "modals.paywall.announce.authorizing": "Authorizing payment.",
+  "modals.paywall.announce.settling": "Confirming payment on the network.",
+  "modals.paywall.announce.result": "Access granted.",
+  "modals.paywall.announce.error": "Payment could not be completed."
 }

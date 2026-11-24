@@ -937,6 +937,7 @@ export function PublisherResourcesScreen() {
             <TextInput
               value={apiKey}
               onChangeText={handleApiKeyChange}
+              accessibilityLabel={t("publisher.apiKeyPlaceholder")}
               placeholder={t("publisher.apiKeyPlaceholder")}
               placeholderTextColor={colors.textSubtle}
               secureTextEntry
@@ -949,11 +950,11 @@ export function PublisherResourcesScreen() {
 
           {error ? (
             <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{error}</Text>
+              <Text style={styles.errorText} accessibilityRole="alert">{error}</Text>
             </View>
           ) : null}
 
-          <Pressable
+          <Pressable accessibilityRole="button"
             onPress={handleSaveApiKey}
             disabled={loading || !apiKey.trim()}
             style={[shared.button, shared.primaryButton, loading && styles.disabledButton]}
@@ -963,7 +964,7 @@ export function PublisherResourcesScreen() {
             </Text>
           </Pressable>
 
-          <Pressable
+          <Pressable accessibilityRole="button"
             onPress={() => setShowSignup(true)}
             disabled={loading}
             style={[shared.button, styles.secondaryButton, loading && styles.disabledButton]}
@@ -971,14 +972,14 @@ export function PublisherResourcesScreen() {
             <Text style={styles.secondaryButtonText}>{t("publisher.createAccount")}</Text>
           </Pressable>
 
-          <Pressable onPress={goToPublicCatalog} style={styles.secondaryButton}>
+          <Pressable accessibilityRole="button" onPress={goToPublicCatalog} style={styles.secondaryButton}>
             <Text style={styles.secondaryButtonText}>{t("publisher.backToCatalog")}</Text>
           </Pressable>
 
           <View style={styles.helpCard}>
             <View style={styles.helpHeaderRow}>
               <Text style={styles.helpTitle}>{t("publisher.apiKeyHelpTitle")}</Text>
-              <Pressable
+              <Pressable accessibilityRole="button"
                 onPress={() => setShowHelp((prev) => !prev)}
                 style={styles.helpToggleButton}
               >
@@ -1035,7 +1036,7 @@ export function PublisherResourcesScreen() {
                 <Text style={typography.title}>{t("publisher.myResources")}</Text>
                 <Text style={typography.subtitle}>{t("publisher.myResourcesSubtitle")}</Text>
               </View>
-              <Pressable onPress={goToPublicCatalog} style={styles.backButton}>
+              <Pressable accessibilityRole="button" onPress={goToPublicCatalog} style={styles.backButton}>
                 <Text style={styles.backButtonText}>{t("publisher.publicNav")}</Text>
               </Pressable>
             </View>
@@ -1043,6 +1044,8 @@ export function PublisherResourcesScreen() {
             <TextInput
               value={search}
               onChangeText={setSearch}
+              accessibilityRole="search"
+              accessibilityLabel={t("publisher.searchPlaceholder")}
               placeholder={t("publisher.searchPlaceholder")}
               placeholderTextColor={colors.textSubtle}
               style={styles.searchInput}
@@ -1203,8 +1206,8 @@ export function PublisherResourcesScreen() {
 
             {error ? (
               <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>{error}</Text>
-                <Pressable onPress={handleRefresh} style={styles.retryButton}>
+                <Text style={styles.errorText} accessibilityRole="alert">{error}</Text>
+                <Pressable onPress={handleRefresh} accessibilityRole="button" style={styles.retryButton}>
                   <Text style={styles.retryText}>{t("publisher.retry")}</Text>
                 </Pressable>
               </View>
@@ -1227,7 +1230,7 @@ export function PublisherResourcesScreen() {
               <Text style={styles.publishButtonText}>{t("publisher.publishLink")}</Text>
             </Pressable>
 
-            <Pressable onPress={handleLogout} style={styles.logoutButton}>
+            <Pressable accessibilityRole="button" onPress={handleLogout} style={styles.logoutButton}>
               <Text style={styles.logoutButtonText}>{t("publisher.logout")}</Text>
             </Pressable>
           </View>

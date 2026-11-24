@@ -104,6 +104,7 @@ export function FavoritesScreen({ navigation }: FavoritesScreenProps) {
     if (fresh.length === 0) return;
     fresh.forEach((id) => forgotten.current.add(id));
     void Promise.all(fresh.map((id) => toggleFavorite(id))).finally(() => {
+      setIds((current) => current?.filter((id) => !fresh.includes(id)) ?? null);
       fresh.forEach((id) => queryClient.removeQueries({ queryKey: queryKeys.detail(id) }));
     });
   }, [deletedIds, queryClient]);

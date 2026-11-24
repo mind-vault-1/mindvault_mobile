@@ -636,6 +636,7 @@ export function SettingsScreen() {
               },
             ]}
             value={apiUrl}
+            accessibilityLabel={t("settings.apiUrl")}
             onChangeText={setApiUrl}
             autoCapitalize="none"
             autoCorrect={false}
@@ -660,7 +661,7 @@ export function SettingsScreen() {
                 {t("settings.resetToDefault")}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               style={[
                 shared.button,
                 shared.primaryButton,

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  findNodeHandle,
   Modal,
   Pressable,
   StyleSheet,
@@ -36,7 +38,7 @@ import { openExternalUrl } from "../utils/stellarExpert";
 import { getPublicKey } from "../services/wallet";
 import { DEFAULT_PER_PAYMENT_LIMIT, loadPreferences } from "../services/preferences";
 import { cacheContent, getCachedContent } from "../services/contentCache";
-import { t } from "../i18n";
+import { t, type TranslationKey } from "../i18n";
 
 /** Typed confirmation for payments above the spending limit (not translated). */
 const HIGH_PAYMENT_PHRASE = "CONFIRM";
@@ -59,9 +61,21 @@ interface PaywallModalProps {
   price: string;
   resourceId: string;
   onClose: () => void;
+  /** The control that opened the paywall. Focus returns here on close when provided. */
+  returnFocusRef?: { current: unknown };
 }
 
 type Phase = "confirm" | "preparing" | "signing" | "authorizing" | "settling" | "result" | "error";
+
+/** Spoken when the payment flow moves to a new phase. Confirm is silent: the title says it. */
+const PHASE_ANNOUNCEMENTS: Partial<Record<Phase, TranslationKey>> = {
+  preparing: "modals.paywall.announce.preparing",
+  signing: "modals.paywall.announce.signing",
+  authorizing: "modals.paywall.announce.authorizing",
+  settling: "modals.paywall.announce.settling",
+  result: "modals.paywall.announce.result",
+  error: "modals.paywall.announce.error",
+};
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
@@ -180,6 +194,7 @@ export function PaywallModal({
   price,
   resourceId,
   onClose,
+  returnFocusRef,
 }: PaywallModalProps) {
   const { colors, shared, typography } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -196,6 +211,28 @@ export function PaywallModal({
   const [showLimitConfirm, setShowLimitConfirm] = useState(false);
   const [limitConfirmText, setLimitConfirmText] = useState("");
   const [cachedContent, setCachedContent] = useState<string | null>(null);
+
+  const headingRef = useRef<Text>(null);
+  const wasVisible = useRef(false);
+
+  // Move focus into the paywall when it opens, and back to the opener when it closes.
+  useEffect(() => {
+    if (visible && !wasVisible.current) {
+      const tag = headingRef.current ? findNodeHandle(headingRef.current) : null;
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    if (!visible && wasVisible.current && returnFocusRef?.current) {
+      const tag = findNodeHandle(returnFocusRef.current as Parameters<typeof findNodeHandle>[0]);
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    wasVisible.current = visible;
+  }, [visible, returnFocusRef]);
+
+  // Announce each phase change so screen reader users hear progress, not only a spinner.
+  useEffect(() => {
+    const key = PHASE_ANNOUNCEMENTS[phase];
+    if (key) AccessibilityInfo.announceForAccessibility(t(key));
+  }, [phase]);
 
   const flow = useRef(0);
   const busy = useRef(false);
@@ -412,7 +449,12 @@ export function PaywallModal({
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.header}>
-              <Text style={[typography.cardTitle, styles.title]} numberOfLines={2}>
+              <Text
+                ref={headingRef}
+                accessibilityRole="header"
+                style={[typography.cardTitle, styles.title]}
+                numberOfLines={2}
+              >
                 {resourceTitle}
               </Text>
               <Pressable onPress={close} accessibilityRole="button" accessibilityLabel={t("modals.paywall.closeLabel")} style={styles.closeBtn}>

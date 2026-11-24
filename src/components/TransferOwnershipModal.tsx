@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  findNodeHandle,
   Modal,
   Pressable,
   StyleSheet,
@@ -26,6 +27,8 @@ interface TransferOwnershipModalProps {
   visible: boolean;
   onClose: () => void;
   onSuccess: (txHash: string | null) => void;
+  /** The control that opened the modal. Focus returns here on close when provided. */
+  returnFocusRef?: { current: unknown };
 }
 
 // Looked up at render time so the labels follow the current language.
@@ -196,6 +199,7 @@ export function TransferOwnershipModal({
   visible,
   onClose,
   onSuccess,
+  returnFocusRef,
 }: TransferOwnershipModalProps) {
   const { colors, shared, typography } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -226,6 +230,29 @@ export function TransferOwnershipModal({
   const [scanned, setScanned] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
+
+  const headingRef = useRef<Text>(null);
+  const wasVisible = useRef(false);
+
+  // Move focus into the modal when it opens, and back to the opener when it closes.
+  useEffect(() => {
+    if (visible && !wasVisible.current) {
+      const tag = headingRef.current ? findNodeHandle(headingRef.current) : null;
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    if (!visible && wasVisible.current && returnFocusRef?.current) {
+      const tag = findNodeHandle(returnFocusRef.current as Parameters<typeof findNodeHandle>[0]);
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+    wasVisible.current = visible;
+  }, [visible, returnFocusRef]);
+
+  // Announce each step after the review step, so progress is heard as well as seen.
+  useEffect(() => {
+    if (step === "confirm") return;
+    const label = stepLabel(step);
+    if (label) AccessibilityInfo.announceForAccessibility(label);
+  }, [step]);
 
   const isConfirm = step === "confirm";
   const isProcessing = ["preparing", "submitting"].includes(step);
@@ -286,7 +313,7 @@ export function TransferOwnershipModal({
       >
         <View style={styles.overlay}>
           <View style={styles.sheet} accessibilityViewIsModal>
-            <Text style={typography.title} accessibilityRole="header">{t("modals.transfer.title")}</Text>
+            <Text ref={headingRef} style={typography.title} accessibilityRole="header">{t("modals.transfer.title")}</Text>
             <Text style={[typography.body, styles.subtitle]}>
               {t("modals.transfer.resource", { title: resource.title })}
             </Text>
