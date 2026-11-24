@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Right-to-left layout detection for RTL device locales with native direction updates.
+- Settings and publisher write-path regression coverage.
+- Virtualized rendering tuning for publisher resources and purchase history.
+
+
 ## [1.3.0](https://github.com/mind-vault-1/mindvault_mobile/compare/v1.2.0...v1.3.0) (2026-11-21)
 
 
