@@ -86,6 +86,11 @@ function systemLocale(): ResolvedLocale {
     if (isSupportedLanguage(code)) {
       return { language: code, formatLocale: locale.languageTag || code };
     }
+    // Keep English strings as the fallback while preserving the device's RTL
+    // formatting direction for languages not translated yet.
+    if (code && RTL_LANGUAGE_PREFIXES.has(code)) {
+      return { language: DEFAULT_LANGUAGE, formatLocale: locale.languageTag || code };
+    }
   }
   return { language: DEFAULT_LANGUAGE, formatLocale: DEFAULT_LANGUAGE };
 }
