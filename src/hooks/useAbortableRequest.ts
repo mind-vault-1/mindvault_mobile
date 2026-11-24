@@ -37,7 +37,11 @@ export function useAbortableRequest<T>(
         setState({ data, error: undefined, loading: false });
       },
       (error: unknown) => {
-        if (controller.signal.aborted || isAbortError(error)) return;
+        if (controller.signal.aborted) return;
+        if (isAbortError(error)) {
+          setState((previous) => ({ ...previous, loading: false }));
+          return;
+        }
         const failure = error instanceof Error ? error : new Error(String(error));
         setState((previous) => ({ ...previous, error: failure, loading: false }));
       }

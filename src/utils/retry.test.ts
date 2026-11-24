@@ -256,7 +256,7 @@ describe('circuit breaker in the client', () => {
     await expect(request(URL, { method: 'POST', body: {} })).rejects.toMatchObject({ kind: 'unavailable' });
 
     await jest.advanceTimersByTimeAsync(BREAKER_COOLDOWN_MS);
-    fetchMock.mockResolvedValueOnce(response({ ok: true }));
+    fetchMock.mockResolvedValue(response({ ok: true }));
     await expect(request(URL, { method: 'POST', body: {} })).resolves.toMatchObject({ data: { ok: true } });
     await expect(request(URL, { method: 'POST', body: {} })).resolves.toMatchObject({ data: { ok: true } });
   });

@@ -21,7 +21,7 @@ function response(body: unknown, status = 200) {
  * signal it was given, and rejects if that signal is aborted.
  */
 function controllableFetch() {
-  const pending: Array<{ resolve: (value: unknown) => void; signal?: AbortSignal }> = [];
+  const pending: { resolve: (value: unknown) => void; signal?: AbortSignal }[] = [];
   const mock = jest.fn((_url: string, init?: RequestInit) => {
     return new Promise((resolve, reject) => {
       const signal = init?.signal ?? undefined;

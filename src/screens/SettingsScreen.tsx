@@ -435,7 +435,6 @@ export function SettingsScreen() {
               },
             ]}
             value={perPaymentLimitDraft}
-            accessibilityLabel={t("settings.spendingGuard")}
             onChangeText={setPerPaymentLimitDraft}
             keyboardType="decimal-pad"
             autoCapitalize="none"
@@ -705,7 +704,7 @@ export function SettingsScreen() {
           <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
             {t("settings.localDataBody")}
           </Text>
-          <TouchableOpacity accessibilityRole="link"
+          <TouchableOpacity
             style={{ minHeight: 44, justifyContent: "center", marginBottom: 12 }}
             onPress={() =>
               openExternalUrl(PRIVACY_POLICY_URL).catch(() =>
