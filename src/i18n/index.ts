@@ -42,6 +42,17 @@ export const LANGUAGE_STORAGE_KEY = "@mindvault_language";
 /** Each language's name in that language, as shown in the picker. */
 export const LANGUAGE_NAMES: Record<Language, string> = { en: "English", fr: "Français" };
 
+/** BCP-47 language prefixes whose scripts flow from right to left. */
+const RTL_LANGUAGE_PREFIXES = new Set(["ar", "fa", "he", "ur"]);
+
+export function isRtlLocale(locale: string): boolean {
+  return RTL_LANGUAGE_PREFIXES.has(locale.split(/[-_]/)[0]?.toLowerCase() ?? "");
+}
+
+export function isCurrentLocaleRtl(): boolean {
+  return isRtlLocale(current.formatLocale);
+}
+
 const i18n = new I18n(translations);
 i18n.enableFallback = true;
 i18n.defaultSeparator = "|";
