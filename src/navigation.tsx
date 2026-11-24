@@ -1,3 +1,4 @@
+import { type ComponentType } from "react";
 import { Pressable, Text } from "react-native";
 import { useNavigation, useTheme } from "@react-navigation/native";
 import {
@@ -6,22 +7,51 @@ import {
 } from "@react-navigation/native-stack";
 
 import { CatalogScreen } from "./screens/CatalogScreen";
-import { FavoritesScreen } from "./screens/FavoritesScreen";
-import { ResourceDetailScreen } from "./screens/ResourceDetailScreen";
-import { ScannerScreen } from "./screens/ScannerScreen";
-import { SettingsScreen } from "./screens/SettingsScreen";
-import { DevSignerScreen } from "./screens/DevSignerScreen";
-import { PublisherResourcesScreen } from "./screens/PublisherResourcesScreen";
-import { PublisherProfileScreen } from "./screens/PublisherProfileScreen";
-import { PublisherAnalyticsScreen } from "./screens/PublisherAnalyticsScreen";
-import { PublisherPublicScreen } from "./screens/PublisherPublicScreen";
-import { WalletScreen } from "./screens/WalletScreen";
-import { LeaderboardScreen } from "./screens/LeaderboardScreen";
-import { PurchaseHistoryScreen } from "./screens/PurchaseHistoryScreen";
-import { ReceiptDetailScreen } from "./screens/ReceiptDetailScreen";
-import { PublishResourceScreen } from "./screens/PublishResourceScreen";
-import { PublisherResourceDetailScreen } from "./screens/PublisherResourceDetailScreen";
 import { OnboardingScreen } from "./screens/OnboardingScreen";
+
+/**
+ * Wraps a screen so its module is required on first render, not at startup.
+ * Metro only evaluates a module when its `require` runs, so screens a user never
+ * opens (scanner, wallet, ...) add no startup work.
+ */
+function lazyScreen(load: () => ComponentType<any>): ComponentType<any> {
+  let Screen: ComponentType<any> | undefined;
+  return function LazyScreen(props: any) {
+    Screen ??= load();
+    return <Screen {...props} />;
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const FavoritesScreen = lazyScreen(() => require("./screens/FavoritesScreen").FavoritesScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ResourceDetailScreen = lazyScreen(() => require("./screens/ResourceDetailScreen").ResourceDetailScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ScannerScreen = lazyScreen(() => require("./screens/ScannerScreen").ScannerScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const SettingsScreen = lazyScreen(() => require("./screens/SettingsScreen").SettingsScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const DevSignerScreen = lazyScreen(() => require("./screens/DevSignerScreen").DevSignerScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PublisherResourcesScreen = lazyScreen(() => require("./screens/PublisherResourcesScreen").PublisherResourcesScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PublisherProfileScreen = lazyScreen(() => require("./screens/PublisherProfileScreen").PublisherProfileScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PublisherAnalyticsScreen = lazyScreen(() => require("./screens/PublisherAnalyticsScreen").PublisherAnalyticsScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PublisherPublicScreen = lazyScreen(() => require("./screens/PublisherPublicScreen").PublisherPublicScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const WalletScreen = lazyScreen(() => require("./screens/WalletScreen").WalletScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const LeaderboardScreen = lazyScreen(() => require("./screens/LeaderboardScreen").LeaderboardScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PurchaseHistoryScreen = lazyScreen(() => require("./screens/PurchaseHistoryScreen").PurchaseHistoryScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ReceiptDetailScreen = lazyScreen(() => require("./screens/ReceiptDetailScreen").ReceiptDetailScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PublishResourceScreen = lazyScreen(() => require("./screens/PublishResourceScreen").PublishResourceScreen);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PublisherResourceDetailScreen = lazyScreen(() => require("./screens/PublisherResourceDetailScreen").PublisherResourceDetailScreen);
 
 export type RootStackParamList = {
   Onboarding: undefined;
