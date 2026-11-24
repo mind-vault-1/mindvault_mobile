@@ -4,15 +4,24 @@ import { Linking } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 
 import { checkUsdcForPayment } from "../api/horizon";
-import { appNetworkId, prepareResourceAccess, signPaymentTransaction, submitSignedPayment, type PaymentChallenge } from "../api/payment";
+import {
+  appNetworkId,
+  prepareResourceAccess,
+  redownloadResource,
+  signPaymentTransaction,
+  submitSignedPayment,
+  type PaymentChallenge,
+} from "../api/payment";
 import { renderWithProviders } from "../test-utils";
-import { cacheContent, getCachedContent } from "../services/contentCache";
+import { cacheContent, readCachedContent, removeCachedContent } from "../services/contentCache";
+import { sha256Hex } from "../utils/hash";
 import { PaywallModal } from "./PaywallModal";
 
 jest.mock("../api/payment", () => ({
   appNetworkId: jest.fn(() => "stellar:testnet"),
   sorobanRpcUrl: jest.fn(() => "https://soroban-testnet.stellar.org"),
-  prepareResourceAccess: jest.fn(), signPaymentTransaction: jest.fn(), submitSignedPayment: jest.fn(),
+  prepareResourceAccess: jest.fn(), redownloadResource: jest.fn(), encodePaymentSignature: jest.fn(() => "signed-proof"),
+  signPaymentTransaction: jest.fn(), submitSignedPayment: jest.fn(),
   priceToAtomicUnits: jest.fn((value: string) => {
     const [whole, fraction = ""] = value.trim().split(".");
     return BigInt(`${whole}${fraction.padEnd(7, "0").slice(0, 7)}`);
@@ -33,7 +42,8 @@ jest.mock("../services/wallet", () => ({
   getPublicKey: jest.fn().mockResolvedValue("GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7"),
 }));
 jest.mock("../services/contentCache", () => ({
-  getCachedContent: jest.fn(),
+  readCachedContent: jest.fn(),
+  removeCachedContent: jest.fn(),
   cacheContent: jest.fn(),
 }));
 jest.mock("@react-navigation/native", () => ({
@@ -45,11 +55,13 @@ jest.mock("@react-navigation/native", () => ({
 }));
 
 const mockPrepare = prepareResourceAccess as jest.MockedFunction<typeof prepareResourceAccess>;
+const mockRedownload = redownloadResource as jest.MockedFunction<typeof redownloadResource>;
 const mockSign = signPaymentTransaction as jest.MockedFunction<typeof signPaymentTransaction>;
 const mockSubmit = submitSignedPayment as jest.MockedFunction<typeof submitSignedPayment>;
 const mockNetwork = appNetworkId as jest.MockedFunction<typeof appNetworkId>;
 const mockCheckUsdc = checkUsdcForPayment as jest.MockedFunction<typeof checkUsdcForPayment>;
-const mockGetCachedContent = getCachedContent as jest.MockedFunction<typeof getCachedContent>;
+const mockReadCachedContent = readCachedContent as jest.MockedFunction<typeof readCachedContent>;
+const mockRemoveCachedContent = removeCachedContent as jest.MockedFunction<typeof removeCachedContent>;
 const mockCacheContent = cacheContent as jest.MockedFunction<typeof cacheContent>;
 const mockNavigate = jest.fn();
 const mockOpenBrowser = WebBrowser.openBrowserAsync as jest.Mock;
@@ -68,8 +80,10 @@ function deferred<T>() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockGetCachedContent.mockReset().mockResolvedValue(null);
+  mockReadCachedContent.mockReset().mockResolvedValue({ status: "miss" });
+  mockRemoveCachedContent.mockReset().mockResolvedValue(undefined);
   mockCacheContent.mockReset().mockResolvedValue(true);
+  mockRedownload.mockReset().mockResolvedValue({ type: "text", content: "Unlocked content" });
   mockNetwork.mockReturnValue("stellar:testnet");
   mockCheckUsdc.mockResolvedValue({ status: "ok" });
   mockPrepare.mockResolvedValue({ type: "payment", challenge });
@@ -152,7 +166,7 @@ it("requires typed confirmation before paying above the per-payment limit", asyn
 });
 
 it("opens cached unlocked content without paying again", async () => {
-  mockGetCachedContent.mockResolvedValue("Unlocked content");
+  mockReadCachedContent.mockResolvedValue({ status: "hit", content: "Unlocked content" });
   const screen = renderWithProviders(<PaywallModal {...props} />);
 
   expect(await screen.findByText("Open")).toBeTruthy();
@@ -163,6 +177,46 @@ it("opens cached unlocked content without paying again", async () => {
   expect(mockCheckUsdc).not.toHaveBeenCalled();
   expect(mockPrepare).not.toHaveBeenCalled();
   expect(mockCacheContent).not.toHaveBeenCalled();
+});
+
+it("shows a clear error and re-download action when cached content fails verification", async () => {
+  mockReadCachedContent.mockResolvedValue({ status: "integrity-failed" });
+  const screen = renderWithProviders(<PaywallModal {...props} />);
+
+  expect(await screen.findByText(/failed its integrity check/)).toBeTruthy();
+  expect(screen.queryByText("Open")).toBeNull();
+  expect(screen.getByRole("button", { name: "Download again" })).toBeTruthy();
+});
+
+it("renders a matching download and records the publisher digest in the cache", async () => {
+  const digest = sha256Hex("Unlocked content");
+  const screen = renderWithProviders(<PaywallModal {...props} expectedSha256={digest} />);
+  await startSigning(screen);
+
+  expect(await screen.findByText("Unlocked content")).toBeTruthy();
+  expect(mockCacheContent).toHaveBeenCalledWith("res-1", "Unlocked content", undefined, digest);
+});
+
+it("never renders a failed download and re-downloads with the signed proof without paying again", async () => {
+  const digest = sha256Hex("Original text");
+  mockSubmit.mockResolvedValueOnce({ type: "text", content: "Tampered text" });
+  const screen = renderWithProviders(<PaywallModal {...props} expectedSha256={digest} />);
+  await startSigning(screen);
+
+  expect(await screen.findByText(/failed its integrity check/)).toBeTruthy();
+  expect(screen.queryByText("Tampered text")).toBeNull();
+  expect(mockCacheContent).not.toHaveBeenCalled();
+  expect(mockRemoveCachedContent).toHaveBeenCalledWith("res-1");
+
+  mockRedownload.mockResolvedValueOnce({ type: "text", content: "Original text" });
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Download again" }));
+  });
+
+  expect(await screen.findByText("Original text")).toBeTruthy();
+  expect(mockRedownload).toHaveBeenCalledWith(props.accessUrl, "signed-proof");
+  expect(mockSubmit).toHaveBeenCalledTimes(1);
+  expect(mockPrepare).toHaveBeenCalledTimes(1);
 });
 
 it("shows challenge, signing and settlement progress and then text content", async () => {

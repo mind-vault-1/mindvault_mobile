@@ -9,6 +9,7 @@ import {
   parsePaymentRequired,
   prepareResourceAccess,
   priceToAtomicUnits,
+  redownloadResource,
   signPaymentTransaction,
   submitSignedPayment,
   type PaymentChallenge,
@@ -306,6 +307,22 @@ describe("submitSignedPayment", () => {
   it("does not save a receipt for a failed HTTP response even if it has settlement metadata", async () => {
     fetchMock.mockResolvedValue(mockResponse(402, "", { "PAYMENT-RESPONSE": settlementHeader(settlement) }));
     await expect(submitSignedPayment(URL, challenge, "signed-tx")).rejects.toThrow("The payment was not accepted");
+    expect(await listReceipts()).toEqual([]);
+  });
+});
+
+describe("redownloadResource", () => {
+  it("reuses the signed payment proof without saving another receipt", async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, "fresh content", { "content-type": "text/plain" }));
+
+    await expect(redownloadResource(URL, "signed-proof")).resolves.toEqual({
+      type: "text",
+      content: "fresh content",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(URL, expect.objectContaining({
+      method: "GET",
+      headers: { "PAYMENT-SIGNATURE": "signed-proof" },
+    }));
     expect(await listReceipts()).toEqual([]);
   });
 });
