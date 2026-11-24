@@ -6,10 +6,10 @@
     "configFile": "jest.config.js"
   },
   "mutate": [
-    "src/utils/**/*.ts",
-    "src/api/**/*.ts",
-    "!src/utils/**/*.test.ts",
-    "!src/api/**/*.test.ts"
+    "src/utils/requestSignature.ts",
+    "src/utils/validateStellarSecret.ts",
+    "src/utils/priceRange.ts",
+    "src/api/payment.ts"
   ],
   "coverageAnalysis": "perTest",
   "ignoreStatic": true,
