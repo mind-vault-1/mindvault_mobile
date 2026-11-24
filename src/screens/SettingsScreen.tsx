@@ -435,6 +435,7 @@ export function SettingsScreen() {
               },
             ]}
             value={perPaymentLimitDraft}
+            accessibilityLabel={t("settings.spendingGuard")}
             onChangeText={setPerPaymentLimitDraft}
             keyboardType="decimal-pad"
             autoCapitalize="none"
@@ -570,6 +571,7 @@ export function SettingsScreen() {
               },
             ]}
             value={apiUrl}
+            accessibilityLabel={t("settings.apiUrl")}
             onChangeText={setApiUrl}
             autoCapitalize="none"
             autoCorrect={false}
@@ -594,7 +596,7 @@ export function SettingsScreen() {
                 {t("settings.resetToDefault")}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               style={[
                 shared.button,
                 shared.primaryButton,
@@ -703,7 +705,7 @@ export function SettingsScreen() {
           <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
             {t("settings.localDataBody")}
           </Text>
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="link"
             style={{ minHeight: 44, justifyContent: "center", marginBottom: 12 }}
             onPress={() =>
               openExternalUrl(PRIVACY_POLICY_URL).catch(() =>
