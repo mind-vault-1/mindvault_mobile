@@ -1,4 +1,6 @@
-import { Pressable, Text } from "react-native";
+/* eslint-disable @typescript-eslint/no-require-imports */
+import { lazy, Suspense, type ComponentType } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useNavigation, useTheme } from "@react-navigation/native";
 import {
   createNativeStackNavigator,
@@ -6,27 +8,78 @@ import {
 } from "@react-navigation/native-stack";
 
 import { CatalogScreen } from "./screens/CatalogScreen";
-import { FavoritesScreen } from "./screens/FavoritesScreen";
-import { ResourceDetailScreen } from "./screens/ResourceDetailScreen";
-import { ScannerScreen } from "./screens/ScannerScreen";
-import { SettingsScreen } from "./screens/SettingsScreen";
-import { DevSignerScreen } from "./screens/DevSignerScreen";
-import { PublisherResourcesScreen } from "./screens/PublisherResourcesScreen";
-import { PublisherProfileScreen } from "./screens/PublisherProfileScreen";
-import { PublisherAnalyticsScreen } from "./screens/PublisherAnalyticsScreen";
-import { PublisherPublicScreen } from "./screens/PublisherPublicScreen";
-import { WalletScreen } from "./screens/WalletScreen";
-import { LeaderboardScreen } from "./screens/LeaderboardScreen";
-import { PurchaseHistoryScreen } from "./screens/PurchaseHistoryScreen";
-import { ReceiptDetailScreen } from "./screens/ReceiptDetailScreen";
-import { PublishResourceScreen } from "./screens/PublishResourceScreen";
-import { PublisherResourceDetailScreen } from "./screens/PublisherResourceDetailScreen";
 import { OnboardingScreen } from "./screens/OnboardingScreen";
-import { CollectionScreen } from "./screens/CollectionScreen";
+
+type ScreenComponent = ComponentType<any>;
+
+function ScreenFallback() {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={[styles.fallback, { backgroundColor: colors.background }]}
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading screen"
+    >
+      <ActivityIndicator color={colors.primary} />
+      <Text style={[styles.fallbackText, { color: colors.text }]}>Loading…</Text>
+    </View>
+  );
+}
+
+function lazyScreen(load: () => Promise<{ default: ScreenComponent }>): ScreenComponent {
+  const Lazy = lazy(load);
+  return function LoadableScreen(props: any) {
+    return (
+      <Suspense fallback={<ScreenFallback />}>
+        <Lazy {...props} />
+      </Suspense>
+    );
+  };
+}
+
+function lazyRequire(load: () => ScreenComponent): () => Promise<{ default: ScreenComponent }> {
+  return () => Promise.resolve({ default: load() });
+}
+
+const FavoritesScreen = lazyScreen(lazyRequire(() => require("./screens/FavoritesScreen").FavoritesScreen));
+const ResourceDetailScreen = lazyScreen(
+  lazyRequire(() => require("./screens/ResourceDetailScreen").ResourceDetailScreen)
+);
+const ScannerScreen = lazyScreen(lazyRequire(() => require("./screens/ScannerScreen").ScannerScreen));
+const SettingsScreen = lazyScreen(lazyRequire(() => require("./screens/SettingsScreen").SettingsScreen));
+const DevSignerScreen = lazyScreen(lazyRequire(() => require("./screens/DevSignerScreen").DevSignerScreen));
+const PublisherResourcesScreen = lazyScreen(
+  lazyRequire(() => require("./screens/PublisherResourcesScreen").PublisherResourcesScreen)
+);
+const PublisherProfileScreen = lazyScreen(
+  lazyRequire(() => require("./screens/PublisherProfileScreen").PublisherProfileScreen)
+);
+const PublisherAnalyticsScreen = lazyScreen(
+  lazyRequire(() => require("./screens/PublisherAnalyticsScreen").PublisherAnalyticsScreen)
+);
+const PublisherPublicScreen = lazyScreen(
+  lazyRequire(() => require("./screens/PublisherPublicScreen").PublisherPublicScreen)
+);
+const WalletScreen = lazyScreen(lazyRequire(() => require("./screens/WalletScreen").WalletScreen));
+const LeaderboardScreen = lazyScreen(
+  lazyRequire(() => require("./screens/LeaderboardScreen").LeaderboardScreen)
+);
+const PurchaseHistoryScreen = lazyScreen(
+  lazyRequire(() => require("./screens/PurchaseHistoryScreen").PurchaseHistoryScreen)
+);
+const ReceiptDetailScreen = lazyScreen(
+  lazyRequire(() => require("./screens/ReceiptDetailScreen").ReceiptDetailScreen)
+);
+const PublishResourceScreen = lazyScreen(
+  lazyRequire(() => require("./screens/PublishResourceScreen").PublishResourceScreen)
+);
+const PublisherResourceDetailScreen = lazyScreen(
+  lazyRequire(() => require("./screens/PublisherResourceDetailScreen").PublisherResourceDetailScreen)
+);
 
 export type RootStackParamList = {
   Onboarding: undefined;
-  /** `owner` opens the catalog filtered to one publisher wallet. */
   Catalog: { owner?: string } | undefined;
   Favorites: undefined;
   ResourceDetail: { resourceId: string };
@@ -43,12 +96,10 @@ export type RootStackParamList = {
   PurchaseHistory: undefined;
   ReceiptDetail: { txHash: string };
   PublishResource: undefined;
-  Collection: { collectionId: string }; // <-- Add Collection screen and its parameter
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-/** Header button on Publisher Resources that opens the publisher's profile. */
 function PublisherProfileButton() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors } = useTheme();
@@ -70,20 +121,13 @@ interface RootNavigatorProps {
 
 export function RootNavigator({ showOnboarding }: RootNavigatorProps) {
   return (
-    <Stack.Navigator
-      initialRouteName={showOnboarding ? "Onboarding" : "Catalog"}
-    >
+    <Stack.Navigator initialRouteName={showOnboarding ? "Onboarding" : "Catalog"}>
       <Stack.Screen
         name="Onboarding"
         component={OnboardingScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen name="Catalog" component={CatalogScreen} options={{ headerShown: false }} />
-      <Stack.Screen
-        name="Collection"
-        component={CollectionScreen}
-        options={{ title: "Collection" }}
-      />
       <Stack.Screen
         name="Favorites"
         component={FavoritesScreen}
@@ -156,3 +200,15 @@ export function RootNavigator({ showOnboarding }: RootNavigatorProps) {
     </Stack.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  fallback: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  fallbackText: {
+    fontSize: 14,
+  },
+});
