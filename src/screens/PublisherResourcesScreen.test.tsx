@@ -504,6 +504,32 @@ describe("PublisherResourcesScreen - bulk actions", () => {
   });
 });
 
+describe("PublisherResourcesScreen - Publisher checklist", () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    await AsyncStorage.clear();
+    mockedGetStoredApiKey.mockResolvedValue(null);
+    mockedFetchPublisherResources.mockResolvedValue([]);
+  });
+
+  it("shows signup action and opens the signup sheet", async () => {
+    const screen = renderScreen();
+    fireEvent.press(await screen.findByLabelText("Checklist step: Create a publisher account"));
+    expect(screen.getByTestId("signup-modal")).toBeTruthy();
+  });
+
+  it("hides after dismissal and stays hidden across remounts", async () => {
+    mockedGetStoredApiKey.mockResolvedValue("stored-key");
+    mockedFetchPublisherResources.mockResolvedValue([createResource({ id: "r1", onchainStatus: "none" })]);
+    const screen = renderScreen();
+    fireEvent.press(await screen.findByLabelText("Dismiss getting started checklist"));
+    await waitFor(() => expect(screen.queryByText("Getting started")).toBeNull());
+    screen.unmount();
+    const remount = renderScreen();
+    await waitFor(() => expect(remount.queryByText("Getting started")).toBeNull());
+  });
+});
+
 describe("PublisherResourcesScreen - API key lifecycle", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -622,6 +648,7 @@ describe("PublisherResourcesScreen - API key lifecycle", () => {
   });
 });
 
+<<<<<<< HEAD
 describe("PublisherResourcesScreen - getting-started checklist", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -659,5 +686,21 @@ describe("PublisherResourcesScreen - getting-started checklist", () => {
     const second = renderScreen();
     await act(async () => {});
     expect(second.queryByTestId("publisher-getting-started")).toBeNull();
+=======
+
+describe("virtualized list config", () => {
+  it("keeps a bounded render window for large publisher catalogs", async () => {
+    const big = Array.from({ length: 120 }, (_, i) => createResource({ id: `res-${i}`, title: `Resource ${i}` }));
+    mockedGetStoredApiKey.mockResolvedValue("stored-test-key");
+    mockedFetchPublisherResources.mockResolvedValue(big);
+    const screen = renderScreen();
+    await screen.findByText("Resource 0");
+    const flatList = screen.UNSAFE_getByType(require("react-native").FlatList);
+    expect(flatList.props.initialNumToRender).toBeLessThanOrEqual(10);
+    expect(flatList.props.maxToRenderPerBatch).toBeLessThanOrEqual(10);
+    expect(flatList.props.windowSize).toBeLessThanOrEqual(7);
+    expect(flatList.props.removeClippedSubviews).toBe(true);
+    expect(flatList.props.keyExtractor({ id: "x" })).toBe("x");
+>>>>>>> origin/main
   });
 });

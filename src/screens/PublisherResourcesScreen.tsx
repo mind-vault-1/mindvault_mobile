@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -55,6 +55,53 @@ type PublisherResourcesNavigation = NativeStackNavigationProp<
 
 const PUBLISHER_FILTERS_KEY = `${STORAGE_KEYS.catalogFilters}:publisher`;
 
+
+
+const PublisherResourceRow = memo(function PublisherResourceRow({ item, styles, bulkSelection, bulkBusy, toast, navigation, handlePriceUpdated, handleOpenTransfer, handleOpenRegister, handleOpenDelist }: any) {
+  return (
+    <Pressable
+      testID={`bulk-row-${item.id}`}
+      onLongPress={() => bulkSelection.toggle(item.id)}
+      delayLongPress={300}
+      accessibilityRole="button"
+      accessibilityLabel={t("publisher.bulkActionsFor", { title: item.title })}
+      accessibilityHint={t("publisher.bulkSelectHint")}
+    >
+      <View style={styles.selectionRow}>
+        <Pressable
+          onPress={() => bulkSelection.toggle(item.id)}
+          disabled={bulkBusy}
+          style={[styles.selectionButton, bulkSelection.isSelected(item.id) && styles.selectionButtonActive]}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: bulkSelection.isSelected(item.id), disabled: bulkBusy }}
+          accessibilityLabel={t("publisher.selectTitle", { title: item.title })}
+        >
+          <Text style={styles.bulkButtonText}>
+            {bulkSelection.isSelected(item.id) ? t("publisher.selected") : t("publisher.select")}
+          </Text>
+        </Pressable>
+      </View>
+      <ResourceCard
+        resource={item}
+        onCopyUrl={toast.info}
+        editablePrice={true}
+        onPriceUpdated={handlePriceUpdated}
+        onTransferOwnership={handleOpenTransfer}
+        onRegister={handleOpenRegister}
+        onDelist={handleOpenDelist}
+      />
+      <Pressable
+        onPress={() => navigation.navigate("PublisherResourceDetail", { resourceId: item.id })}
+        style={styles.manageButton}
+        accessibilityRole="button"
+        accessibilityLabel={t("publisher.manageTitle", { title: item.title })}
+        accessibilityHint={t("publisher.manageResourceHint")}
+      >
+        <Text style={styles.manageButtonText}>{t("publisher.manageResource")}</Text>
+      </Pressable>
+    </Pressable>
+  );
+});
 export function PublisherResourcesScreen() {
   const { colors, colorScheme, shared, typography } = useAppTheme();
   const navigation = useNavigation<PublisherResourcesNavigation>();
@@ -1041,6 +1088,10 @@ export function PublisherResourcesScreen() {
       <FlatList
         data={loading ? null : filteredResources}
         keyExtractor={(item) => item.id}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
@@ -1266,57 +1317,7 @@ export function PublisherResourcesScreen() {
             </Pressable>
           </View>
         }
-        renderItem={({ item }) => (
-          <Pressable
-            testID={`bulk-row-${item.id}`}
-            onLongPress={() => bulkSelection.toggle(item.id)}
-            delayLongPress={300}
-            accessibilityRole="button"
-            accessibilityLabel={t("publisher.bulkActionsFor", { title: item.title })}
-            accessibilityHint={t("publisher.bulkSelectHint")}
-          >
-            <View style={styles.selectionRow}>
-              <Pressable
-                onPress={() => bulkSelection.toggle(item.id)}
-                disabled={bulkBusy}
-                style={[
-                  styles.selectionButton,
-                  bulkSelection.isSelected(item.id) && styles.selectionButtonActive,
-                ]}
-                accessibilityRole="checkbox"
-                accessibilityState={{
-                  checked: bulkSelection.isSelected(item.id),
-                  disabled: bulkBusy,
-                }}
-                accessibilityLabel={t("publisher.selectTitle", { title: item.title })}
-              >
-                <Text style={styles.bulkButtonText}>
-                  {bulkSelection.isSelected(item.id) ? t("publisher.selected") : t("publisher.select")}
-                </Text>
-              </Pressable>
-            </View>
-            <ResourceCard
-              resource={item}
-              onCopyUrl={toast.info}
-              editablePrice={true}
-              onPriceUpdated={handlePriceUpdated}
-              onTransferOwnership={handleOpenTransfer}
-              onRegister={handleOpenRegister}
-              onDelist={handleOpenDelist}
-            />
-            <Pressable
-              onPress={() =>
-                navigation.navigate("PublisherResourceDetail", { resourceId: item.id })
-              }
-              style={styles.manageButton}
-              accessibilityRole="button"
-              accessibilityLabel={t("publisher.manageTitle", { title: item.title })}
-              accessibilityHint={t("publisher.manageResourceHint")}
-            >
-              <Text style={styles.manageButtonText}>{t("publisher.manageResource")}</Text>
-            </Pressable>
-          </Pressable>
-        )}
+        renderItem={({ item }) => <PublisherResourceRow item={item} styles={styles} bulkSelection={bulkSelection} bulkBusy={bulkBusy} toast={toast} navigation={navigation} handlePriceUpdated={handlePriceUpdated} handleOpenTransfer={handleOpenTransfer} handleOpenRegister={handleOpenRegister} handleOpenDelist={handleOpenDelist} />}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={() =>
           !loading ? (

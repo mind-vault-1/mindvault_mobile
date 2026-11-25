@@ -1,0 +1,268 @@
+{
+  "_refresh": {
+    "note": "Refresh these fixtures from the MindVault server when publisher write contracts change.",
+    "steps": [
+      "Run `npm run contract:update -- --source ../mindvault` to refresh src/api/__contract__/openapi.snapshot.json from the server checkout, openapi.ts/openapi.json, or a running server URL.",
+      "Re-capture real request/response bodies for publisher write endpoints against a test server (curl or an authenticated API client). Replace only the samples and required-field metadata in this file.",
+      "Redact secrets before committing: never store a real x-api-key, X-Signature, or live API key value; keep placeholders such as <PUBLISHER_API_KEY> and <NEW_API_KEY>.",
+      "POST /publishers/me/api-key/rotate is not yet documented in openapi.snapshot.json; capture its real response manually until the server spec includes it.",
+      "Run `npm test -- src/api/__contract__/publishers.test.ts` and the full suite."
+    ]
+  },
+  "registerPublisher": {
+    "method": "POST",
+    "path": "/publishers",
+    "request": {
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "name": "Alice Publisher",
+        "email": "alice@example.com",
+        "walletAddress": "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVWXYZ2345"
+      },
+      "required": [
+        "name",
+        "email",
+        "walletAddress"
+      ]
+    },
+    "response": {
+      "status": 201,
+      "body": {
+        "id": "pub_123",
+        "name": "Alice Publisher",
+        "email": "alice@example.com",
+        "walletAddress": "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVWXYZ2345",
+        "apiKey": "<PUBLISHER_API_KEY>",
+        "createdAt": "2026-11-25T00:00:00.000Z"
+      },
+      "required": [
+        "id",
+        "name",
+        "email",
+        "walletAddress",
+        "apiKey",
+        "createdAt"
+      ]
+    }
+  },
+  "prepareRegister": {
+    "method": "GET",
+    "path": "/resources/{id}/register/prepare",
+    "request": {
+      "headers": {
+        "Content-Type": "application/json",
+        "x-api-key": "<PUBLISHER_API_KEY>",
+        "X-Timestamp": "<UNIX_SECONDS>",
+        "X-Signature": "<HMAC_SHA256_HEX>"
+      }
+    },
+    "response": {
+      "status": 200,
+      "body": {
+        "unsignedXdr": "AAAAAgAAAAB...",
+        "networkPassphrase": "Test SDF Network ; September 2015"
+      },
+      "required": [
+        "unsignedXdr"
+      ]
+    }
+  },
+  "submitRegister": {
+    "method": "POST",
+    "path": "/resources/{id}/register",
+    "request": {
+      "headers": {
+        "Content-Type": "application/json",
+        "x-api-key": "<PUBLISHER_API_KEY>",
+        "X-Timestamp": "<UNIX_SECONDS>",
+        "X-Signature": "<HMAC_SHA256_HEX>"
+      },
+      "body": {
+        "signedXdr": "AAAAAgAAAAB..."
+      },
+      "required": [
+        "signedXdr"
+      ]
+    },
+    "response": {
+      "status": 200,
+      "body": {
+        "id": "res_123",
+        "onchainStatus": "registered",
+        "txHash": "abc123def456"
+      },
+      "required": [
+        "id",
+        "onchainStatus",
+        "txHash"
+      ]
+    }
+  },
+  "preparePriceEdit": {
+    "method": "POST",
+    "path": "/resources/{id}/price/prepare",
+    "request": {
+      "headers": {
+        "Content-Type": "application/json",
+        "x-api-key": "<PUBLISHER_API_KEY>",
+        "X-Timestamp": "<UNIX_SECONDS>",
+        "X-Signature": "<HMAC_SHA256_HEX>"
+      },
+      "body": {
+        "price": "2.50"
+      },
+      "required": [
+        "price"
+      ]
+    },
+    "response": {
+      "status": 200,
+      "body": {
+        "unsignedXdr": "AAAAAgAAAAB...",
+        "networkPassphrase": "Test SDF Network ; September 2015"
+      },
+      "required": [
+        "unsignedXdr"
+      ]
+    }
+  },
+  "submitPriceEdit": {
+    "method": "POST",
+    "path": "/resources/{id}/price",
+    "request": {
+      "headers": {
+        "Content-Type": "application/json",
+        "x-api-key": "<PUBLISHER_API_KEY>",
+        "X-Timestamp": "<UNIX_SECONDS>",
+        "X-Signature": "<HMAC_SHA256_HEX>"
+      },
+      "body": {
+        "signedXdr": "AAAAAgAAAAB...",
+        "price": "2.50"
+      },
+      "required": [
+        "signedXdr",
+        "price"
+      ]
+    },
+    "response": {
+      "status": 200,
+      "body": {
+        "id": "res_123",
+        "price": "2.50",
+        "status": "ok"
+      },
+      "required": [
+        "id",
+        "price",
+        "status"
+      ]
+    }
+  },
+  "prepareOwnershipTransfer": {
+    "method": "POST",
+    "path": "/resources/{id}/ownership/prepare",
+    "request": {
+      "headers": {
+        "Content-Type": "application/json",
+        "x-api-key": "<PUBLISHER_API_KEY>",
+        "X-Timestamp": "<UNIX_SECONDS>",
+        "X-Signature": "<HMAC_SHA256_HEX>"
+      },
+      "body": {
+        "newCreator": "GNEWCREATORABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUV"
+      },
+      "required": [
+        "newCreator"
+      ]
+    },
+    "response": {
+      "status": 200,
+      "body": {
+        "unsignedXdr": "AAAAAgAAAAB...",
+        "networkPassphrase": "Test SDF Network ; September 2015"
+      },
+      "required": [
+        "unsignedXdr"
+      ]
+    }
+  },
+  "submitOwnershipTransfer": {
+    "method": "POST",
+    "path": "/resources/{id}/ownership",
+    "request": {
+      "headers": {
+        "Content-Type": "application/json",
+        "x-api-key": "<PUBLISHER_API_KEY>",
+        "X-Timestamp": "<UNIX_SECONDS>",
+        "X-Signature": "<HMAC_SHA256_HEX>"
+      },
+      "body": {
+        "signedXdr": "AAAAAgAAAAB...",
+        "newCreator": "GNEWCREATORABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUV"
+      },
+      "required": [
+        "signedXdr",
+        "newCreator"
+      ]
+    },
+    "response": {
+      "status": 200,
+      "body": {
+        "id": "res_123",
+        "newCreator": "GNEWCREATORABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUV",
+        "status": "ok",
+        "txHash": "abc123def456"
+      },
+      "required": [
+        "id",
+        "newCreator",
+        "status"
+      ]
+    }
+  },
+  "delist": {
+    "method": "DELETE",
+    "path": "/resources/{id}",
+    "request": {
+      "headers": {
+        "Content-Type": "application/json",
+        "x-api-key": "<PUBLISHER_API_KEY>",
+        "X-Timestamp": "<UNIX_SECONDS>",
+        "X-Signature": "<HMAC_SHA256_HEX>"
+      }
+    },
+    "response": {
+      "status": 200,
+      "body": {
+        "id": "res_123",
+        "message": "Resource delisted"
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  "rotateApiKey": {
+    "method": "POST",
+    "path": "/publishers/me/api-key/rotate",
+    "request": {
+      "headers": {
+        "x-api-key": "<PUBLISHER_API_KEY>",
+        "X-Timestamp": "<UNIX_SECONDS>",
+        "X-Signature": "<HMAC_SHA256_HEX>"
+      }
+    },
+    "response": {
+      "status": 200,
+      "body": {
+        "apiKey": "<NEW_API_KEY>"
+      },
+      "required": [
+        "apiKey"
+      ]
+    }
+  }
+}

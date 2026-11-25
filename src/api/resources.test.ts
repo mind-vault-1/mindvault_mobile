@@ -356,6 +356,23 @@ describe('publisher transaction endpoints', () => {
     });
   });
 
+  it('covers every publisher write endpoint with the API key', async () => {
+    const fetchMock = mockFetch({ unsignedXdr: 'AAA', txHash: 'abc', id: 'r1' });
+
+    await prepareRegister('r1');
+    await submitRegister('r1', 'SIGNED');
+    await prepareEditPrice('r1', '2.50');
+    await submitPriceEdit('r1', 'SIGNED', '2.50');
+    await prepareOwnershipTransfer('r1', 'GDEST');
+    await submitOwnershipTransfer('r1', 'SIGNED', 'GDEST');
+    await delistResource('r1');
+
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init.headers['x-api-key']).toBe(API_KEY);
+    }
+  });
+
   it('throws without calling the API when no key is stored', async () => {
     const fetchMock = mockFetch({});
     mockedGetApiKey.mockResolvedValue(null);
