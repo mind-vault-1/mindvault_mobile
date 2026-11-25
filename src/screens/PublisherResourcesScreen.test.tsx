@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
@@ -503,6 +504,32 @@ describe("PublisherResourcesScreen - bulk actions", () => {
   });
 });
 
+describe("PublisherResourcesScreen - Publisher checklist", () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    await AsyncStorage.clear();
+    mockedGetStoredApiKey.mockResolvedValue(null);
+    mockedFetchPublisherResources.mockResolvedValue([]);
+  });
+
+  it("shows signup action and opens the signup sheet", async () => {
+    const screen = renderScreen();
+    fireEvent.press(await screen.findByLabelText("Checklist step: Create a publisher account"));
+    expect(screen.getByTestId("signup-modal")).toBeTruthy();
+  });
+
+  it("hides after dismissal and stays hidden across remounts", async () => {
+    mockedGetStoredApiKey.mockResolvedValue("stored-key");
+    mockedFetchPublisherResources.mockResolvedValue([createResource({ id: "r1", onchainStatus: "none" })]);
+    const screen = renderScreen();
+    fireEvent.press(await screen.findByLabelText("Dismiss getting started checklist"));
+    await waitFor(() => expect(screen.queryByText("Getting started")).toBeNull());
+    screen.unmount();
+    const remount = renderScreen();
+    await waitFor(() => expect(remount.queryByText("Getting started")).toBeNull());
+  });
+});
+
 describe("PublisherResourcesScreen - API key lifecycle", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -621,6 +648,45 @@ describe("PublisherResourcesScreen - API key lifecycle", () => {
   });
 });
 
+describe("PublisherResourcesScreen - getting-started checklist", () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    await AsyncStorage.clear();
+    mockedGetStoredApiKey.mockResolvedValue("stored-test-key");
+  });
+
+  it("ticks steps from existing state and links each open step to its screen", async () => {
+    mockedFetchPublisherResources.mockResolvedValue([
+      createResource({ id: "r1", title: "Verified", verificationStatus: "verified", onchainStatus: "none" }),
+    ]);
+    const screen = renderScreen();
+    expect(await screen.findByText("Getting started (3/4)")).toBeTruthy();
+
+    fireEvent.press(screen.getByRole("button", { name: "Register a verified resource on-chain" }));
+    expect(await screen.findByTestId("register-modal")).toBeTruthy();
+  });
+
+  it("disappears when every step is complete", async () => {
+    mockedFetchPublisherResources.mockResolvedValue([
+      createResource({ id: "r1", verificationStatus: "verified", onchainStatus: "registered" }),
+    ]);
+    const screen = renderScreen();
+    await screen.findByText("Test Resource");
+    expect(screen.queryByTestId("publisher-getting-started")).toBeNull();
+  });
+
+  it("stays hidden after being dismissed", async () => {
+    mockedFetchPublisherResources.mockResolvedValue([]);
+    const first = renderScreen();
+    fireEvent.press(await first.findByRole("button", { name: "Dismiss checklist" }));
+    expect(first.queryByTestId("publisher-getting-started")).toBeNull();
+    first.unmount();
+
+    const second = renderScreen();
+    await act(async () => {});
+    expect(second.queryByTestId("publisher-getting-started")).toBeNull();
+  });
+});
 
 describe("virtualized list config", () => {
   it("keeps a bounded render window for large publisher catalogs", async () => {

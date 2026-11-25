@@ -44,6 +44,9 @@ import { useBulkSelection } from "../hooks/useBulkSelection";
 import { validatePrice } from "../hooks/useEditPrice";
 import { SignTransactionSheet } from "../components/SignTransactionSheet";
 import { t } from "../i18n";
+import type { ChecklistStep } from "../services/onboarding";
+import { EarningsScreen } from "./EarningsScreen";
+import { PublisherGettingStarted } from "./PublisherGettingStarted";
 
 type PublisherResourcesNavigation = NativeStackNavigationProp<
   RootStackParamList,
@@ -125,6 +128,7 @@ export function PublisherResourcesScreen() {
   const [sortBy, setSortBy] = useState<"newest" | "price_asc" | "price_desc" | "title">("newest");
   /** Issue #66: the resource currently open in the TransferOwnershipModal, or null */
   const [transferResource, setTransferResource] = useState<Resource | null>(null);
+  const [showEarnings, setShowEarnings] = useState(false);
   /** Issue #204: the resource currently open in the RegisterModal, or null */
   const [registerResource, setRegisterResource] = useState<Resource | null>(null);
   /** Issue #220: the resource awaiting delist confirmation, or null */
@@ -675,6 +679,18 @@ export function PublisherResourcesScreen() {
     setRegisterResource(resource);
   }, []);
 
+  /** Issue #429: each checklist step opens the screen or sheet that completes it. */
+  const handleOpenChecklistStep = useCallback(
+    (step: ChecklistStep) => {
+      if (step.id === "signup") setShowSignup(true);
+      else if (step.id === "register" && step.resource) setRegisterResource(step.resource);
+      else if (step.id === "verify" && step.resource) {
+        navigation.navigate("PublisherResourceDetail", { resourceId: step.resource.id });
+      } else navigation.navigate("PublishResource");
+    },
+    [navigation],
+  );
+
   /**
    * Issue #204: Called when on-chain registration completes successfully.
    * Updates the resource in local state to registered with the tx hash and shows a toast.
@@ -1092,6 +1108,12 @@ export function PublisherResourcesScreen() {
               </Pressable>
             </View>
 
+            <PublisherGettingStarted
+              hasApiKey={authenticated}
+              resources={resources}
+              onOpenStep={handleOpenChecklistStep}
+            />
+
             <TextInput
               value={search}
               onChangeText={setSearch}
@@ -1281,6 +1303,15 @@ export function PublisherResourcesScreen() {
               <Text style={styles.publishButtonText}>{t("publisher.publishLink")}</Text>
             </Pressable>
 
+            <Pressable
+              onPress={() => setShowEarnings(true)}
+              style={styles.publishButton}
+              accessibilityRole="button"
+              accessibilityLabel="Earnings and payouts"
+            >
+              <Text style={styles.publishButtonText}>Earnings and payouts</Text>
+            </Pressable>
+
             <Pressable accessibilityRole="button" onPress={handleLogout} style={styles.logoutButton}>
               <Text style={styles.logoutButtonText}>{t("publisher.logout")}</Text>
             </Pressable>
@@ -1313,6 +1344,25 @@ export function PublisherResourcesScreen() {
           onSuccess={handleTransferSuccess}
         />
       ) : null}
+
+      <Modal
+        visible={showEarnings}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowEarnings(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <Pressable
+            onPress={() => setShowEarnings(false)}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Close earnings"
+          >
+            <Text style={styles.backButtonText}>Close</Text>
+          </Pressable>
+          {showEarnings ? <EarningsScreen /> : null}
+        </SafeAreaView>
+      </Modal>
 
       {registerResource ? (
         <RegisterModal
