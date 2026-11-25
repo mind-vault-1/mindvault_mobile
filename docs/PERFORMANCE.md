@@ -6,7 +6,8 @@ The app logs `[startup] first interactive frame` once after navigation is ready
 and two animation frames have elapsed. The JSON payload includes the platform
 and milliseconds since the JavaScript app module started. This is a practical
 JS-side first-frame proxy, not native process-launch time or a substitute for
-device tracing.
+device tracing. `getFirstInteractiveFrameMs()` exposes the value in-process
+for a future automated profile without parsing the log.
 
 For a repeatable comparison, use release builds on both an Android emulator or
 device and an iOS simulator or device. Force-stop the app before each cold

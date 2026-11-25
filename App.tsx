@@ -39,6 +39,10 @@ export function getBootDurationMs(): number {
   return bootDurationMs ?? Date.now() - bootStartedAt;
 }
 
+export function getFirstInteractiveFrameMs(): number | null {
+  return firstInteractiveFrameMs;
+}
+
 export function resetSplashForTests(): void {
   splashHidden = false;
   bootDurationMs = null;
