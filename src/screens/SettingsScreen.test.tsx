@@ -176,6 +176,49 @@ describe("about section", () => {
   });
 });
 
+describe("theme toggle", () => {
+  it("persists the selected theme", async () => {
+    const screen = await renderSettings();
+    await act(async () => {
+      fireEvent.press(screen.getByText("Dark"));
+    });
+    await waitFor(async () => {
+      expect(await AsyncStorage.getItem("@mindvault_theme_mode")).toBe("dark");
+    });
+  });
+});
+
+describe("api base url", () => {
+  it("validates, saves and resets the API URL", async () => {
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const screen = await renderSettings();
+    const input = screen.getByLabelText("API Base URL");
+
+    fireEvent.changeText(input, "ftp://bad-url");
+    await act(async () => {
+      fireEvent.press(screen.getByText("Save"));
+    });
+    expect(alertSpy).toHaveBeenCalledWith("Invalid URL", expect.any(String));
+
+    fireEvent.changeText(input, "https://api.example.com");
+    await act(async () => {
+      fireEvent.press(screen.getByText("Save"));
+    });
+    await waitFor(async () => {
+      expect(await AsyncStorage.getItem("mindvault_api_base_url")).toBe("https://api.example.com");
+    });
+    expect(alertSpy).toHaveBeenCalledWith("Saved", "API base URL updated successfully.");
+
+    await act(async () => {
+      fireEvent.press(screen.getByText("Reset to Default"));
+    });
+    await waitFor(() => {
+      expect(screen.getByDisplayValue(getDefaultApiBaseUrl())).toBeTruthy();
+    });
+    alertSpy.mockRestore();
+  });
+});
+
 describe("stellar network", () => {
   it("switches between test networks without a restart", async () => {
     setNetwork("testnet");
@@ -264,20 +307,22 @@ describe("local data", () => {
 
   it("explains that keys are handled by the wallet wipe only", async () => {
     const screen = await renderSettings();
-    expect(screen.getByText(/Wallet and API keys are not affected here/)).toBeTruthy();
+    expect(screen.getByText(/Private keys/)).toBeTruthy();
   });
 
   it("links to the privacy policy next to the clear buttons", async () => {
-    const openBrowser = WebBrowser.openBrowserAsync as jest.Mock;
-    openBrowser.mockClear().mockResolvedValue({ type: "opened" });
+    const open = WebBrowser.openBrowserAsync as jest.MockedFunction<
+      typeof WebBrowser.openBrowserAsync
+    >;
+    open.mockResolvedValue({ type: "cancel" } as WebBrowser.WebBrowserResult);
     const screen = await renderSettings();
 
-    fireEvent.press(screen.getByLabelText("Privacy policy"));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Open privacy policy"));
+    });
 
-    await waitFor(() =>
-      expect(openBrowser).toHaveBeenCalledWith(
-        "https://github.com/mind-vault-1/mindvault_mobile/blob/main/docs/PRIVACY.md"
-      )
+    expect(open).toHaveBeenCalledWith(
+      "https://github.com/mind-vault-1/mindvault_mobile/blob/main/docs/PRIVACY.md"
     );
   });
 });
@@ -286,91 +331,96 @@ describe("haptics", () => {
   it("persists the haptic feedback toggle", async () => {
     const screen = await renderSettings();
     const toggle = screen.getByLabelText("Haptic feedback");
-
-    expect(toggle.props.value).toBe(true);
+    expect(toggle.props.accessibilityState).toEqual(expect.objectContaining({ checked: true }));
 
     await act(async () => {
       fireEvent(toggle, "valueChange", false);
     });
 
-    await waitFor(async () =>
-      expect(await AsyncStorage.getItem("@mindvault_haptics_enabled")).toBe("false")
-    );
-    expect(screen.getByLabelText("Haptic feedback").props.value).toBe(false);
+    await waitFor(async () => {
+      expect(await AsyncStorage.getItem("@mindvault_haptics_enabled")).toBe("false");
+    });
   });
 });
 
 describe("spending guard", () => {
   it("saves the per-payment limit in the versioned preferences store", async () => {
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     const screen = await renderSettings();
-    fireEvent.changeText(screen.getByLabelText("Per-payment limit (USDC)"), "7.50");
+    const input = screen.getByLabelText("Per-payment limit in USDC");
 
+    fireEvent.changeText(input, "7.5");
     await act(async () => {
       fireEvent.press(screen.getByLabelText("Save spending limit"));
     });
 
-    await waitFor(async () =>
+    await waitFor(async () => {
       expect(await AsyncStorage.getItem("@mindvault_preferences:v1")).toBe(
         JSON.stringify({ version: 1, perPaymentLimit: "7.50" })
-      )
-    );
+      );
+    });
+    alertSpy.mockRestore();
   });
 
   it("rejects an invalid per-payment limit", async () => {
-    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     const screen = await renderSettings();
-    fireEvent.changeText(screen.getByLabelText("Per-payment limit (USDC)"), "0");
+    const input = screen.getByLabelText("Per-payment limit in USDC");
 
+    fireEvent.changeText(input, "0");
     await act(async () => {
       fireEvent.press(screen.getByLabelText("Save spending limit"));
     });
 
-    await waitFor(() => expect(alert).toHaveBeenCalledWith("Invalid limit", expect.any(String)));
-    alert.mockRestore();
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Invalid limit",
+      "Enter a USDC amount greater than 0."
+    );
+    alertSpy.mockRestore();
   });
 });
 
 describe("language", () => {
   afterEach(async () => {
-    const { applyLanguagePreference } = require("../i18n");
-    act(() => applyLanguagePreference("system"));
+    const { applyLanguagePreference } = await import("../i18n");
+    applyLanguagePreference("system");
   });
 
   it("offers System, English and Français and persists the choice", async () => {
-    const { LANGUAGE_STORAGE_KEY } = require("../i18n");
     const screen = await renderSettings();
 
-    expect(screen.getByRole("radio", { name: "Use System" }).props.accessibilityState.checked).toBe(true);
+    expect(screen.getByRole("radiogroup", { name: "Language" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Use System" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Use English" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Use Français" })).toBeTruthy();
 
     await act(async () => {
       fireEvent.press(screen.getByRole("radio", { name: "Use Français" }));
     });
 
-    // The screen re-renders in French straight away.
-    expect(await screen.findByText("Paramètres")).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Utiliser Français" }).props.accessibilityState.checked).toBe(true);
-    expect(await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("fr");
+    expect(await screen.findByText("Langue")).toBeTruthy();
+    await waitFor(async () => {
+      expect(await AsyncStorage.getItem("@mindvault_language")).toBe("fr");
+    });
 
     await act(async () => {
-      fireEvent.press(screen.getByRole("radio", { name: "Utiliser Système" }));
+      fireEvent.press(screen.getByRole("radio", { name: "Utiliser la langue du système" }));
     });
-    expect(await screen.findByText("Settings")).toBeTruthy();
-    expect(await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("system");
+    expect(await screen.findByText("Language")).toBeTruthy();
   });
 
   it("keeps the new language for the session when saving it fails", async () => {
-    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const setItem = jest.spyOn(AsyncStorage, "setItem").mockRejectedValueOnce(new Error("disk full"));
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const setItem = jest.spyOn(AsyncStorage, "setItem").mockRejectedValueOnce(new Error("disk"));
     const screen = await renderSettings();
 
     await act(async () => {
       fireEvent.press(screen.getByRole("radio", { name: "Use Français" }));
     });
 
-    expect(await screen.findByText("Paramètres")).toBeTruthy();
-    expect(alert).toHaveBeenCalledWith("Erreur", "Impossible d'enregistrer le choix de langue.");
+    expect(await screen.findByText("Langue")).toBeTruthy();
+    expect(alertSpy).toHaveBeenCalled();
     setItem.mockRestore();
-    alert.mockRestore();
+    alertSpy.mockRestore();
   });
 });

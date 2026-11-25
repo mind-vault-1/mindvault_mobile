@@ -620,3 +620,20 @@ describe("PublisherResourcesScreen - API key lifecycle", () => {
     expect(screen.queryByText("Logout Resource")).toBeNull();
   });
 });
+
+
+describe("virtualized list config", () => {
+  it("keeps a bounded render window for large publisher catalogs", async () => {
+    const big = Array.from({ length: 120 }, (_, i) => createResource({ id: `res-${i}`, title: `Resource ${i}` }));
+    mockedGetStoredApiKey.mockResolvedValue("stored-test-key");
+    mockedFetchPublisherResources.mockResolvedValue(big);
+    const screen = renderScreen();
+    await screen.findByText("Resource 0");
+    const flatList = screen.UNSAFE_getByType(require("react-native").FlatList);
+    expect(flatList.props.initialNumToRender).toBeLessThanOrEqual(10);
+    expect(flatList.props.maxToRenderPerBatch).toBeLessThanOrEqual(10);
+    expect(flatList.props.windowSize).toBeLessThanOrEqual(7);
+    expect(flatList.props.removeClippedSubviews).toBe(true);
+    expect(flatList.props.keyExtractor({ id: "x" })).toBe("x");
+  });
+});
