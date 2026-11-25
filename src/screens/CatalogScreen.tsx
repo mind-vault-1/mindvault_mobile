@@ -1280,7 +1280,10 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
             ) : null}
 
             {!hasActiveFilters && search.trim() === "" && (
-              <HomeSections onSeeAll={handleSeeAll} />
+              <HomeSections
+                onSeeAll={handleSeeAll}
+                onOpenCollection={(collectionId) => navigation.navigate("Collection", { collectionId })}
+              />
             )}
 
             <View style={styles.filters}>
