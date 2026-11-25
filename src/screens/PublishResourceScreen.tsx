@@ -40,6 +40,7 @@ import {
   subscribeMutations,
   type QueuedMutation,
 } from "../services/mutationQueue";
+import { deleteDraft, formatCountdown, listDrafts, saveDraft, type Draft } from "../services/drafts";
 import { formatBytes } from "../services/storage";
 import { spacing } from "../theme";
 import type { ThemeColors } from "../theme";
@@ -53,7 +54,33 @@ type PublishMode = "link" | "file";
 
 const EMPTY_FORM: PublishLinkInput = { title: "", url: "", price: "", description: "" };
 
-type Field = keyof PublishLinkInput;
+type Field = Exclude<keyof PublishLinkInput, "publishAt">;
+
+/** Reads "YYYY-MM-DD HH:MM" (local time). Unparseable text is kept as-is so validation can flag it. */
+function scheduleTextToPublishAt(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  const parsed = new Date(trimmed.replace(" ", "T"));
+  return Number.isNaN(parsed.getTime()) ? trimmed : parsed.toISOString();
+}
+
+function publishAtToScheduleText(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Re-renders every second while a countdown is visible. */
+function useNow(active: boolean): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
+}
 
 function shortenHash(value: string): string {
   return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
@@ -213,6 +240,16 @@ export function PublishResourceScreen() {
   const [queued, setQueued] = useState<QueuedMutation | null>(null);
   const [queuedDone, setQueuedDone] = useState(false);
   const [currentIdempotencyKey, setCurrentIdempotencyKey] = useState<string | null>(null);
+  const [scheduleText, setScheduleText] = useState("");
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const scheduledAt =
+    form.publishAt && !Number.isNaN(Date.parse(form.publishAt)) ? form.publishAt : null;
+  const now = useNow(!!scheduledAt);
+
+  useEffect(() => {
+    void listDrafts().then(setDrafts);
+  }, []);
   const queuedRef = useRef<QueuedMutation | null>(null);
   const uploadRef = useRef<AbortController | null>(null);
 
@@ -256,6 +293,36 @@ export function PublishResourceScreen() {
     setForm((prev) => ({ ...prev, [key]: value }));
     setCurrentIdempotencyKey(null);
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
+  }
+
+  function updateSchedule(text: string) {
+    setScheduleText(text);
+    setForm((prev) => ({ ...prev, publishAt: scheduleTextToPublishAt(text) }));
+    setCurrentIdempotencyKey(null);
+    if (errors.publishAt) setErrors((prev) => ({ ...prev, publishAt: undefined }));
+  }
+
+  async function handleSaveDraft() {
+    const draft = await saveDraft(form, draftId ?? undefined);
+    setDraftId(draft.id);
+    setDrafts((prev) => [draft, ...prev.filter((entry) => entry.id !== draft.id)]);
+    toast.success("Draft saved");
+  }
+
+  function resumeDraft(draft: Draft) {
+    setForm({ ...EMPTY_FORM, ...draft.input });
+    setScheduleText(draft.input.publishAt ? publishAtToScheduleText(draft.input.publishAt) : "");
+    setDraftId(draft.id);
+    setMode("link");
+    setErrors({});
+    setSubmitError(null);
+    setCurrentIdempotencyKey(null);
+  }
+
+  async function discardDraft(id: string) {
+    await deleteDraft(id);
+    setDrafts((prev) => prev.filter((entry) => entry.id !== id));
+    if (draftId === id) setDraftId(null);
   }
 
   function publishIdempotencyKey(): string {
@@ -333,6 +400,7 @@ export function PublishResourceScreen() {
       }
       setFee(null);
       setPublished(result.resource);
+      if (draftId) void discardDraft(draftId);
       setCurrentIdempotencyKey(null);
       toast.success("Resource published");
     } catch (err) {
@@ -370,6 +438,8 @@ export function PublishResourceScreen() {
 
   function reset() {
     setForm(EMPTY_FORM);
+    setScheduleText("");
+    setDraftId(null);
     setFile(null);
     setProgress(null);
     setErrors({});
@@ -453,6 +523,11 @@ export function PublishResourceScreen() {
           <Text style={styles.muted}>Published</Text>
           <Text style={styles.cardTitle}>{published.title}</Text>
           <Text style={styles.muted}>Price: {published.price} USDC</Text>
+          {scheduledAt ? (
+            <Text style={styles.muted} accessibilityLabel="Scheduled countdown">
+              Goes live in {formatCountdown(scheduledAt, now)}
+            </Text>
+          ) : null}
           <Text style={styles.muted}>Access URL</Text>
           <Text style={styles.mono} selectable>
             {published.accessUrl}
@@ -597,6 +672,36 @@ export function PublishResourceScreen() {
         ))}
       </View>
 
+      {drafts.length > 0 ? (
+        <View style={styles.card} accessibilityLabel="Drafts">
+          <Text style={styles.cardTitle}>Drafts</Text>
+          {drafts.map((draft) => (
+            <View key={draft.id} style={styles.actions}>
+              <Text style={[styles.muted, { flex: 1 }]} numberOfLines={1}>
+                {draft.input.title || "Untitled draft"}
+                {draft.input.publishAt ? ` · ${formatCountdown(draft.input.publishAt, now)}` : ""}
+              </Text>
+              <Pressable
+                style={[styles.button, styles.secondary]}
+                onPress={() => resumeDraft(draft)}
+                accessibilityRole="button"
+                accessibilityLabel={`Resume draft ${draft.input.title || "Untitled draft"}`}
+              >
+                <Text style={styles.secondaryText}>Resume</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.button, styles.secondary]}
+                onPress={() => void discardDraft(draft.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete draft ${draft.input.title || "Untitled draft"}`}
+              >
+                <Text style={styles.secondaryText}>Delete</Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {FIELDS.filter((field) => field.key !== "url" || mode === "link").map((field) => (
         <View key={field.key} style={styles.field}>
           <Text style={styles.label}>{field.label}</Text>
@@ -625,6 +730,39 @@ export function PublishResourceScreen() {
           ) : null}
         </View>
       ))}
+
+      <View style={styles.field}>
+        <Text style={styles.label}>Publish at (optional, YYYY-MM-DD HH:MM)</Text>
+        <TextInput
+          value={scheduleText}
+          onChangeText={updateSchedule}
+          placeholder="2026-12-01 09:00"
+          placeholderTextColor={colors.textSubtle}
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!submitting && !fee}
+          accessibilityLabel="Publish at"
+          style={[styles.input, errors.publishAt ? styles.invalid : null]}
+        />
+        {errors.publishAt ? (
+          <Text accessibilityRole="alert" style={styles.fieldError}>
+            {errors.publishAt}
+          </Text>
+        ) : scheduledAt ? (
+          <Text style={styles.muted} accessibilityLabel="Scheduled countdown">
+            Goes live in {formatCountdown(scheduledAt, now)}
+          </Text>
+        ) : null}
+        {scheduleText ? (
+          <Pressable
+            onPress={() => updateSchedule("")}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel schedule"
+          >
+            <Text style={styles.secondaryText}>Cancel schedule</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {mode === "file" ? (
         <View style={styles.card}>
@@ -734,10 +872,22 @@ export function PublishResourceScreen() {
               <Text style={styles.buttonText}>Still processing…</Text>
             </View>
           ) : (
-            <Text style={styles.buttonText}>Publish</Text>
+            <Text style={styles.buttonText}>{scheduledAt ? "Schedule" : "Publish"}</Text>
           )}
         </Pressable>
       )}
+
+      {!fee && mode === "link" ? (
+        <Pressable
+          style={[styles.button, styles.secondary, submitting && styles.disabled]}
+          onPress={() => void handleSaveDraft()}
+          disabled={submitting}
+          accessibilityRole="button"
+          accessibilityLabel="Save draft"
+        >
+          <Text style={styles.secondaryText}>Save draft</Text>
+        </Pressable>
+      ) : null}
 
       {fee && signing ? (
         <SignTransactionSheet

@@ -74,6 +74,35 @@ fails. Configure the variables above as repository variables and `EXPO_TOKEN`
 and `E2E_TESTNET_SECRET` as secrets; the seeded API URL comes from the EAS
 `preview` environment (see `docs/PREVIEW_BUILDS.md`).
 
+## Mutation testing
+
+`npm run test:mutation` runs Stryker against the money and signing helpers:
+`src/utils/requestSignature.ts`, `src/utils/validateStellarSecret.ts`,
+`src/utils/priceRange.ts` and `src/api/payment.ts`. Config lives in
+`stryker.conf.json`. Stryker requires Node 22 or newer. Reports go to
+`reports/mutation/` and are git-ignored.
+
+For a targeted local run, pass Stryker's `--mutate` option through npm:
+
+```sh
+npm run test:mutation -- --mutate src/utils/priceRange.ts
+```
+
+Baseline (2026-11-24, 725 mutants, about 14 minutes locally):
+
+| File | Mutation score | Killed | Survived | No coverage |
+| --- | ---: | ---: | ---: | ---: |
+| `src/api/payment.ts` | 67.40% | 242 | 79 | 40 |
+| `src/utils/priceRange.ts` | 95.24% | 60 | 3 | 0 |
+| `src/utils/requestSignature.ts` | 62.20% | 146 | 50 | 46 |
+| `src/utils/validateStellarSecret.ts` | 50.00% | 14 | 11 | 4 |
+| **All files** | **67.28%** | 462 | 143 | 90 |
+
+The gate is 65%: `low` is 70%, `high` is 80%, and `break` is 65%, so CI fails
+when the overall score drops below the recorded baseline by more than two
+points. `.github/workflows/mutation.yml` runs on manual dispatch or when a PR
+has the `mutation` label.
+
 ## Test Structure
 
 Tests are co-located with their source files:

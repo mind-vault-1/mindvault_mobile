@@ -1,4 +1,9 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import { createLinkingOptions } from "./linking";
+import { getReferralState, referralCodeFor } from "./services/referrals";
+
+jest.mock("./services/wallet", () => ({ getPublicKey: jest.fn().mockResolvedValue("GME") }));
 
 describe("createLinkingOptions", () => {
   const testHost = "https://api.mindvault.app";
@@ -31,6 +36,22 @@ describe("createLinkingOptions", () => {
     const linking = createLinkingOptions(testHost);
     expect(linking.getStateFromPath?.("some/random/path")).toBeUndefined();
     expect(linking.getStateFromPath?.("")).toBeUndefined();
+  });
+
+  it("records a referral link and opens the catalog", async () => {
+    await AsyncStorage.clear();
+    const code = referralCodeFor("GFRIEND");
+    const linking = createLinkingOptions(testHost);
+    expect(linking.getStateFromPath?.(`ref/${code}`)).toEqual({ routes: [{ name: "Catalog" }] });
+    await waitForReferrer(code);
+  });
+
+  it("keeps resource links working alongside referral links", () => {
+    const linking = createLinkingOptions(testHost);
+    expect(linking.getStateFromPath?.("resources/ref")).toEqual({
+      routes: [{ name: "Catalog" }, { name: "ResourceDetail", params: { resourceId: "ref" } }],
+    });
+    expect(linking.getStateFromPath?.("ref/bad")).toBeUndefined();
   });
 
   it("returns undefined for other hosts", () => {
@@ -73,3 +94,11 @@ describe("app.config.js host derivation logic", () => {
     expect(deriveHost("")).toBeNull();
   });
 });
+
+async function waitForReferrer(code: string) {
+  for (let i = 0; i < 20; i += 1) {
+    if ((await getReferralState()).referrerCode === code) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("referrer was not recorded");
+}

@@ -10,4 +10,23 @@ config.resolver.extraNodeModules = {
   https: emptyModule,
 };
 
+config.transformer.minifierConfig = {
+  ...(config.transformer.minifierConfig ?? {}),
+  compress: {
+    ...(config.transformer.minifierConfig?.compress ?? {}),
+    dead_code: true,
+    unused: true,
+  },
+  mangle: {
+    ...(config.transformer.minifierConfig?.mangle ?? {}),
+    toplevel: true,
+  },
+};
+
+config.transformer.getTransformOptions = async () => ({
+  transform: {
+    inlineRequires: true,
+  },
+});
+
 module.exports = config;

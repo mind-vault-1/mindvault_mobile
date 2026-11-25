@@ -33,12 +33,14 @@ module.exports = ({ config }) => {
 
   const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? config.extra?.apiUrl;
   const linkHost = deriveUniversalLinkHost(apiUrl);
+  const remoteConfigUrl = process.env.EXPO_PUBLIC_REMOTE_CONFIG_URL ?? config.extra?.remoteConfigUrl;
 
   const updatedConfig = {
     ...config,
     extra: {
       ...config.extra,
       apiUrl,
+      remoteConfigUrl,
       network,
       networkPassphrase:
         process.env.EXPO_PUBLIC_NETWORK_PASSPHRASE ??

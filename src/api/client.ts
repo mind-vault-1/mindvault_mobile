@@ -1,3 +1,4 @@
+import { DEFAULT_REQUEST_TIMEOUT_MS, getRemoteConfig } from "../config/remoteConfig";
 import { extractApiErrorMessage } from "../utils/errorLogger";
 import {
   backoffDelayMs,
@@ -8,7 +9,7 @@ import {
 } from "../utils/retry";
 
 /** Requests that take longer than this are aborted and reported as timeouts. */
-export const DEFAULT_TIMEOUT_MS = 15_000;
+export const DEFAULT_TIMEOUT_MS = DEFAULT_REQUEST_TIMEOUT_MS;
 /** Extra attempts for GET requests after a network error or 5xx response. */
 const GET_RETRY_LIMIT = 2;
 
@@ -112,7 +113,7 @@ async function send<T>(url: string, method: HttpMethod, options: RequestOptions)
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  }, options.timeoutMs ?? getRemoteConfig().limits.requestTimeoutMs);
   callerSignal?.addEventListener("abort", cancelFromCaller);
   if (callerSignal?.aborted) controller.abort();
 
