@@ -648,7 +648,6 @@ describe("PublisherResourcesScreen - API key lifecycle", () => {
   });
 });
 
-<<<<<<< HEAD
 describe("PublisherResourcesScreen - getting-started checklist", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -686,7 +685,8 @@ describe("PublisherResourcesScreen - getting-started checklist", () => {
     const second = renderScreen();
     await act(async () => {});
     expect(second.queryByTestId("publisher-getting-started")).toBeNull();
-=======
+  });
+});
 
 describe("virtualized list config", () => {
   it("keeps a bounded render window for large publisher catalogs", async () => {
@@ -701,6 +701,5 @@ describe("virtualized list config", () => {
     expect(flatList.props.windowSize).toBeLessThanOrEqual(7);
     expect(flatList.props.removeClippedSubviews).toBe(true);
     expect(flatList.props.keyExtractor({ id: "x" })).toBe("x");
->>>>>>> origin/main
   });
 });
