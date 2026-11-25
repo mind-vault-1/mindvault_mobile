@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, I18nManager } from "react-native";
+import { AppState, I18nManager, Platform } from "react-native";
 import { NavigationContainer, type NavigationState } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";

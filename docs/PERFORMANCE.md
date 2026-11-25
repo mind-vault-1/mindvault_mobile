@@ -1,26 +1,42 @@
-# Catalog performance
+# Performance
 
-## Startup frame timing
+## Startup budget and profiling
 
-The app logs `[startup] first interactive frame` once after navigation is ready
-and two animation frames have elapsed. The JSON payload includes the platform
-and milliseconds since the JavaScript app module started. This is a practical
-JS-side first-frame proxy, not native process-launch time or a substitute for
-device tracing. `getFirstInteractiveFrameMs()` exposes the value in-process
-for a future automated profile without parsing the log.
+Startup time is measured by the app and profiled by `scripts/profile-startup.ts`.
 
-For a repeatable comparison, use release builds on both an Android emulator or
-device and an iOS simulator or device. Force-stop the app before each cold
-launch, capture the startup log, and record at least five launches per platform;
-compare the median using the same device, build, and setup. Do not compare a
-debug run with a release run. The measurement is currently informational; a
-CI budget and automated device-launch profile are not yet configured.
+### Methodology
+
+- Build a release app for each platform.
+- Force-stop the app before every run (cold start).
+- Run at least 5 launches per platform on the same device/simulator and OS build.
+- Record `p90` of first interactive frame; compare only same build type/device.
+- The app emits `[startup] first interactive frame {"platform":"ios|android","durationMs":...}` when navigation is ready and two animation frames have elapsed. This is a JS-side first-interactive proxy, not native process start.
+
+### Budget
+
+| Platform | Warning (p90) | Hard limit (p90) |
+| --- | ---: | ---: |
+| iOS | 2500 ms | 4000 ms |
+| Android | 3000 ms | 4500 ms |
+
+CI/profile runs should warn above the warning threshold and fail above the hard limit.
+
+### Run the profiler
+
+```bash
+npx ts-node scripts/profile-startup.ts --platform ios --runs 5 --warn-ms 2500 --hard-ms 4000
+npx ts-node scripts/profile-startup.ts --platform android --runs 5 --warn-ms 3000 --hard-ms 4500
+```
+
+The report prints median/p90 and `slowestTasks` sorted by duration descending. Capture platform logs after launching a release build so the script can read startup markers.
+
+## Catalog performance
 
 The catalog uses a `FlatList` so resource cards outside the active render
 window are not mounted. Keep it virtualized: do not replace it with a
 `ScrollView` containing every card.
 
-## Current list tuning
+### Current list tuning
 
 `CatalogScreen` starts with eight cards, renders at most eight more per batch,
 waits 50 ms between batches, and keeps a seven-viewport render window. Clipped
@@ -29,56 +45,11 @@ is memoized so parent state changes do not create a new render callback.
 
 Resource cards have content-dependent heights (titles, metadata and images can
 wrap or load asynchronously), so do not provide a fixed `getItemLayout`.
-Incorrect offsets make `scrollToIndex` and virtualization less reliable. A
-fixed 120 px `getItemLayout` was trialled for #352 and reverted for this reason;
-the profile below remains the baseline (no new device measurements were taken
-for that trial).
+Incorrect offsets make `scrollToIndex` and virtualization less reliable.
 
-The catalog also follows the API's `nextOffset` pagination value and appends
-only unseen resource IDs. Keep this paging behavior when changing filters or
-refreshing; a stale page must not be appended to a newer result set.
-
-## 500-item profile snapshot
-
-A local profile with 500 mock resources (mixed title lengths and thumbnails,
-fast fling on an Android emulator, release build) showed the effect of the
-current tuning:
-
-| Run | Median FPS | JS thread (ms/frame) |
-| --- | ---: | ---: |
-| Before list tuning | 44 | 22.7 |
-| After list tuning | 58 | 11.9 |
-
-Re-run the same profile on target devices before shipping changes that affect
-the list; these numbers are a regression baseline, not a guarantee for every
-device or dataset.
-
-## Profiling changes
+### Profiling changes
 
 Check long-catalog behavior on both iOS and Android with a production-like
-resource count, including rows with long titles and thumbnails. Look for blank
-gaps during fast flings, repeated rendering of off-screen cards, dropped frames,
-and memory growth while scrolling. Compare the same device, build type, and
-dataset before and after a tuning change.
-
-Change one list setting at a time. Raising `initialNumToRender` or
-`maxToRenderPerBatch` can reduce blank areas but increases startup work and
-memory; raising `windowSize` keeps more cards mounted. Preserve pull-to-refresh,
-pagination, keyboard interaction, accessibility labels, and current card
-actions while tuning.
-
-## Startup boot profile
-
-The #419 change was measured with the same local Jest boot harness on
-2026-11-24, from module evaluation until the first catalog render:
-
-| Build | Boot duration |
-| --- | ---: |
-| Before lazy screens | 443 ms |
-| After lazy screens | 73 ms |
-
-The harness stubs native modules and network, so these numbers compare JS boot
-work rather than device cold start. Re-run on target devices before shipping
-changes that add startup imports. The production bundle size remains enforced
-by the `bundle` job and the budgets in `scripts/check-bundle-size.ts` (W024).
-
+resource count. Look for blank gaps during fast flings, repeated rendering of
+off-screen cards, dropped frames, and memory growth while scrolling. Compare the
+same device, build type, and dataset before and after a tuning change.
