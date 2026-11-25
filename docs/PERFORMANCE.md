@@ -66,3 +66,19 @@ Change one list setting at a time. Raising `initialNumToRender` or
 memory; raising `windowSize` keeps more cards mounted. Preserve pull-to-refresh,
 pagination, keyboard interaction, accessibility labels, and current card
 actions while tuning.
+
+## Startup boot profile
+
+The #419 change was measured with the same local Jest boot harness on
+2026-11-24, from module evaluation until the first catalog render:
+
+| Build | Boot duration |
+| --- | ---: |
+| Before lazy screens | 443 ms |
+| After lazy screens | 73 ms |
+
+The harness stubs native modules and network, so these numbers compare JS boot
+work rather than device cold start. Re-run on target devices before shipping
+changes that add startup imports. The production bundle size remains enforced
+by the `bundle` job and the budgets in `scripts/check-bundle-size.ts` (W024).
+

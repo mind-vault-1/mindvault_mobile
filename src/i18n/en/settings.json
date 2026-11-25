@@ -113,6 +113,8 @@
   "settings.devOptions": "Developer Options",
   "settings.devOptionsBody": "These tools are for testing purposes only.",
   "settings.openDevSigner": "Open Dev Signer PoC",
+  "settings.activeFeatureFlags": "Active feature flags",
+  "settings.remoteConfigSummary": "Request timeout {timeout} ms · page size {pageSize}",
   "settings.language": "Language",
   "settings.languageBody": "Choose the app language. System follows your device settings. Dates and numbers follow the chosen language.",
   "settings.languageSystem": "System",

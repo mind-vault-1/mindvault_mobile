@@ -13,6 +13,8 @@ import {
   getFormatLocale,
   getLanguage,
   getLanguagePreference,
+  isCurrentLocaleRtl,
+  isRtlLocale,
   LANGUAGE_STORAGE_KEY,
   loadLanguagePreference,
   refreshSystemLanguage,
@@ -75,6 +77,15 @@ describe("i18n", () => {
     expect(t("publisher.bulkDelisted", { count: 3, suffix: "s" })).toBe(
       "Delisted 3 resources"
     );
+  });
+
+  it("recognises right-to-left locale prefixes", () => {
+    expect(isRtlLocale("ar-SA")).toBe(true);
+    expect(isRtlLocale("he")).toBe(true);
+    expect(isRtlLocale("en-US")).toBe(false);
+    deviceLocales("ar-SA");
+    applyLanguagePreference("system");
+    expect(isCurrentLocaleRtl()).toBe(true);
   });
 });
 

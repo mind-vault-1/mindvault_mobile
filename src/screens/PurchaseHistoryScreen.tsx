@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Modal,
+  RefreshControl,
   Pressable,
   StyleSheet,
   Text,
@@ -39,11 +40,13 @@ export function PurchaseHistoryScreen() {
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [confirmingClear, setConfirmingClear] = useState(false);
 
-  const loadReceipts = useCallback(async () => {
+  const loadReceipts = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const local = await listReceipts();
       const localEntries = local.map((receipt) => ({ ...receipt, source: "local" as const }));
@@ -85,6 +88,7 @@ export function PurchaseHistoryScreen() {
       setError(err instanceof Error ? err.message : "Unable to load purchase history.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -120,10 +124,12 @@ export function PurchaseHistoryScreen() {
     }
   }, [loadingMore, nextOffset]);
 
+  const onRefresh = useCallback(() => { setRefreshing(true); void loadReceipts({ silent: true }); }, [loadReceipts]);
+
   // Reload on focus, so a purchase made elsewhere in the app shows up straight away.
   useFocusEffect(
     useCallback(() => {
-      void loadReceipts();
+      void loadReceipts({ silent: true });
     }, [loadReceipts])
   );
 
@@ -131,6 +137,7 @@ export function PurchaseHistoryScreen() {
     const term = query.trim().toLowerCase();
     return term ? receipts.filter((receipt) => receipt.title.toLowerCase().includes(term)) : receipts;
   }, [receipts, query]);
+  const renderReceipt = useCallback(({ item }: { item: PaymentReceipt & { source: "local" | "on-chain" } }) => <ReceiptRow receipt={item} />, []);
 
   async function handleClear() {
     setConfirmingClear(false);
@@ -157,6 +164,11 @@ export function PurchaseHistoryScreen() {
       <FlatList
         data={visible}
         keyExtractor={(receipt) => receipt.txHash}
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        removeClippedSubviews
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={styles.content}
         ListHeaderComponent={
           <View style={styles.header}>
@@ -203,7 +215,7 @@ export function PurchaseHistoryScreen() {
             </Text>
           </View>
         }
-        renderItem={({ item }) => <ReceiptRow receipt={item} />}
+        renderItem={renderReceipt}
         onEndReached={() => void loadMore()}
         onEndReachedThreshold={0.5}
         ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.primary} accessibilityLabel="Loading more purchases" /> : null}
@@ -246,7 +258,7 @@ export function PurchaseHistoryScreen() {
   );
 }
 
-function ReceiptRow({ receipt }: { receipt: PaymentReceipt & { source: "local" | "on-chain" } }) {
+const ReceiptRow = memo(function ReceiptRow({ receipt }: { receipt: PaymentReceipt & { source: "local" | "on-chain" } }) {
   const { colors, typography } = useAppTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const title = receipt.title.trim() || "Untitled resource";
@@ -286,7 +298,7 @@ function ReceiptRow({ receipt }: { receipt: PaymentReceipt & { source: "local" |
       </Pressable>
     </Pressable>
   );
-}
+});
 
 const rowStyles = StyleSheet.create({
   row: {

@@ -28,12 +28,14 @@ export interface PublishLinkInput {
   url: string;
   price: string;
   description: string;
+  /** ISO time the resource goes live; omitted to publish immediately. */
+  publishAt?: string;
 }
 
 export type PublishLinkErrors = Partial<Record<keyof PublishLinkInput, string>>;
 
 /** Title, price and description rules, shared by link and file publishing. */
-function validateDetails(input: Pick<PublishLinkInput, "title" | "price" | "description">) {
+function validateDetails(input: Pick<PublishLinkInput, "title" | "price" | "description" | "publishAt">) {
   const errors: PublishLinkErrors = {};
 
   const title = input.title.trim();
@@ -52,7 +54,25 @@ function validateDetails(input: Pick<PublishLinkInput, "title" | "price" | "desc
     errors.description = `Description must be ${DESCRIPTION_MAX_LENGTH} characters or fewer.`;
   }
 
+  const scheduleError = validatePublishAt(input.publishAt);
+  if (scheduleError) errors.publishAt = scheduleError;
+
   return errors;
+}
+
+/** A scheduled time must be at least this far ahead, so it can't go live before the request lands. */
+export const MIN_SCHEDULE_LEAD_MS = 5 * 60 * 1000;
+export const MAX_SCHEDULE_LEAD_MS = 365 * 24 * 60 * 60 * 1000;
+
+/** Returns an error message for an invalid scheduled time, or null when it is acceptable. */
+export function validatePublishAt(publishAt: string | undefined, now: Date = new Date()): string | null {
+  if (!publishAt) return null;
+  const at = Date.parse(publishAt);
+  if (Number.isNaN(at)) return "Enter a valid date and time.";
+  const lead = at - now.getTime();
+  if (lead < MIN_SCHEDULE_LEAD_MS) return "Schedule at least 5 minutes from now.";
+  if (lead > MAX_SCHEDULE_LEAD_MS) return "Schedule within the next year.";
+  return null;
 }
 
 /** Returns one message per invalid field; an empty object means the form is valid. */
@@ -92,6 +112,8 @@ export function buildPublishIdempotencyKey(input: PublishLinkInput): string {
     input.url.trim(),
     input.price.trim(),
     input.description.trim(),
+    // Only appended when set, so keys for immediate publishes are unchanged.
+    ...(input.publishAt ? [input.publishAt] : []),
   ].join("|");
 }
 
@@ -135,6 +157,7 @@ export async function publishLink(
     url: input.url.trim(),
     price: input.price.trim(),
     ...(input.description.trim() ? { description: input.description.trim() } : {}),
+    ...(input.publishAt ? { publishAt: input.publishAt } : {}),
   };
 
   try {
@@ -185,6 +208,7 @@ export interface PublishFileInput {
   title: string;
   price: string;
   description: string;
+  publishAt?: string;
   file: PickedFile;
 }
 
@@ -249,6 +273,7 @@ export async function publishFile(
     title: input.title.trim(),
     price: input.price.trim(),
     ...(input.description.trim() ? { description: input.description.trim() } : {}),
+    ...(input.publishAt ? { publishAt: input.publishAt } : {}),
   };
 
   const fileBytes = Buffer.from(
@@ -415,4 +440,23 @@ export async function pollPublishStatus(
     await new Promise((resolve) => setTimeout(resolve, delay));
     delay = Math.min(delay * 1.5, maxDelayMs);
   }
+}
+
+/** A resource saved before publishing. Drafts live under `/drafts`, never `/resources`, so they stay out of the catalog and analytics. */
+export interface ServerDraft {
+  id: string;
+  input: PublishLinkInput;
+  updatedAt: string;
+}
+
+export function listServerDrafts(): Promise<ServerDraft[]> {
+  return publisherFetch<ServerDraft[]>("/drafts", { method: "GET" }, "Failed to load drafts");
+}
+
+export function saveServerDraft(draft: ServerDraft): Promise<ServerDraft> {
+  return publisherFetch<ServerDraft>("/drafts", { method: "POST", body: draft }, "Failed to save draft");
+}
+
+export async function deleteServerDraft(id: string): Promise<void> {
+  await publisherFetch<unknown>(`/drafts/${encodeURIComponent(id)}`, { method: "DELETE" }, "Failed to delete draft");
 }

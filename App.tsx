@@ -1,12 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Platform } from "react-native";
+import { AppState, I18nManager } from "react-native";
 import { NavigationContainer, type NavigationState } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 
 import { initializeApiBaseUrl } from "./src/api/resources";
+import { loadRemoteConfig, refreshRemoteConfig } from "./src/config/remoteConfig";
 import { createLinkingOptions } from "./src/linking";
 import { RootNavigator } from "./src/navigation";
 import {
@@ -25,7 +26,7 @@ import { useReceiptSync } from "./src/hooks/useReceiptSync";
 import { AppLockProvider } from "./src/hooks/useAppLock";
 import { AppQueryProvider } from "./src/hooks/queries";
 import { STORAGE_KEYS } from "./src/services/storage";
-import { loadLanguagePreference, refreshSystemLanguage, useLocale } from "./src/i18n";
+import { isCurrentLocaleRtl, loadLanguagePreference, refreshSystemLanguage, useLayoutDirection, useLocale } from "./src/i18n";
 
 const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
 export const BOOT_TIMEOUT_MS = 5000;
@@ -86,6 +87,7 @@ function AppContent() {
   const [languageReady, setLanguageReady] = useState(false);
   const toast = useToast();
   const locale = useLocale();
+  const { isRtl } = useLayoutDirection();
   // Kept across the remount below so a language change doesn't reset navigation.
   const navigationState = useRef<NavigationState | undefined>(undefined);
 
@@ -131,11 +133,18 @@ function AppContent() {
 
   const { isOffline } = useNetworkStatus({ onReconnect: drainMutationQueue });
 
-  // Apply the API base URL saved in Settings before the first request goes out.
+  // Cached remote config (API host, limits, flags) is applied before the first request.
+  // The latest copy is fetched after boot and takes effect on the next request.
   useEffect(() => {
-    initializeApiBaseUrl()
+    const boot = loadRemoteConfig()
+      .catch((err) => logError("Failed to load cached remote config", err))
+      .then(() => initializeApiBaseUrl())
       .catch((err) => logError("Failed to load saved API base URL", err))
       .finally(() => setApiUrlReady(true));
+    void boot
+      .then(() => refreshRemoteConfig())
+      .then(() => initializeApiBaseUrl())
+      .catch((err) => logError("Failed to refresh remote config", err));
   }, []);
 
   // Restore the language chosen in Settings before the first screen renders.
@@ -144,6 +153,14 @@ function AppContent() {
       .catch((err) => logError("Failed to load saved language", err))
       .finally(() => setLanguageReady(true));
   }, []);
+
+  // Native text/layout direction follows the resolved locale/direction override.
+  useEffect(() => {
+    I18nManager.allowRTL(true);
+    if (I18nManager.isRTL !== isRtl) {
+      I18nManager.forceRTL(isRtl);
+    }
+  }, [isRtl]);
 
   // "System" follows the device: pick up a language change made while backgrounded.
   useEffect(() => {

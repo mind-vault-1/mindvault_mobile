@@ -42,6 +42,38 @@ export const LANGUAGE_STORAGE_KEY = "@mindvault_language";
 /** Each language's name in that language, as shown in the picker. */
 export const LANGUAGE_NAMES: Record<Language, string> = { en: "English", fr: "Français" };
 
+/** BCP-47 language prefixes whose scripts flow from right to left. */
+const RTL_LANGUAGE_PREFIXES = new Set(["ar", "dv", "fa", "he", "ku", "ps", "sd", "ur", "yi"]);
+
+export type LayoutDirectionPreference = "system" | "ltr" | "rtl";
+export const DIRECTION_STORAGE_KEY = "@mindvault_layout_direction";
+
+let directionPreference: LayoutDirectionPreference = "system";
+let resolvedIsRtl = false;
+
+function rtlFromLocale(locale: string): boolean {
+  const primary = locale.split(/[-_]/)[0]?.toLowerCase() ?? "";
+  return RTL_LANGUAGE_PREFIXES.has(primary);
+}
+
+export function isRtlLocale(locale: string): boolean {
+  return rtlFromLocale(locale);
+}
+
+export function isCurrentLocaleRtl(): boolean {
+  return resolvedIsRtl;
+}
+
+export function getDirectionPreference(): LayoutDirectionPreference {
+  return directionPreference;
+}
+
+export function resolveIsRtl(locale: string, pref: LayoutDirectionPreference = directionPreference): boolean {
+  if (pref === "rtl") return true;
+  if (pref === "ltr") return false;
+  return rtlFromLocale(locale);
+}
+
 const i18n = new I18n(translations);
 i18n.enableFallback = true;
 i18n.defaultSeparator = "|";
@@ -75,6 +107,11 @@ function systemLocale(): ResolvedLocale {
     if (isSupportedLanguage(code)) {
       return { language: code, formatLocale: locale.languageTag || code };
     }
+    // Keep English strings as the fallback while preserving the device's RTL
+    // formatting direction for languages not translated yet.
+    if (code && RTL_LANGUAGE_PREFIXES.has(code)) {
+      return { language: DEFAULT_LANGUAGE, formatLocale: locale.languageTag || code };
+    }
   }
   return { language: DEFAULT_LANGUAGE, formatLocale: DEFAULT_LANGUAGE };
 }
@@ -92,13 +129,20 @@ export function resolveLocale(preference: LanguagePreference): ResolvedLocale {
 let preference: LanguagePreference = "system";
 let current: ResolvedLocale = systemLocale();
 i18n.locale = current.language;
+resolvedIsRtl = resolveIsRtl(current.formatLocale);
 const listeners = new Set<() => void>();
 
-function apply(next: ResolvedLocale) {
-  const changed =
-    next.language !== current.language || next.formatLocale !== current.formatLocale;
+function apply(next: ResolvedLocale, nextDirection: LayoutDirectionPreference = directionPreference) {
+  const previous = current;
+  const previousRtl = resolvedIsRtl;
   current = next;
+  directionPreference = nextDirection;
+  resolvedIsRtl = resolveIsRtl(next.formatLocale, nextDirection);
   i18n.locale = next.language;
+  const changed =
+    previous.language !== current.language ||
+    previous.formatLocale !== current.formatLocale ||
+    previousRtl !== resolvedIsRtl;
   if (changed) listeners.forEach((listener) => listener());
 }
 
@@ -111,11 +155,10 @@ export function t(key: TranslationKey, variables?: Variables): string {
 /** Switches the language for this session only (tests, previews). */
 export function setLocale(locale: string): void {
   const language = locale.split(/[-_]/)[0]?.toLowerCase();
-  apply(
-    isSupportedLanguage(language)
-      ? { language, formatLocale: locale }
-      : { language: DEFAULT_LANGUAGE, formatLocale: DEFAULT_LANGUAGE }
-  );
+  const next = isSupportedLanguage(language)
+    ? { language, formatLocale: locale }
+    : { language: DEFAULT_LANGUAGE, formatLocale: locale || DEFAULT_LANGUAGE };
+  apply(next);
 }
 
 export function getLanguage(): Language {
@@ -143,21 +186,40 @@ export async function setLanguagePreference(next: LanguagePreference): Promise<v
   await AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, next);
 }
 
-/** Restores the saved language choice; unreadable or unknown values mean "system". */
+/** Applies and persists the layout direction override. */
+export async function setDirectionPreference(next: LayoutDirectionPreference): Promise<void> {
+  directionPreference = next;
+  apply(resolveLocale(preference), next);
+  if (next === "system") await AsyncStorage.removeItem(DIRECTION_STORAGE_KEY);
+  else await AsyncStorage.setItem(DIRECTION_STORAGE_KEY, next);
+}
+
+/** Restores the saved language and layout direction choices. */
 export async function loadLanguagePreference(): Promise<LanguagePreference> {
   let saved: string | null = null;
+  let savedDirection: string | null = null;
   try {
-    saved = await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY);
+    [saved, savedDirection] = await Promise.all([
+      AsyncStorage.getItem(LANGUAGE_STORAGE_KEY),
+      AsyncStorage.getItem(DIRECTION_STORAGE_KEY),
+    ]);
   } catch {
     saved = null;
+    savedDirection = null;
   }
-  applyLanguagePreference(isLanguagePreference(saved) ? saved : "system");
+  const nextDirection: LayoutDirectionPreference =
+    savedDirection === "ltr" || savedDirection === "rtl" ? savedDirection : "system";
+  if (savedDirection !== null && nextDirection === "system") {
+    try { await AsyncStorage.removeItem(DIRECTION_STORAGE_KEY); } catch { /* ignore */ }
+  }
+  preference = isLanguagePreference(saved) ? saved : "system";
+  apply(resolveLocale(preference), nextDirection);
   return preference;
 }
 
 /** Re-resolves "system" after the device language changes (e.g. on foreground). */
 export function refreshSystemLanguage(): void {
-  if (preference === "system") apply(systemLocale());
+  if (preference === "system") apply(systemLocale(), directionPreference);
 }
 
 export function subscribeLocale(listener: () => void): () => void {
@@ -170,6 +232,20 @@ export function subscribeLocale(listener: () => void): () => void {
 /** Re-renders the caller whenever the app language or format locale changes. */
 export function useLocale(): string {
   return useSyncExternalStore(subscribeLocale, getFormatLocale, getFormatLocale);
+}
+
+const getLayoutDirectionSnapshot = () => ({ isRtl: resolvedIsRtl, preference: directionPreference });
+let layoutDirectionSnapshot = getLayoutDirectionSnapshot();
+const getLayoutDirection = () => {
+  const next = getLayoutDirectionSnapshot();
+  if (next.isRtl !== layoutDirectionSnapshot.isRtl || next.preference !== layoutDirectionSnapshot.preference) {
+    layoutDirectionSnapshot = next;
+  }
+  return layoutDirectionSnapshot;
+};
+
+export function useLayoutDirection(): { isRtl: boolean; preference: LayoutDirectionPreference } {
+  return useSyncExternalStore(subscribeLocale, getLayoutDirection, getLayoutDirection);
 }
 
 /** Re-renders the caller when the saved language choice changes. */
