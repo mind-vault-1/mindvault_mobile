@@ -26,7 +26,7 @@ import { useReceiptSync } from "./src/hooks/useReceiptSync";
 import { AppLockProvider } from "./src/hooks/useAppLock";
 import { AppQueryProvider } from "./src/hooks/queries";
 import { STORAGE_KEYS } from "./src/services/storage";
-import { isCurrentLocaleRtl, loadLanguagePreference, refreshSystemLanguage, useLocale } from "./src/i18n";
+import { isCurrentLocaleRtl, loadLanguagePreference, refreshSystemLanguage, useLayoutDirection, useLocale } from "./src/i18n";
 
 const ONBOARDING_KEY = `${STORAGE_KEYS.catalogFilters}:onboarding`;
 export const BOOT_TIMEOUT_MS = 5000;
@@ -81,7 +81,7 @@ function AppContent() {
   const [languageReady, setLanguageReady] = useState(false);
   const toast = useToast();
   const locale = useLocale();
-  const isRtl = isCurrentLocaleRtl();
+  const { isRtl } = useLayoutDirection();
   // Kept across the remount below so a language change doesn't reset navigation.
   const navigationState = useRef<NavigationState | undefined>(undefined);
 
@@ -134,12 +134,10 @@ function AppContent() {
       .finally(() => setLanguageReady(true));
   }, []);
 
-  // Native text/layout direction follows the resolved BCP-47 locale. Expo
-  // applies this on the next reload, so changing direction never mutates a
-  // mounted navigation tree underneath the user.
+  // Native text/layout direction follows the resolved locale/direction override.
   useEffect(() => {
+    I18nManager.allowRTL(true);
     if (I18nManager.isRTL !== isRtl) {
-      I18nManager.allowRTL(isRtl);
       I18nManager.forceRTL(isRtl);
     }
   }, [isRtl]);

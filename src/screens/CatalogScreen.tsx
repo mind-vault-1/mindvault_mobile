@@ -59,7 +59,7 @@ import {
   parsePriceRange,
 } from "../utils/priceRange";
 import { getRelativeTimeString } from "../utils/time";
-import { t } from "../i18n";
+import { getDirectionPreference, setDirectionPreference, t, useLayoutDirection } from "../i18n";
 
 const CATALOG_FILTERS_KEY = STORAGE_KEYS.catalogFilters;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -155,7 +155,8 @@ function sanitizePersistedFilters(raw: unknown): PersistedFilters {
   };
 }
 
-function createStyles(colors: ThemeColors) {
+function createStyles(colors: ThemeColors, isRtl: boolean) {
+  const rowDirection = isRtl ? "row-reverse" : "row";
   return StyleSheet.create({
     listContent: {
       padding: spacing.lg,
@@ -167,7 +168,7 @@ function createStyles(colors: ThemeColors) {
       marginBottom: spacing.lg,
     },
     headerRow: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       justifyContent: "space-between",
       alignItems: "flex-start",
       gap: spacing.md,
@@ -226,7 +227,7 @@ function createStyles(colors: ThemeColors) {
       color: colors.textMuted,
     },
     chipRow: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       flexWrap: "wrap",
       gap: spacing.sm,
     },
@@ -252,7 +253,7 @@ function createStyles(colors: ThemeColors) {
       fontWeight: "600",
     },
     priceRow: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       gap: spacing.md,
     },
     priceField: {
@@ -278,7 +279,7 @@ function createStyles(colors: ThemeColors) {
       color: colors.danger,
     },
     resultsRow: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       justifyContent: "space-between",
       alignItems: "center",
       gap: spacing.md,
@@ -314,7 +315,7 @@ function createStyles(colors: ThemeColors) {
       padding: spacing.sm,
     },
     suggestionRow: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       alignItems: "center",
       gap: spacing.sm,
     },
@@ -339,7 +340,7 @@ function createStyles(colors: ThemeColors) {
       color: colors.textMuted,
     },
     recentHeader: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       justifyContent: "space-between",
       alignItems: "center",
     },
@@ -376,7 +377,7 @@ function createStyles(colors: ThemeColors) {
       justifyContent: "center",
     },
     saveSearchRow: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       alignItems: "center",
       gap: spacing.sm,
     },
@@ -400,7 +401,7 @@ function createStyles(colors: ThemeColors) {
       borderColor: colors.border,
     },
     savedSearchChip: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       alignItems: "center",
       gap: spacing.xs,
     },
@@ -453,7 +454,7 @@ function createStyles(colors: ThemeColors) {
     },
     fab: {
       position: "absolute",
-      right: spacing.lg,
+      ...(isRtl ? { left: spacing.lg } : { right: spacing.lg }),
       bottom: spacing.xl,
       backgroundColor: colors.primary,
       borderRadius: 28,
@@ -477,7 +478,7 @@ function createStyles(colors: ThemeColors) {
       gap: spacing.xs,
     },
     footerErrorRow: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       alignItems: "center",
       gap: spacing.sm,
     },
@@ -501,7 +502,8 @@ function createStyles(colors: ThemeColors) {
 
 export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
   const { colors, shared, typography, colorScheme } = useAppTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { isRtl } = useLayoutDirection();
+  const styles = useMemo(() => createStyles(colors, isRtl), [colors, isRtl]);
   const filtersRestored = useRef(false);
   const routeOwner = route?.params?.owner?.trim() || undefined;
   const routeOwnerRef = useRef(routeOwner);
@@ -1090,9 +1092,14 @@ export function CatalogScreen({ navigation, route }: CatalogScreenProps) {
               <Pressable
                 style={styles.headerButton}
                 onPress={() => navigation.navigate("Settings")}
+                onLongPress={() => {
+                  if (!__DEV__) return;
+                  const next = getDirectionPreference() === "rtl" ? "system" : "rtl";
+                  void setDirectionPreference(next);
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={t("catalog.settings")}
-                accessibilityHint={t("catalog.settingsHint")}
+                accessibilityHint={__DEV__ ? t("catalog.settingsHint") + " Long press to toggle RTL preview." : t("catalog.settingsHint")}
               >
                 <Text
                   style={styles.headerButtonText}
