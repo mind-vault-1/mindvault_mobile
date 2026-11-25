@@ -30,6 +30,7 @@ it("shows the fallback when a child throws and retry remounts it", () => {
     </ThemeProvider>
   );
   expect(screen.getByText("Something went wrong")).toBeTruthy();
+  expect(screen.getByText("MindVault hit an unexpected error. You can retry or copy safe details for support.")).toBeTruthy();
 
   shouldThrow = false;
   fireEvent.press(screen.getByText("Try again"));
