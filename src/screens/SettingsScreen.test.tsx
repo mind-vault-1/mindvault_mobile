@@ -374,3 +374,20 @@ describe("language", () => {
     alert.mockRestore();
   });
 });
+
+describe("referrals", () => {
+  it("shows earned referral rewards with clear labels", async () => {
+    const referrals = jest.requireActual("../services/referrals");
+    const reward = {
+      id: "a", role: "referred", label: referrals.REWARD_LABELS.referred, referrerCode: "ABCDEF12",
+      buyerCode: "12345678", txHash: "t", grantedAt: "2026-01-02T00:00:00.000Z",
+    };
+    const spy = jest
+      .spyOn(referrals, "getReferralState")
+      .mockResolvedValue({ referrerCode: "ABCDEF12", attributedAt: null, rewards: [reward] });
+    const screen = await renderSettings();
+    expect(await screen.findByText(referrals.REWARD_LABELS.referred)).toBeTruthy();
+    expect(screen.getByText("Set up a wallet to get your referral code.")).toBeTruthy();
+    spy.mockRestore();
+  });
+});
