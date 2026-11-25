@@ -183,3 +183,29 @@ it("keeps local history available without a wallet", async () => {
   expect(mockedFetchBuyerPayments).not.toHaveBeenCalled();
   expect(screen.queryByText("On-chain payment")).toBeNull();
 });
+
+
+describe("virtualized list config", () => {
+  it("keeps a bounded render window for large histories", async () => {
+    const big = Array.from({ length: 120 }, (_, i) => ({
+      resourceId: `res-${i}`,
+      title: `Resource ${i}`,
+      amount: "1000000",
+      asset: "CASSET",
+      network: "stellar:testnet" as const,
+      txHash: `tx-${i}`,
+      payer: "GPAYER",
+      paidAt: `2026-01-01T00:00:${String(i % 60).padStart(2, "0")}.000Z`,
+    }));
+    mockedListReceipts.mockResolvedValue(big);
+    const screen = renderWithProviders(<PurchaseHistoryScreen />);
+    await screen.findByText("Resource 0");
+    const flatList = screen.UNSAFE_getByType(require("react-native").FlatList);
+    expect(flatList.props.initialNumToRender).toBeLessThanOrEqual(12);
+    expect(flatList.props.maxToRenderPerBatch).toBeLessThanOrEqual(12);
+    expect(flatList.props.windowSize).toBeLessThanOrEqual(7);
+    expect(flatList.props.removeClippedSubviews).toBe(true);
+    expect(typeof flatList.props.onEndReached).toBe("function");
+    expect(flatList.props.refreshControl).toBeTruthy();
+  });
+});

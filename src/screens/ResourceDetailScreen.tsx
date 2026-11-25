@@ -35,7 +35,7 @@ import { openExternalUrl, stellarExpertTxUrl } from "../utils/stellarExpert";
 import { ResourceQrSheet } from "../components/ResourceQrSheet";
 import { shareResource } from "../utils/shareResource";
 import { hapticImpact } from "../utils/haptics";
-import { getFormatLocale, t } from "../i18n";
+import { getFormatLocale, t, useLayoutDirection } from "../i18n";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ResourceDetail">;
 
@@ -66,7 +66,8 @@ function getResourceTimestamp(resource: Resource): { label: string; text: string
   return null;
 }
 
-function createStyles(colors: ThemeColors) {
+function createStyles(colors: ThemeColors, isRtl: boolean) {
+  const rowDirection = isRtl ? "row-reverse" : "row";
   return StyleSheet.create({
     centered: {
       flex: 1,
@@ -89,7 +90,7 @@ function createStyles(colors: ThemeColors) {
       fontSize: 24,
     },
     badges: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       flexWrap: "wrap",
       gap: 6,
     },
@@ -104,7 +105,7 @@ function createStyles(colors: ThemeColors) {
       fontWeight: "600",
     },
     infoRow: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       justifyContent: "space-between",
       alignItems: "center",
     },
@@ -119,7 +120,7 @@ function createStyles(colors: ThemeColors) {
       lineHeight: 20,
     },
     titleRow: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       alignItems: "center",
       justifyContent: "space-between",
       gap: spacing.sm,
@@ -137,6 +138,8 @@ function createStyles(colors: ThemeColors) {
       color: colors.textSubtle,
       lineHeight: 18,
       flexShrink: 1,
+      writingDirection: "ltr",
+      textAlign: isRtl ? "right" : "left",
     },
     linkText: {
       color: colors.primary,
@@ -151,6 +154,7 @@ function createStyles(colors: ThemeColors) {
       fontFamily: "monospace",
       fontSize: 12,
       maxWidth: 220,
+      writingDirection: "ltr",
     },
     verificationSection: {
       borderWidth: 1,
@@ -161,7 +165,7 @@ function createStyles(colors: ThemeColors) {
       marginTop: spacing.xs,
     },
     verificationHeader: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       justifyContent: "space-between",
       alignItems: "center",
       padding: spacing.md,
@@ -181,7 +185,7 @@ function createStyles(colors: ThemeColors) {
       gap: spacing.sm,
     },
     verificationLoadingRow: {
-      flexDirection: "row",
+      flexDirection: rowDirection,
       alignItems: "center",
       gap: spacing.sm,
       paddingVertical: spacing.xs,
@@ -211,7 +215,8 @@ function createStyles(colors: ThemeColors) {
 
 export function ResourceDetailScreen({ route, navigation }: Props) {
   const { colors, shared, typography } = useAppTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { isRtl } = useLayoutDirection();
+  const styles = useMemo(() => createStyles(colors, isRtl), [colors, isRtl]);
 
   const { resourceId } = route.params;
   const [resource, setResource] = useState<Resource | null>(null);
