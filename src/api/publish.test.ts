@@ -12,6 +12,7 @@ import {
   pollPublishStatus,
   publishFile,
   publishLink,
+  validatePublishAt,
   validatePublishFile,
   validatePublishLink,
   type PickedFile,
@@ -486,5 +487,29 @@ describe("fetchPublishStatus and pollPublishStatus", () => {
 
     expect(statuses).toEqual(["verifying"]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("validatePublishAt", () => {
+  const now = new Date("2026-06-01T12:00:00.000Z");
+
+  it("accepts no schedule and a time comfortably in the future", () => {
+    expect(validatePublishAt(undefined, now)).toBeNull();
+    expect(validatePublishAt("2026-06-02T12:00:00.000Z", now)).toBeNull();
+  });
+
+  it("rejects unparseable, past, too-soon and too-far times", () => {
+    expect(validatePublishAt("soon", now)).toBe("Enter a valid date and time.");
+    expect(validatePublishAt("2026-05-01T00:00:00.000Z", now)).toBe("Schedule at least 5 minutes from now.");
+    expect(validatePublishAt("2026-06-01T12:01:00.000Z", now)).toBe("Schedule at least 5 minutes from now.");
+    expect(validatePublishAt("2028-01-01T00:00:00.000Z", now)).toBe("Schedule within the next year.");
+  });
+
+  it("keeps idempotency keys unchanged for immediate publishes", () => {
+    const input = { title: "t", url: "https://e.com", price: "1", description: "" };
+    expect(buildPublishIdempotencyKey(input)).toBe("publish|t|https://e.com|1|");
+    expect(buildPublishIdempotencyKey({ ...input, publishAt: "2026-06-02T12:00:00.000Z" })).not.toBe(
+      buildPublishIdempotencyKey(input),
+    );
   });
 });

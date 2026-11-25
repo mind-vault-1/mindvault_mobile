@@ -36,6 +36,7 @@ import {
   type StellarNetworkId,
 } from "../config/network";
 import { checkHealth, type ServerHealth } from "../api/health";
+import { areDeveloperFlagsVisible } from "../config/flags";
 import { collectDiagnostics, formatDiagnostics } from "../services/diagnostics";
 import {
   clearStorageGroup,
@@ -48,6 +49,12 @@ import {
 } from "../services/storage";
 import { getAuditLog } from "../services/auditLog";
 import {
+  buildReferralLink,
+  getMyReferralCode,
+  getReferralState,
+  type ReferralReward,
+} from "../services/referrals";
+import {
   areHapticsEnabled,
   hapticImpact,
   setHapticsEnabled,
@@ -56,6 +63,8 @@ import {
   APP_LOCK_TIMEOUT_OPTIONS,
   useAppLock,
 } from "../hooks/useAppLock";
+import { useFeatureFlags } from "../hooks/useFeatureFlag";
+import { useRemoteConfig } from "../hooks/useRemoteConfig";
 import { openExternalUrl } from "../utils/stellarExpert";
 import {
   DEFAULT_PER_PAYMENT_LIMIT,
@@ -104,6 +113,10 @@ export function SettingsScreen() {
   } = useAppLock();
 
   const [auditLogPreview, setAuditLogPreview] = useState<string | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referralRewards, setReferralRewards] = useState<ReferralReward[]>([]);
+  const featureFlags = useFeatureFlags();
+  const remoteConfig = useRemoteConfig();
 
   useEffect(() => {
     void areHapticsEnabled().then(setHapticsEnabledState);
@@ -117,6 +130,21 @@ export function SettingsScreen() {
   }, []);
 
   useEffect(() => subscribeNetwork(setNetworkState), []);
+
+  useEffect(() => {
+    void getMyReferralCode().then(setReferralCode).catch(() => setReferralCode(null));
+    void getReferralState().then(({ rewards }) => setReferralRewards(rewards));
+  }, []);
+
+  const handleShareReferral = useCallback(async () => {
+    if (!referralCode) return;
+    const link = buildReferralLink(referralCode);
+    try {
+      await Share.share({ message: `Join me on MindVault: ${link}`, url: link });
+    } catch {
+      // Dismissed or unavailable; nothing to recover.
+    }
+  }, [referralCode]);
 
   const handleLanguageChange = useCallback(async (next: LanguagePreference) => {
     try {
@@ -397,6 +425,49 @@ export function SettingsScreen() {
         </View>
 
         <ThemeToggle />
+
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+          ]}
+          testID="referral-section"
+        >
+          <Text style={[styles.sectionTitle, { color: colors.text }]} accessibilityRole="header">
+            Invite friends
+          </Text>
+          {referralCode ? (
+            <>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Your referral code: {referralCode}
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textMuted, marginBottom: 12 }]}>
+                You and your friend each get a reward after their first purchase.
+              </Text>
+              <TouchableOpacity
+                style={[shared.button, { backgroundColor: colors.primary }]}
+                onPress={() => void handleShareReferral()}
+                accessibilityRole="button"
+                accessibilityLabel="Share referral link"
+              >
+                <Text style={[shared.buttonText, { color: "#ffffff" }]}>Share referral link</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Text style={[styles.infoText, { color: colors.textMuted }]}>
+              Set up a wallet to get your referral code.
+            </Text>
+          )}
+          {referralRewards.map((reward) => (
+            <Text
+              key={reward.id}
+              style={[styles.infoText, { color: colors.text, marginTop: 8 }]}
+              testID={`referral-reward-${reward.role}`}
+            >
+              {reward.label}
+            </Text>
+          ))}
+        </View>
 
         <View
           style={[
@@ -1048,6 +1119,28 @@ export function SettingsScreen() {
             <Text style={[styles.infoText, { color: colors.warning, marginBottom: 16 }]}>
               {t("settings.devOptionsBody")}
             </Text>
+            {areDeveloperFlagsVisible() ? (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={[styles.sectionTitle, { color: colors.warning }]}>
+                  {t("settings.activeFeatureFlags")}
+                </Text>
+                {Object.entries(featureFlags).map(([name, enabled]) => (
+                  <Text
+                    key={name}
+                    style={[styles.infoText, { color: colors.warning }]}
+                    accessibilityRole="text"
+                  >
+                    {`${name}: ${enabled ? "on" : "off"}`}
+                  </Text>
+                ))}
+                <Text style={[styles.infoText, { color: colors.warning, marginTop: 8 }]}>
+                  {t("settings.remoteConfigSummary", {
+                    timeout: remoteConfig.limits.requestTimeoutMs,
+                    pageSize: remoteConfig.limits.pageSize,
+                  })}
+                </Text>
+              </View>
+            ) : null}
             <TouchableOpacity
               style={[shared.button, { backgroundColor: colors.warning }]}
               onPress={() => navigation.navigate("DevSigner")}

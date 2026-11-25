@@ -8,6 +8,7 @@ import { pollPublishStatus, publishFile, publishLink, type PublishResult } from 
 import { signPaymentTransaction } from "../api/payment";
 import { ToastProvider } from "../components/ToastProvider";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { deleteDraft, listDrafts, saveDraft } from "../services/drafts";
 import { enqueueMutation, retryMutation } from "../services/mutationQueue";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { PublishResourceScreen } from "./PublishResourceScreen";
@@ -33,6 +34,12 @@ jest.mock("../api/publish", () => ({
 jest.mock("../api/payment", () => ({
   signPaymentTransaction: jest.fn(),
   sorobanRpcUrl: jest.fn(() => "https://rpc.example.com"),
+}));
+jest.mock("../services/drafts", () => ({
+  ...jest.requireActual("../services/drafts"),
+  listDrafts: jest.fn(),
+  saveDraft: jest.fn(),
+  deleteDraft: jest.fn(),
 }));
 jest.mock("../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn() }));
 jest.mock("../services/mutationQueue", () => ({
@@ -130,6 +137,13 @@ beforeEach(() => {
   mockedUseNetworkStatus.mockReturnValue({ isOffline: false });
   mockedPollPublishStatus.mockResolvedValue(undefined);
   mockedGetDocumentAsync.mockResolvedValue({ canceled: false, assets: [pickedAsset] });
+  jest.mocked(listDrafts).mockResolvedValue([]);
+  jest.mocked(deleteDraft).mockResolvedValue(undefined);
+  jest.mocked(saveDraft).mockImplementation(async (input, id) => ({
+    id: id ?? "draft-1",
+    input,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  }));
 });
 
 it("shows validation errors and does not submit an invalid form", async () => {
@@ -470,4 +484,77 @@ it("shows upload progress and cancels the upload", async () => {
 
   fireEvent.press(screen.getByRole("button", { name: "Cancel upload" }));
   expect(await screen.findByText("Upload cancelled.")).toBeTruthy();
+});
+
+describe("drafts and scheduling", () => {
+  const inAnHour = () => {
+    const d = new Date(Date.now() + 60 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  it("saves a draft without publishing it", async () => {
+    const screen = await renderScreen();
+    fillForm(screen);
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Save draft" }));
+    });
+    expect(saveDraft).toHaveBeenCalledWith(expect.objectContaining({ title: "Stellar handbook" }), undefined);
+    expect(mockedPublishLink).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Resume draft Stellar handbook" })).toBeTruthy();
+  });
+
+  it("resumes a draft from another device and deletes it once published", async () => {
+    jest.mocked(listDrafts).mockResolvedValue([
+      {
+        id: "remote-1",
+        input: { title: "Remote guide", url: "https://example.com/r", price: "2", description: "" },
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    mockedPublishLink.mockResolvedValue({ type: "published", resource });
+    const screen = await renderScreen();
+    fireEvent.press(await screen.findByRole("button", { name: "Resume draft Remote guide" }));
+    expect(screen.getByLabelText("Title").props.value).toBe("Remote guide");
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+    });
+    expect(deleteDraft).toHaveBeenCalledWith("remote-1");
+  });
+
+  it("validates the schedule, shows a countdown and sends publishAt", async () => {
+    mockedPublishLink.mockResolvedValue({ type: "published", resource });
+    const screen = await renderScreen();
+    fillForm(screen);
+
+    fireEvent.changeText(screen.getByLabelText("Publish at"), "2000-01-01 00:00");
+    fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+    expect(screen.getByText("Schedule at least 5 minutes from now.")).toBeTruthy();
+    expect(mockedPublishLink).not.toHaveBeenCalled();
+
+    fireEvent.changeText(screen.getByLabelText("Publish at"), inAnHour());
+    expect(screen.getByLabelText("Scheduled countdown")).toBeTruthy();
+    expect(screen.getByText("Schedule")).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+    });
+    expect(mockedPublishLink).toHaveBeenCalledWith(
+      expect.objectContaining({ publishAt: expect.any(String) }),
+      undefined,
+      expect.any(String),
+    );
+  });
+
+  it("cancels a schedule so the resource publishes immediately", async () => {
+    mockedPublishLink.mockResolvedValue({ type: "published", resource });
+    const screen = await renderScreen();
+    fillForm(screen);
+    fireEvent.changeText(screen.getByLabelText("Publish at"), inAnHour());
+    fireEvent.press(screen.getByRole("button", { name: "Cancel schedule" }));
+    expect(screen.queryByLabelText("Scheduled countdown")).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Publish resource" }));
+    });
+    expect(mockedPublishLink.mock.calls[0][0].publishAt).toBeUndefined();
+  });
 });

@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 
+import { getRemoteConfig } from "../config/remoteConfig";
+
 const STORAGE_KEY = "mindvault_api_base_url";
 const DEFAULT_API_BASE_URL =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? "http://localhost:4021";
@@ -93,7 +95,9 @@ export function validateApiBaseUrl(value: string): ApiBaseUrlValidationResult {
 
 export async function loadApiBaseUrl(): Promise<string> {
   const saved = await AsyncStorage.getItem(STORAGE_KEY);
-  return saved && saved.trim().length > 0 ? saved : DEFAULT_API_BASE_URL;
+  if (saved && saved.trim().length > 0) return saved;
+  const remote = getRemoteConfig().apiBaseUrl;
+  return remote && validateApiBaseUrl(remote).isValid ? remote : DEFAULT_API_BASE_URL;
 }
 
 export async function saveApiBaseUrl(value: string): Promise<void> {

@@ -1,3 +1,4 @@
+import { getRemoteConfig } from "../config/remoteConfig";
 import { request } from "./client";
 import { getApiBaseUrl } from "./resources";
 
@@ -73,7 +74,10 @@ export async function fetchBuyerPayments(
   options: { limit?: number; offset?: number } = {}
 ): Promise<BuyerPaymentsPage> {
   if (!address.trim()) throw new Error("A buyer wallet address is required.");
-  const limit = Math.max(1, Math.min(100, Math.floor(options.limit ?? 20)));
+  const limit = Math.max(
+    1,
+    Math.min(100, Math.floor(options.limit ?? getRemoteConfig().limits.pageSize))
+  );
   const offset = Math.max(0, Math.floor(options.offset ?? 0));
 
   const { data } = await request<BuyerPaymentsPage>(

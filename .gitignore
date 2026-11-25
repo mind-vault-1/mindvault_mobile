@@ -14,3 +14,7 @@ android/
 ios/
 
 coverage/
+
+# Mutation testing output
+reports/
+.stryker-tmp/
