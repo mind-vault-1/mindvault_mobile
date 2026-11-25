@@ -11,6 +11,7 @@ import { useAppTheme } from "../theme/ThemeProvider";
 import type { ThemeColors } from "../theme";
 import { spacing } from "../theme";
 import { fetchCatalog, type FetchCatalogParams } from "../api/resources";
+import { fetchCollections, type Collection } from "../api/collections";
 import { ResourceCard } from "./ResourceCard";
 import { SkeletonCard } from "./SkeletonCard";
 import type { Resource, CatalogSort } from "../types";
@@ -20,6 +21,8 @@ interface HomeSectionsProps {
   excludeResourceId?: string;
   /** Called when "See all" is pressed for a section */
   onSeeAll?: (sort?: CatalogSort, filter?: { verificationStatus?: "verified" }) => void;
+  /** Called when a collection is opened */
+  onOpenCollection?: (collectionId: string) => void;
 }
 
 const SECTION_CONFIG = [
@@ -109,7 +112,7 @@ function flattenResources(payload: unknown): Resource[] {
   return [];
 }
 
-export function HomeSections({ excludeResourceId, onSeeAll }: HomeSectionsProps) {
+export function HomeSections({ excludeResourceId, onSeeAll, onOpenCollection }: HomeSectionsProps) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -122,6 +125,8 @@ export function HomeSections({ excludeResourceId, onSeeAll }: HomeSectionsProps)
       error: null,
     }))
   );
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [collectionsLoading, setCollectionsLoading] = useState(true);
 
   const loadSection = useCallback(
     async (config: (typeof SECTION_CONFIG)[number]) => {
@@ -166,12 +171,31 @@ export function HomeSections({ excludeResourceId, onSeeAll }: HomeSectionsProps)
     });
   }, [loadSection]);
 
+  useEffect(() => {
+    let active = true;
+    setCollectionsLoading(true);
+    void fetchCollections()
+      .then((data) => {
+        if (active) setCollections(data);
+      })
+      .catch(() => {
+        if (active) setCollections([]);
+      })
+      .finally(() => {
+        if (active) setCollectionsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const visibleSections = useMemo(
     () => sections.filter((s) => !s.loading && s.items.length > 0 && !s.error),
     [sections]
   );
 
-  if (visibleSections.length === 0 && sections.every((s) => !s.loading)) {
+  const showCollections = collectionsLoading || collections.length > 0;
+  if (visibleSections.length === 0 && sections.every((s) => !s.loading) && !showCollections) {
     return null;
   }
 
@@ -236,6 +260,47 @@ export function HomeSections({ excludeResourceId, onSeeAll }: HomeSectionsProps)
           </View>
         );
       })}
+      {collectionsLoading ? (
+        <View style={styles.skeletonContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Collections</Text>
+          </View>
+          <FlatList
+            data={Array.from({ length: 2 })}
+            keyExtractor={(_, i) => `skeleton-collections-${i}`}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            renderItem={() => <SkeletonCard />}
+          />
+        </View>
+      ) : collections.length > 0 ? (
+        <View>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Collections</Text>
+          </View>
+          <FlatList
+            data={collections}
+            keyExtractor={(item) => item.id}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            renderItem={({ item }) => (
+              <Pressable
+                onPress={() => onOpenCollection?.(item.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Open collection ${item.title}`}
+                style={{ width: 260, padding: spacing.md, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, gap: 6 }}
+              >
+                <Text style={{ fontSize: 16, fontWeight: "700", color: colors.text }} numberOfLines={1}>{item.title}</Text>
+                {item.description ? <Text style={{ fontSize: 13, color: colors.textMuted }} numberOfLines={2}>{item.description}</Text> : null}
+                <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "600" }}>{(item.resources?.length ?? item.resourceIds?.length ?? 0)} resources</Text>
+              </Pressable>
+            )}
+            ItemSeparatorComponent={() => <View style={{ width: spacing.md }} />}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }

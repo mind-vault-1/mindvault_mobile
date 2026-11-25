@@ -9,6 +9,7 @@ import {
 
 import { CatalogScreen } from "./screens/CatalogScreen";
 import { OnboardingScreen } from "./screens/OnboardingScreen";
+import { CollectionScreen } from "./screens/CollectionScreen";
 
 type ScreenComponent = ComponentType<any>;
 
@@ -96,6 +97,7 @@ export type RootStackParamList = {
   PurchaseHistory: undefined;
   ReceiptDetail: { txHash: string };
   PublishResource: undefined;
+  Collection: { collectionId: string }; // <-- Add Collection screen and its parameter
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -128,6 +130,11 @@ export function RootNavigator({ showOnboarding }: RootNavigatorProps) {
         options={{ headerShown: false }}
       />
       <Stack.Screen name="Catalog" component={CatalogScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="Collection"
+        component={CollectionScreen}
+        options={{ title: "Collection" }}
+      />
       <Stack.Screen
         name="Favorites"
         component={FavoritesScreen}
