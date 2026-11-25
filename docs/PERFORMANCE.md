@@ -1,5 +1,20 @@
 # Catalog performance
 
+## Startup frame timing
+
+The app logs `[startup] first interactive frame` once after navigation is ready
+and two animation frames have elapsed. The JSON payload includes the platform
+and milliseconds since the JavaScript app module started. This is a practical
+JS-side first-frame proxy, not native process-launch time or a substitute for
+device tracing.
+
+For a repeatable comparison, use release builds on both an Android emulator or
+device and an iOS simulator or device. Force-stop the app before each cold
+launch, capture the startup log, and record at least five launches per platform;
+compare the median using the same device, build, and setup. Do not compare a
+debug run with a release run. The measurement is currently informational; a
+CI budget and automated device-launch profile are not yet configured.
+
 The catalog uses a `FlatList` so resource cards outside the active render
 window are not mounted. Keep it virtualized: do not replace it with a
 `ScrollView` containing every card.
