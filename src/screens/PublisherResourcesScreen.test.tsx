@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
@@ -618,5 +619,45 @@ describe("PublisherResourcesScreen - API key lifecycle", () => {
     await waitFor(() => expect(mockedDeleteStoredApiKey).toHaveBeenCalled());
     expect(await screen.findByText("Authenticate")).toBeTruthy();
     expect(screen.queryByText("Logout Resource")).toBeNull();
+  });
+});
+
+describe("PublisherResourcesScreen - getting-started checklist", () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    await AsyncStorage.clear();
+    mockedGetStoredApiKey.mockResolvedValue("stored-test-key");
+  });
+
+  it("ticks steps from existing state and links each open step to its screen", async () => {
+    mockedFetchPublisherResources.mockResolvedValue([
+      createResource({ id: "r1", title: "Verified", verificationStatus: "verified", onchainStatus: "none" }),
+    ]);
+    const screen = renderScreen();
+    expect(await screen.findByText("Getting started (3/4)")).toBeTruthy();
+
+    fireEvent.press(screen.getByRole("button", { name: "Register a verified resource on-chain" }));
+    expect(await screen.findByTestId("register-modal")).toBeTruthy();
+  });
+
+  it("disappears when every step is complete", async () => {
+    mockedFetchPublisherResources.mockResolvedValue([
+      createResource({ id: "r1", verificationStatus: "verified", onchainStatus: "registered" }),
+    ]);
+    const screen = renderScreen();
+    await screen.findByText("Test Resource");
+    expect(screen.queryByTestId("publisher-getting-started")).toBeNull();
+  });
+
+  it("stays hidden after being dismissed", async () => {
+    mockedFetchPublisherResources.mockResolvedValue([]);
+    const first = renderScreen();
+    fireEvent.press(await first.findByRole("button", { name: "Dismiss checklist" }));
+    expect(first.queryByTestId("publisher-getting-started")).toBeNull();
+    first.unmount();
+
+    const second = renderScreen();
+    await act(async () => {});
+    expect(second.queryByTestId("publisher-getting-started")).toBeNull();
   });
 });
