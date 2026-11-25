@@ -137,6 +137,10 @@ Then press `i` for iOS simulator, `a` for Android emulator, or scan the QR code 
 
 See the [testing guide](docs/TESTING.md) for writing tests, mocking patterns, and test utilities.
 
+## Performance
+
+See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for startup budget, profiling methodology, and catalog rendering guidance.
+
 ```bash
 npm test
 npm test -- --watch

@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, I18nManager } from "react-native";
+import { AppState, I18nManager, Platform } from "react-native";
 import { NavigationContainer, type NavigationState } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -34,14 +34,20 @@ export const BOOT_TIMEOUT_MS = 5000;
 const bootStartedAt = Date.now();
 let splashHidden = false;
 let bootDurationMs: number | null = null;
+let firstInteractiveFrameMs: number | null = null;
 
 export function getBootDurationMs(): number {
   return bootDurationMs ?? Date.now() - bootStartedAt;
 }
 
+export function getFirstInteractiveFrameMs(): number | null {
+  return firstInteractiveFrameMs;
+}
+
 export function resetSplashForTests(): void {
   splashHidden = false;
   bootDurationMs = null;
+  firstInteractiveFrameMs = null;
 }
 
 async function hideAppSplash(): Promise<void> {
@@ -84,6 +90,20 @@ function AppContent() {
   const { isRtl } = useLayoutDirection();
   // Kept across the remount below so a language change doesn't reset navigation.
   const navigationState = useRef<NavigationState | undefined>(undefined);
+
+  const recordFirstInteractiveFrame = useCallback(() => {
+    if (firstInteractiveFrameMs !== null) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        firstInteractiveFrameMs = Date.now() - bootStartedAt;
+        // eslint-disable-next-line no-console
+        console.info(
+          "[startup] first interactive frame",
+          JSON.stringify({ platform: Platform.OS, durationMs: firstInteractiveFrameMs })
+        );
+      });
+    });
+  }, []);
 
   // Reconciles local receipts with the server in the background.
   useReceiptSync(apiUrlReady);
@@ -185,6 +205,7 @@ function AppContent() {
           // language, restoring the current stack.
           key={locale}
           initialState={navigationState.current}
+          onReady={recordFirstInteractiveFrame}
           onStateChange={(state) => {
             navigationState.current = state;
           }}
