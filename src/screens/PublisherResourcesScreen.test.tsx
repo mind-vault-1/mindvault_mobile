@@ -514,7 +514,7 @@ describe("PublisherResourcesScreen - Publisher checklist", () => {
 
   it("shows signup action and opens the signup sheet", async () => {
     const screen = renderScreen();
-    fireEvent.press(await screen.findByLabelText("Checklist step: Create a publisher account"));
+    fireEvent.press(await screen.findByText("Create a publisher account"));
     expect(screen.getByTestId("signup-modal")).toBeTruthy();
   });
 
@@ -522,11 +522,15 @@ describe("PublisherResourcesScreen - Publisher checklist", () => {
     mockedGetStoredApiKey.mockResolvedValue("stored-key");
     mockedFetchPublisherResources.mockResolvedValue([createResource({ id: "r1", onchainStatus: "none" })]);
     const screen = renderScreen();
-    fireEvent.press(await screen.findByLabelText("Dismiss getting started checklist"));
-    await waitFor(() => expect(screen.queryByText("Getting started")).toBeNull());
+
+    expect(await screen.findByTestId("publisher-getting-started")).toBeTruthy();
+    fireEvent.press(screen.getByRole("button", { name: "Dismiss checklist" }));
+    await waitFor(() => expect(screen.queryByTestId("publisher-getting-started")).toBeNull());
+
     screen.unmount();
     const remount = renderScreen();
-    await waitFor(() => expect(remount.queryByText("Getting started")).toBeNull());
+    await act(async () => {});
+    expect(remount.queryByTestId("publisher-getting-started")).toBeNull();
   });
 });
 

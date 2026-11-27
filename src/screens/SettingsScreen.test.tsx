@@ -9,6 +9,11 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { SettingsScreen } from "./SettingsScreen";
+import {
+  applyLanguagePreference,
+  LANGUAGE_STORAGE_KEY,
+  t,
+} from "../i18n";
 import { getDefaultApiBaseUrl } from "../api/apiSettings";
 import { getNetwork, resetNetworkForTests, setNetwork } from "../config/network";
 import { RootNavigator, type RootStackParamList } from "../navigation";
@@ -307,7 +312,7 @@ describe("local data", () => {
 
   it("explains that keys are handled by the wallet wipe only", async () => {
     const screen = await renderSettings();
-    expect(screen.getByText(/Private keys/)).toBeTruthy();
+    expect(screen.getByText(t("settings.localDataBody"))).toBeTruthy();
   });
 
   it("links to the privacy policy next to the clear buttons", async () => {
@@ -317,8 +322,11 @@ describe("local data", () => {
     open.mockResolvedValue({ type: "cancel" } as WebBrowser.WebBrowserResult);
     const screen = await renderSettings();
 
+    const link = screen.getByRole("link", { name: t("settings.privacyPolicy") });
+    expect(link.props.accessibilityHint).toBe(t("settings.privacyPolicyHint"));
+
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Open privacy policy"));
+      fireEvent.press(link);
     });
 
     expect(open).toHaveBeenCalledWith(
@@ -330,8 +338,8 @@ describe("local data", () => {
 describe("haptics", () => {
   it("persists the haptic feedback toggle", async () => {
     const screen = await renderSettings();
-    const toggle = screen.getByLabelText("Haptic feedback");
-    expect(toggle.props.accessibilityState).toEqual(expect.objectContaining({ checked: true }));
+    const toggle = screen.getByRole("switch", { name: t("settings.haptics") });
+    expect(toggle.props.value).toBe(true);
 
     await act(async () => {
       fireEvent(toggle, "valueChange", false);
@@ -340,6 +348,7 @@ describe("haptics", () => {
     await waitFor(async () => {
       expect(await AsyncStorage.getItem("@mindvault_haptics_enabled")).toBe("false");
     });
+    expect(screen.getByRole("switch", { name: t("settings.haptics") }).props.value).toBe(false);
   });
 });
 
@@ -347,9 +356,9 @@ describe("spending guard", () => {
   it("saves the per-payment limit in the versioned preferences store", async () => {
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     const screen = await renderSettings();
-    const input = screen.getByLabelText("Per-payment limit in USDC");
+    const input = screen.getByLabelText(t("settings.spendingLimitLabel"));
 
-    fireEvent.changeText(input, "7.5");
+    fireEvent.changeText(input, "7.50");
     await act(async () => {
       fireEvent.press(screen.getByLabelText("Save spending limit"));
     });
@@ -365,7 +374,7 @@ describe("spending guard", () => {
   it("rejects an invalid per-payment limit", async () => {
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     const screen = await renderSettings();
-    const input = screen.getByLabelText("Per-payment limit in USDC");
+    const input = screen.getByLabelText(t("settings.spendingLimitLabel"));
 
     fireEvent.changeText(input, "0");
     await act(async () => {
@@ -373,23 +382,23 @@ describe("spending guard", () => {
     });
 
     expect(alertSpy).toHaveBeenCalledWith(
-      "Invalid limit",
-      "Enter a USDC amount greater than 0."
+      t("settings.invalidLimit"),
+      "Enter a positive USDC amount with at most 7 decimals."
     );
     alertSpy.mockRestore();
   });
 });
 
 describe("language", () => {
-  afterEach(async () => {
-    const { applyLanguagePreference } = await import("../i18n");
+  afterEach(() => {
     applyLanguagePreference("system");
   });
 
   it("offers System, English and Français and persists the choice", async () => {
     const screen = await renderSettings();
 
-    expect(screen.getByRole("radiogroup", { name: "Language" })).toBeTruthy();
+    const group = screen.getByLabelText(t("settings.language"));
+    expect(group.props.accessibilityRole).toBe("radiogroup");
     expect(screen.getByRole("radio", { name: "Use System" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Use English" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Use Français" })).toBeTruthy();
@@ -400,11 +409,15 @@ describe("language", () => {
 
     expect(await screen.findByText("Langue")).toBeTruthy();
     await waitFor(async () => {
-      expect(await AsyncStorage.getItem("@mindvault_language")).toBe("fr");
+      expect(await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("fr");
     });
 
     await act(async () => {
-      fireEvent.press(screen.getByRole("radio", { name: "Utiliser la langue du système" }));
+      fireEvent.press(
+        screen.getByRole("radio", {
+          name: t("settings.selectLanguage", { language: t("settings.languageSystem") }),
+        })
+      );
     });
     expect(await screen.findByText("Language")).toBeTruthy();
   });
